@@ -22,32 +22,34 @@ async function render() {
   );
 }
 
-test("server-renders the SpecGraph change inbox", async () => {
+test("server-renders the simplified SpecGraph change list", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<title>SpecGraph — Change impact, explained<\/title>/i);
-  assert.match(html, /Change Inbox/);
+  assert.match(html, /3 changes need your attention/);
   assert.match(html, /Refund validation window changed/);
-  assert.match(html, /Customer Refund Guide/);
-  assert.match(html, /openapi\.yaml/);
-  assert.match(html, /Analyze now/);
-  assert.match(html, /<span>Sources<\/span>/);
+  assert.match(html, /Open/);
+  assert.match(html, /All/);
+  assert.match(html, />Analyze</);
+  assert.doesNotMatch(html, /Alex Kim/);
+  assert.doesNotMatch(html, /High impact/);
+  assert.doesNotMatch(html, /High-confidence evidence/);
+  assert.doesNotMatch(html, /Customer Refund Guide/);
   assert.doesNotMatch(html, /codex-preview/);
   assert.doesNotMatch(html, /react-loading-skeleton/);
   assert.doesNotMatch(html, /Your site is taking shape/);
 });
 
-test("renders accessible controls for the primary workflow", async () => {
+test("renders accessible controls for the minimal workflow", async () => {
   const response = await render();
   const html = await response.text();
 
-  assert.match(html, /aria-label="Primary navigation"/);
-  assert.match(html, /aria-label="Search changes"/);
+  assert.match(html, /aria-label="Main navigation"/);
   assert.match(html, /aria-label="Change filters"/);
   assert.match(html, /aria-pressed="true"/);
-  assert.match(html, /Review impact/);
+  assert.match(html, /aria-label="Detected changes"/);
   assert.match(html, /role="status"/);
 });

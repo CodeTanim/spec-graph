@@ -4,7 +4,7 @@ import "./globals.css";
 
 const title = "SpecGraph — Change impact, explained";
 const description =
-  "Trace specification changes across documentation, APIs, code, and tests—then review coordinated updates with evidence.";
+  "See what changed and which connected docs, APIs, code, or tests may need updating.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -15,7 +15,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol =
     requestHeaders.get("x-forwarded-proto") ??
     (host.startsWith("localhost") ? "http" : "https");
-  const imageUrl = new URL("/og.png", `${protocol}://${host}`).toString();
+  const imageUrl = new URL("/og-v2.png", `${protocol}://${host}`).toString();
 
   return {
     title,
@@ -24,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       type: "website",
-      images: [{ url: imageUrl, width: 1658, height: 921, alt: "SpecGraph" }],
+      images: [{ url: imageUrl, width: 1536, height: 1024, alt: "SpecGraph" }],
     },
     twitter: {
       card: "summary_large_image",
