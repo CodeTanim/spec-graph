@@ -417,3 +417,25 @@ export async function getSource(
   if (!source) throw new ApiError(404, "SOURCE_NOT_FOUND", "That source was not found.");
   return source;
 }
+
+export async function removeSource(
+  workspaceId: string,
+  sourceId: string,
+  db: SpecGraphDb = getDb(),
+): Promise<{ removedSourceId: string }> {
+  const [source] = await db
+    .select({ id: sources.id })
+    .from(sources)
+    .where(and(eq(sources.id, sourceId), eq(sources.workspaceId, workspaceId)))
+    .limit(1);
+
+  if (!source) {
+    throw new ApiError(404, "SOURCE_NOT_FOUND", "That source was not found.");
+  }
+
+  await db
+    .delete(sources)
+    .where(and(eq(sources.id, sourceId), eq(sources.workspaceId, workspaceId)));
+
+  return { removedSourceId: source.id };
+}

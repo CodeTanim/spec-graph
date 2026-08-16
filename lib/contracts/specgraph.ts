@@ -127,6 +127,10 @@ export type SyncSourceResponse = {
   source: SourceItem;
 };
 
+export type RemoveSourceResponse = {
+  removedSourceId: string;
+};
+
 export type UpdateChangeInput = {
   action: FindingAction;
 };

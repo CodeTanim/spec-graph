@@ -414,12 +414,21 @@ button:disabled {
   gap: 14px;
 }
 
-.source-sync {
+.source-sync,
+.source-remove {
   border: 0;
   border-bottom: 1px solid var(--ink);
   background: transparent;
   padding: 2px 0;
   font-size: 10px;
+}
+
+.source-remove {
+  color: var(--muted);
+}
+
+.source-remove:hover {
+  color: var(--ink);
 }
 
 .github-setup {

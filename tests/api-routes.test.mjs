@@ -475,4 +475,63 @@ test("GitHub authorization, ingestion, graph construction, and PR analysis form 
     pullChange.artifacts.every((artifact) => artifact.externalUrl.includes("/blob/base123/")),
     true,
   );
+
+  const removalResponse = await appFetch(`/api/sources/${connected.source.id}`, {
+    method: "DELETE",
+  });
+  assert.equal(removalResponse.status, 200);
+  assert.equal((await json(removalResponse)).removedSourceId, connected.source.id);
+
+  const sourcesAfterRemoval = await json(await appFetch("/api/sources"));
+  assert.equal(
+    sourcesAfterRemoval.items.some((source) => source.id === connected.source.id),
+    false,
+  );
+  assert.equal(
+    (
+      await database
+        .prepare("SELECT COUNT(*) AS count FROM artifacts WHERE source_id = ?")
+        .bind(connected.source.id)
+        .first()
+    ).count,
+    0,
+  );
+  assert.equal(
+    (await database.prepare("SELECT COUNT(*) AS count FROM relationships").first()).count,
+    0,
+  );
+  assert.equal(
+    (await database.prepare("SELECT COUNT(*) AS count FROM analysis_runs").first()).count > 0,
+    true,
+  );
+  assert.equal(
+    (
+      await database
+        .prepare("SELECT COUNT(*) AS count FROM findings WHERE run_id = ?")
+        .bind(analysis.run.id)
+        .first()
+    ).count,
+    2,
+  );
+  assert.equal(
+    (
+      await database
+        .prepare("SELECT source_id AS sourceId FROM analysis_runs WHERE id = ?")
+        .bind(analysis.run.id)
+        .first()
+    ).sourceId,
+    null,
+  );
+  const preservedEvidence = await database
+    .prepare(
+      `SELECT fe.artifact_version_id AS artifactVersionId, fe.source_url AS sourceUrl
+       FROM finding_evidence fe
+       INNER JOIN findings f ON f.id = fe.finding_id
+       WHERE f.run_id = ?
+       LIMIT 1`,
+    )
+    .bind(analysis.run.id)
+    .first();
+  assert.equal(preservedEvidence.artifactVersionId, null);
+  assert.equal(preservedEvidence.sourceUrl.includes("/blob/base123/"), true);
 });

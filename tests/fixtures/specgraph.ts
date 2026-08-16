@@ -186,6 +186,7 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
     ? [...snapshot.changes.items]
     : [...changes];
   let currentRuns = [...snapshot.runs.items];
+  let currentSources = [...snapshot.sources.items];
 
   function changeResponse(filter: ChangeFilter) {
     return {
@@ -243,7 +244,7 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
       return { run };
     },
     async loadSources() {
-      return snapshot.sources;
+      return { items: [...currentSources] };
     },
     async loadGitHubStatus() {
       return { configured: true };
@@ -255,9 +256,16 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
       throw new Error("No GitHub connection session in this fixture.");
     },
     async syncSource(id) {
-      const source = snapshot.sources.items.find((item) => item.id === id);
+      const source = currentSources.find((item) => item.id === id);
       if (!source) throw new Error("Source not found");
       return { source };
+    },
+    async removeSource(id) {
+      if (!currentSources.some((source) => source.id === id)) {
+        throw new Error("Source not found");
+      }
+      currentSources = currentSources.filter((source) => source.id !== id);
+      return { removedSourceId: id };
     },
   };
 }

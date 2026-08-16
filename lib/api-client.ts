@@ -9,6 +9,7 @@ import type {
   GitHubStatusResponse,
   RunItem,
   RunListResponse,
+  RemoveSourceResponse,
   SourceListResponse,
   StartRunInput,
   StartRunResponse,
@@ -27,6 +28,7 @@ export type SpecGraphApi = {
   loadGitHubConnectionSession(state: string): Promise<GitHubConnectionSessionResponse>;
   connectGitHubSource(input: ConnectGitHubSourceInput): Promise<ConnectGitHubSourceResponse>;
   syncSource(id: string): Promise<SyncSourceResponse>;
+  removeSource(id: string): Promise<RemoveSourceResponse>;
 };
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -98,6 +100,11 @@ export const httpSpecGraphApi: SpecGraphApi = {
   syncSource(id) {
     return requestJson<SyncSourceResponse>(`/api/sources/${id}/sync`, {
       method: "POST",
+    });
+  },
+  removeSource(id) {
+    return requestJson<RemoveSourceResponse>(`/api/sources/${id}`, {
+      method: "DELETE",
     });
   },
 };

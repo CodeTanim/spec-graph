@@ -120,6 +120,8 @@ export function SpecGraphApp({
   const [githubBranch, setGitHubBranch] = useState("");
   const [githubSetupLoading, setGitHubSetupLoading] = useState(false);
   const [syncingSourceId, setSyncingSourceId] = useState("");
+  const [sourcePendingRemoval, setSourcePendingRemoval] = useState<SourceItem | null>(null);
+  const [removingSourceId, setRemovingSourceId] = useState("");
 
   useEffect(() => {
     if (!loadOnMount) return;
@@ -357,6 +359,28 @@ export function SpecGraphApp({
     }
   }
 
+  async function removeConnectedSource() {
+    if (!sourcePendingRemoval || removingSourceId) return;
+    setRemovingSourceId(sourcePendingRemoval.id);
+    try {
+      const result = await api.removeSource(sourcePendingRemoval.id);
+      const removedName = sourcePendingRemoval.name;
+      setSources((current) =>
+        current.filter((source) => source.id !== result.removedSourceId),
+      );
+      setSourcePendingRemoval(null);
+      setToast(`${removedName} is no longer being watched`);
+    } catch (removeError) {
+      setToast(
+        removeError instanceof Error
+          ? removeError.message
+          : "The source could not be removed.",
+      );
+    } finally {
+      setRemovingSourceId("");
+    }
+  }
+
   function requestAnalysis() {
     if (!sources.length) {
       setToast("Connect a source before starting an analysis.");
@@ -585,6 +609,17 @@ export function SpecGraphApp({
                         {syncingSourceId === source.id ? "Syncing…" : "Sync"}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="source-remove"
+                      disabled={Boolean(syncingSourceId || removingSourceId)}
+                      aria-label={`Remove ${
+                        source.provider === "github" ? repositoryName(source) : source.name
+                      }`}
+                      onClick={() => setSourcePendingRemoval(source)}
+                    >
+                      Remove
+                    </button>
                   </span>
                 </div>
               ))}
@@ -824,6 +859,65 @@ export function SpecGraphApp({
                 </button>
               </footer>
             </form>
+          </section>
+        </div>
+      )}
+
+      {sourcePendingRemoval && (
+        <div
+          className="scrim modal-scrim"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !removingSourceId) {
+              setSourcePendingRemoval(null);
+            }
+          }}
+        >
+          <section
+            className="analyze-modal remove-source-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remove-source-title"
+          >
+            <header>
+              <h2 id="remove-source-title">
+                Stop watching{" "}
+                {sourcePendingRemoval.provider === "github"
+                  ? repositoryName(sourcePendingRemoval)
+                  : sourcePendingRemoval.name}
+                ?
+              </h2>
+              <button
+                type="button"
+                disabled={Boolean(removingSourceId)}
+                onClick={() => setSourcePendingRemoval(null)}
+                aria-label="Close remove source confirmation"
+              >
+                ×
+              </button>
+            </header>
+            <p>
+              Its current index and relationships will be removed. Existing findings and run
+              history will remain available.
+            </p>
+            <footer>
+              <button
+                type="button"
+                className="dismiss-action"
+                disabled={Boolean(removingSourceId)}
+                onClick={() => setSourcePendingRemoval(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-action wide"
+                disabled={Boolean(removingSourceId)}
+                onClick={() => void removeConnectedSource()}
+              >
+                {removingSourceId ? "Removing…" : "Remove repository"}
+              </button>
+            </footer>
           </section>
         </div>
       )}

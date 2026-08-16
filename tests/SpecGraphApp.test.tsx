@@ -116,4 +116,26 @@ describe("SpecGraphApp", () => {
     );
     expect(screen.queryByText("Alex Kim")).not.toBeInTheDocument();
   });
+
+  it("confirms before removing a connected repository", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+    await user.click(screen.getByRole("button", { name: "Remove platform-api" }));
+
+    expect(
+      screen.getByRole("dialog", { name: "Stop watching platform-api?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Existing findings and run history will remain available/),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Remove repository" }));
+
+    expect(screen.queryByText("platform-api")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "acme/platform-api is no longer being watched",
+    );
+  });
 });
