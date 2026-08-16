@@ -27,7 +27,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   color: inherit;
   font: inherit;
 }
@@ -37,9 +38,16 @@ button {
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 3px;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .site-shell {
@@ -133,6 +141,21 @@ input:focus-visible {
   width: min(880px, calc(100% - 48px));
   margin: 0 auto;
   padding: 86px 0 100px;
+}
+
+.state-message {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 34px;
+  border: 1px solid var(--ink);
+  padding: 14px 16px;
+  font-size: 12px;
+}
+
+.state-message span {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .intro {
@@ -341,6 +364,12 @@ input:focus-visible {
   font-size: 11px;
 }
 
+.source-error {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .text-action {
   margin-top: 24px;
   border: 0;
@@ -499,7 +528,7 @@ input:focus-visible {
   line-height: 1.6;
 }
 
-.artifact-preview button,
+.artifact-preview a,
 .evidence-toggle,
 .dismiss-action {
   border: 0;
@@ -509,9 +538,19 @@ input:focus-visible {
   font-weight: 700;
 }
 
-.artifact-preview button {
+.artifact-preview a {
+  display: inline-block;
   border-bottom: 1px solid var(--ink);
+  color: var(--ink);
   padding-bottom: 2px;
+  text-decoration: none;
+}
+
+.artifact-preview > p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .analysis-message {
@@ -592,13 +631,18 @@ input:focus-visible {
   font-weight: 700;
 }
 
-.analyze-modal input {
+.analyze-modal input,
+.analyze-modal select {
   height: 44px;
   border: 1px solid var(--ink);
   border-radius: 0;
   background: var(--paper);
   padding: 0 12px;
   font-size: 13px;
+}
+
+.analyze-modal select {
+  margin-bottom: 18px;
 }
 
 .analyze-modal footer {

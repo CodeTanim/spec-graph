@@ -2,6 +2,10 @@ import { env } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
+export function createDb(binding: D1Database) {
+  return drizzle(binding, { schema });
+}
+
 export function getDb() {
   if (!env.DB) {
     throw new Error(
@@ -9,5 +13,7 @@ export function getDb() {
     );
   }
 
-  return drizzle(env.DB, { schema });
+  return createDb(env.DB);
 }
+
+export type SpecGraphDb = ReturnType<typeof createDb>;

@@ -1,39 +1,48 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { fileURLToPath } from "node:url";
+import test, { after, before } from "node:test";
+import { Miniflare } from "miniflare";
+
+let miniflare;
+
+before(() => {
+  miniflare = new Miniflare({
+    modules: true,
+    scriptPath: fileURLToPath(
+      new URL("../dist/server/index.js", import.meta.url),
+    ),
+    modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],
+    compatibilityDate: "2026-05-22",
+    compatibilityFlags: ["nodejs_compat"],
+    d1Databases: { DB: "specgraph-render-test" },
+    serviceBindings: {
+      ASSETS: async () => new Response("Not found", { status: 404 }),
+    },
+  });
+});
+
+after(async () => {
+  await miniflare?.dispose();
+});
 
 async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
+  return miniflare.dispatchFetch("http://localhost/", {
+    headers: { accept: "text/html" },
+  });
 }
 
-test("server-renders the simplified SpecGraph change list", async () => {
+test("server-renders the authenticated SpecGraph application shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<title>SpecGraph — Change impact, explained<\/title>/i);
-  assert.match(html, /3 changes need your attention/);
-  assert.match(html, /Refund validation window changed/);
+  assert.match(html, /Checking your workspace/);
   assert.match(html, /Open/);
   assert.match(html, /All/);
   assert.match(html, />Analyze</);
+  assert.doesNotMatch(html, /Refund validation window changed/);
   assert.doesNotMatch(html, /Alex Kim/);
   assert.doesNotMatch(html, /High impact/);
   assert.doesNotMatch(html, /High-confidence evidence/);
