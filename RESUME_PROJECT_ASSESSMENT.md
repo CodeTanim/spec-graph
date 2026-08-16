@@ -48,6 +48,7 @@ What currently exists:
 
 Current limitations:
 
+- The current OpenAI Sites deployment is temporary; the final hosting, persistence, authentication, and background-job stack must be selected and migrated as one system.
 - No GitHub or Confluence source can be connected yet.
 - Manual Analyze creates a durable queued run, but no background worker processes it yet.
 - There is no repository ingestion or parsing pipeline.
@@ -161,7 +162,7 @@ Use measured results rather than estimates wherever possible:
 
 These are structural examples only. Replace every placeholder with measured and defensible results.
 
-> Built and deployed SpecGraph, a change-impact analysis platform that ingests GitHub diffs and Confluence revisions and constructs a typed dependency graph across source code, OpenAPI specifications, documentation, and tests using Next.js, Cloudflare Workers, D1, and Drizzle.
+> Built and deployed SpecGraph, a change-impact analysis platform that ingests GitHub diffs and Confluence revisions and constructs a typed dependency graph across source code, OpenAPI specifications, documentation, and tests using Next.js, Drizzle, and a production relational datastore and job runtime.
 
 > Designed a hybrid graph and LLM ranking pipeline evaluated against X labeled repository changes, achieving X% precision and X% recall while analyzing repositories containing X files in under X seconds.
 

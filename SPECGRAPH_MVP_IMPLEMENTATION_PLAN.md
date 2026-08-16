@@ -104,6 +104,7 @@ These defaults prevent the project from stalling. Change them only through the d
 | Run updates | Client polling | Simple and adequate for MVP-scale jobs. |
 | Product action | Detect and explain only | Keeps the first release safe and measurable. |
 | Initial tenancy | Private, identity-aware workspace | Uses the platform's authenticated-user identity and avoids building a separate auth system. |
+| Deployment direction | Migrate away from OpenAI Sites before the final release; replacement host is not yet selected | The repository and runtime should be independently deployable and controlled outside the temporary Sites environment. |
 
 ### Minimal source-connection experience
 
@@ -390,11 +391,12 @@ Initial ranking inputs:
 | --- | --- | --- | --- |
 | M0 — Contract and test seam | In progress | Current prototype | UI no longer owns product fixtures or domain behavior |
 | M1 — Persistence and identity | In progress | M0 | State survives reload and is tenant-scoped |
-| M2 — GitHub connection and ingestion | In progress — live credentials pending | M1 | One real repository is connected and indexed |
+| M2 — GitHub connection and ingestion | Complete | M1 | One real repository is connected and indexed |
+| H1 — Hosting migration | Planned | M2 | The application runs outside Sites with portable auth, persistence, secrets, and callbacks |
 | M3 — Deterministic graph | Not started | M2 | Supported artifacts have queryable typed relationships |
-| M4 — Manual end-to-end analysis | Not started | M3 | Analyze produces persistent real findings |
+| M4 — Manual end-to-end analysis | Not started | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
 | M5 — Automatic GitHub feed | Not started | M4 | Pushes and pull requests trigger the same pipeline |
-| M6 — Confluence documentation connection | Not started | M4 | External documentation participates in the same product flow |
+| M6 — Confluence documentation connection | Not started | M4, H1 | External documentation participates in the same product flow on the replacement domain |
 | M7 — Semantic ranking and evidence | Not started | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
 | M8 — Review lifecycle and resilience | Not started | M5, M7 | Actions persist; failures retry safely |
 | M9 — Evaluation and production hardening | Not started | M8 | Quality, security, and reliability are measured |
@@ -450,7 +452,7 @@ Exit criteria:
 
 Goal: connect and index one real repository securely.
 
-- [ ] Create and configure a GitHub App with minimum required permissions.
+- [x] Create and configure a GitHub App with minimum required permissions.
 - [x] Implement installation state validation and callback handling.
 - [x] Persist installation and selected repository metadata without storing long-lived tokens in plaintext.
 - [x] Add a repository picker limited to the installation's accessible repositories.
@@ -461,14 +463,42 @@ Goal: connect and index one real repository securely.
 - [x] Store normalized artifact metadata, revision, hash, and canonical URL.
 - [x] Report initial-sync progress and failures truthfully in Sources.
 - [x] Add recorded provider fixtures and adapter contract tests.
-- [ ] Add disconnect behavior and document its data-retention policy.
+- [x] Add disconnect behavior and document its data-retention policy.
 
 Exit criteria:
 
-- [ ] A real GitHub repository can be connected through the UI.
+- [x] A real GitHub repository can be connected through the UI.
 - [x] Supported files appear as persisted artifacts in the integration harness.
 - [x] Every indexed artifact has a revision and immutable source URL in the integration harness.
 - [x] Re-running ingestion skips unchanged content.
+
+### H1 — Hosting Migration
+
+Goal: move SpecGraph away from OpenAI Sites without losing the working product or binding the architecture prematurely to another vendor.
+
+Sites remains the temporary live environment until the replacement deployment passes the full smoke test. Do not remove `.openai/hosting.json`, delete the Sites project, or cut over callback URLs before that gate passes.
+
+- [ ] Inventory Sites-specific dependencies: vinext/Worker output, authenticated-user headers, D1 bindings, runtime environment access, deployment packaging, and the current domain.
+- [ ] Select the replacement hosting, relational database, authentication, background-job, and secret-management stack as one compatible system.
+- [ ] Keep product repositories and provider adapters independent from the hosting runtime through small auth, database, queue, and environment boundaries.
+- [ ] Decide whether to migrate D1 data into the replacement database or intentionally start the pre-release environment from an empty schema.
+- [ ] Run all migrations from an empty replacement database and verify tenant isolation and source-removal retention behavior.
+- [ ] Configure GitHub App credentials and update its homepage, OAuth callback, setup, and later webhook URLs for the replacement domain.
+- [ ] Configure Confluence OAuth callbacks against the replacement domain before production Confluence authorization begins.
+- [ ] Provide a durable job mechanism that does not depend on an HTTP request remaining alive.
+- [ ] Recreate production secrets outside source control and confirm no provider token or private key is exposed to the browser or logs.
+- [ ] Deploy a staging environment from the GitHub repository and run the complete repository connection, sync, analysis, persistence, and removal smoke test.
+- [ ] Cut over the stable URL only after the replacement deployment passes; keep the Sites deployment available for rollback during the verification window.
+- [ ] Retire the Sites deployment and remove Sites-only configuration only after callbacks, data, authentication, and observability are confirmed on the replacement.
+
+Exit criteria:
+
+- [ ] A clean GitHub checkout can deploy without OpenAI Sites tooling.
+- [ ] Authentication and workspace identity remain stable and server-enforced.
+- [ ] Structured data persists across deploys and migrations on the replacement database.
+- [ ] GitHub and Confluence callbacks use the replacement domain.
+- [ ] Background jobs, retries, and logs work without request-lifetime coupling.
+- [ ] The end-to-end smoke test passes before Sites is decommissioned.
 
 ### M3 — Deterministic Dependency Graph
 
@@ -681,6 +711,7 @@ Goal: make the implementation independently verifiable by recruiters and intervi
 - [ ] Include the one-sentence problem statement and product demo.
 - [ ] Document architecture, data flow, graph model, and analysis tradeoffs.
 - [ ] Document local setup, test, evaluation, and deployment procedures.
+- [ ] Document the replacement hosting architecture and the completed Sites migration.
 - [ ] Include screenshots or a short demo recording.
 - [ ] Publish measured evaluation and latency results.
 - [ ] Document security choices and known limitations.
@@ -906,6 +937,8 @@ Package 2 is complete when a recruiter can be shown a real repository change mov
 
 ### Package 3 — External documentation connection
 
+Hosting gate: provider-neutral Package 3 contracts and local tests may begin before H1 completes, but do not register production Confluence callbacks or publish the connection flow until the replacement domain and secret store are ready.
+
 - [ ] Replace Connect GitHub/Add repository with an Add source provider dialog.
 - [ ] Offer GitHub repository and Confluence documentation as the two clear, actionable choices.
 - [ ] Add the minimal Where are your docs? onboarding step.
@@ -931,6 +964,7 @@ Package 3 is complete when users can connect external documentation without lear
 | Demo repository | Create a small public fixture repository with intentionally linked code, docs, OpenAPI, and tests | M2 | Proposed |
 | GitHub App ownership | Create under the account or organization that will host the public project | M2 | Proposed |
 | Durable job runner | Use the simplest durable queue/worker supported by the deployment environment; do not rely on request lifetime for beta | M4 | Proposed |
+| Replacement deployment stack | Choose hosting, SQL persistence, authentication, jobs, secrets, and observability together; do not migrate only the frontend | H1, before production Confluence OAuth | Open |
 | Confluence site and space | Use one read-only demo space containing intentionally linked product documentation | M6 | Proposed |
 | Semantic model and budget | Choose after deterministic evaluation baseline exists | M7 | Deferred |
 | Recruiter access | Public app with a safe demo mode, or private app with a frictionless review path | M10 | Deferred |
@@ -951,6 +985,7 @@ Add entries when a default above changes.
 | 2026-08-15 | Make Confluence a core MVP capability | External documentation is central to the product promise | Onboarding stays progressive; GitHub docs are automatic and Confluence is offered as the external source |
 | 2026-08-16 | Make source setup order-independent and deduplicated | Users may naturally start from code or documentation, and retries must not create parallel tracking groups | Provider sources use canonical identities; repository-documentation pairs are unique and duplicate attempts reveal the existing group |
 | 2026-08-16 | Use one Add source provider chooser | Users think in sources, not provider-specific setup buttons | The page-level action is provider-neutral; contextual repository/documentation actions reuse the same chooser with a preselected source type |
+| 2026-08-16 | Move the final deployment away from OpenAI Sites | The project should have an independently controlled, reproducible production environment | Sites remains temporary until a replacement stack passes callbacks, persistence, auth, jobs, and end-to-end smoke tests |
 
 ---
 
@@ -971,4 +1006,5 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 ### 2026-08-16
 
 - Recorded Package 3 UX requirements for a single Add source provider chooser, repository-centered documentation grouping, persistent Add documentation and Connect repository actions, documentation-first setup, canonical duplicate detection, idempotent pair creation, and an Already tracked response that links to the existing group.
+- Decided to migrate the final deployment away from OpenAI Sites. Added a guarded migration plan covering runtime portability, auth, D1/data strategy, secrets, durable jobs, provider callback cutover, staging verification, rollback, and eventual Sites retirement.
 - Live completion is waiting on the one-time GitHub App credentials and a small real demonstration repository.
