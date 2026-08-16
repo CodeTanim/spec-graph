@@ -4,6 +4,10 @@ import type {
   ChangeListResponse,
   ConnectGitHubSourceInput,
   ConnectGitHubSourceResponse,
+  ConnectConfluenceSourceInput,
+  ConnectConfluenceSourceResponse,
+  ConfluenceConnectionSessionResponse,
+  ConfluenceStatusResponse,
   FindingAction,
   GitHubConnectionSessionResponse,
   GitHubStatusResponse,
@@ -27,6 +31,9 @@ export type SpecGraphApi = {
   loadGitHubStatus(): Promise<GitHubStatusResponse>;
   loadGitHubConnectionSession(state: string): Promise<GitHubConnectionSessionResponse>;
   connectGitHubSource(input: ConnectGitHubSourceInput): Promise<ConnectGitHubSourceResponse>;
+  loadConfluenceStatus(): Promise<ConfluenceStatusResponse>;
+  loadConfluenceConnectionSession(state: string): Promise<ConfluenceConnectionSessionResponse>;
+  connectConfluenceSource(input: ConnectConfluenceSourceInput): Promise<ConnectConfluenceSourceResponse>;
   syncSource(id: string): Promise<SyncSourceResponse>;
   removeSource(id: string): Promise<RemoveSourceResponse>;
 };
@@ -93,6 +100,20 @@ export const httpSpecGraphApi: SpecGraphApi = {
   },
   connectGitHubSource(input) {
     return requestJson<ConnectGitHubSourceResponse>("/api/github/sources", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  loadConfluenceStatus() {
+    return requestJson<ConfluenceStatusResponse>("/api/confluence/status");
+  },
+  loadConfluenceConnectionSession(state) {
+    return requestJson<ConfluenceConnectionSessionResponse>(
+      `/api/confluence/spaces?session=${encodeURIComponent(state)}`,
+    );
+  },
+  connectConfluenceSource(input) {
+    return requestJson<ConnectConfluenceSourceResponse>("/api/confluence/sources", {
       method: "POST",
       body: JSON.stringify(input),
     });

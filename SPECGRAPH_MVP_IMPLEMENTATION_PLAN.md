@@ -396,7 +396,7 @@ Initial ranking inputs:
 | M3 — Deterministic graph | Not started | M2 | Supported artifacts have queryable typed relationships |
 | M4 — Manual end-to-end analysis | Not started | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
 | M5 — Automatic GitHub feed | Not started | M4 | Pushes and pull requests trigger the same pipeline |
-| M6 — Confluence documentation connection | Not started | M4, H1 | External documentation participates in the same product flow on the replacement domain |
+| M6 — Confluence documentation connection | In progress (local contracts complete; production gated) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
 | M7 — Semantic ranking and evidence | Not started | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
 | M8 — Review lifecycle and resilience | Not started | M5, M7 | Actions persist; failures retry safely |
 | M9 — Evaluation and production hardening | Not started | M8 | Quality, security, and reliability are measured |
@@ -576,34 +576,34 @@ Exit criteria:
 
 Goal: let users connect external documentation without making source setup feel technical or complex.
 
-- [ ] Replace the page-level Connect GitHub/Add repository action with one Add source action.
-- [ ] Open an accessible provider dialog containing GitHub repository and Confluence documentation choices.
-- [ ] Route GitHub selection into GitHub authorization and repository/branch selection.
+- [x] Replace the page-level Connect GitHub/Add repository action with one Add source action.
+- [x] Open an accessible provider dialog containing GitHub repository and Confluence documentation choices.
+- [x] Route GitHub selection into GitHub authorization and repository/branch selection.
 - [ ] Route Confluence selection into Confluence authorization and site/space/page selection.
 - [ ] Reuse the same provider dialog for Add documentation and Connect repository, pre-scoped to the relevant missing source type.
 - [ ] Add the onboarding question: Where are your docs?
 - [ ] Explain that documentation inside GitHub is already included.
 - [ ] Offer Connect Confluence and Not now as the only additional choices.
-- [ ] Show Add documentation within every connected repository row, including after onboarding has been skipped or completed.
-- [ ] Persist an explicit repository-to-documentation-source association; never infer the target repository from connection order.
-- [ ] Group attached Confluence site/space information beneath its repository instead of showing it as an unrelated top-level source.
-- [ ] Support documentation-first setup by showing an unattached Confluence source with a Connect repository action.
-- [ ] Canonicalize GitHub repository and Confluence site/space/page identities before writes.
-- [ ] Enforce uniqueness for provider sources and the `(workspace, repository source, documentation source)` association in D1.
+- [x] Show Add documentation within every connected repository row, including after onboarding has been skipped or completed.
+- [x] Persist an explicit repository-to-documentation-source association; never infer the target repository from connection order.
+- [x] Group attached Confluence site/space information beneath its repository instead of showing it as an unrelated top-level source.
+- [x] Support documentation-first setup by showing an unattached Confluence source with a Connect repository action.
+- [x] Canonicalize GitHub repository and Confluence site/space/page identities before writes.
+- [x] Enforce uniqueness for provider sources and the `(workspace, repository source, documentation source)` association in D1.
 - [ ] Make repeated connection callbacks and association requests idempotent under retries and concurrent submissions.
 - [ ] When the exact pair already exists, show Already tracked with the existing repository name and focus that source group.
-- [ ] Implement read-only Confluence authorization and state validation.
-- [ ] Let the user select one accessible site and space.
-- [ ] Persist Confluence source metadata without exposing credentials to the browser.
+- [x] Implement read-only Confluence authorization and state validation locally; activate production callbacks after H1.
+- [x] Let the user select one accessible site and space.
+- [x] Persist Confluence source metadata without exposing credentials to the browser.
 - [ ] Ingest page IDs, versions, titles, sections, links, and canonical URLs.
-- [ ] Normalize Confluence pages through the same artifact and graph-node contracts used for repository documentation.
+- [x] Normalize Confluence pages through the same artifact and graph-node contracts used for repository documentation.
 - [ ] Store durable external page snapshots when immutable provider retrieval is insufficient.
-- [ ] Create relationships between Confluence sections and GitHub code, tests, and OpenAPI nodes.
+- [x] Create deterministic relationships when Confluence pages reference exact paired-repository paths.
 - [ ] Receive or poll for incremental page changes and deduplicate them.
 - [ ] Send Confluence changes through the same run and finding pipeline.
-- [ ] Display GitHub and Confluence as simple connected sources with truthful health states.
-- [ ] Show a source choice in Analyze only when more than one connected source makes it necessary.
-- [ ] Add Confluence provider-contract, authorization, sync, and change-event tests.
+- [x] Display GitHub and Confluence as simple connected sources with truthful health states.
+- [x] Show a source choice in Analyze only when more than one connected source makes it necessary.
+- [x] Add Confluence authorization, sync, encrypted-token, association, and deduplication tests; change-event coverage remains pending.
 
 Exit criteria:
 
@@ -939,19 +939,21 @@ Package 2 is complete when a recruiter can be shown a real repository change mov
 
 Hosting gate: provider-neutral Package 3 contracts and local tests may begin before H1 completes, but do not register production Confluence callbacks or publish the connection flow until the replacement domain and secret store are ready.
 
-- [ ] Replace Connect GitHub/Add repository with an Add source provider dialog.
-- [ ] Offer GitHub repository and Confluence documentation as the two clear, actionable choices.
+- [x] Replace Connect GitHub/Add repository with an Add source provider dialog.
+- [x] Offer GitHub repository and Confluence documentation as the two clear, actionable choices.
 - [ ] Add the minimal Where are your docs? onboarding step.
-- [ ] Include GitHub-hosted documentation automatically.
-- [ ] Keep an Add documentation action available on every connected repository after initial setup.
-- [ ] Support the inverse flow: connect documentation first, then attach a repository.
-- [ ] Connect one Confluence site and space read-only.
-- [ ] Persist and display the explicit repository-to-Confluence association as a nested Sources hierarchy.
-- [ ] Detect canonical source and pair duplicates and return the existing group with an Already tracked message.
-- [ ] Ingest pages and page versions through the shared artifact contract.
-- [ ] Create cross-source relationships and source links.
+- [x] Include GitHub-hosted documentation automatically.
+- [x] Keep an Add documentation action available on every connected repository after initial setup.
+- [x] Support the inverse flow: connect documentation first, then attach a repository.
+- [x] Implement one-site/one-space read-only Confluence connection locally; production activation awaits H1.
+- [x] Persist and display the explicit repository-to-Confluence association as a nested Sources hierarchy.
+- [x] Detect canonical source and pair duplicates and return the existing group with an Already tracked message.
+- [x] Ingest pages and page versions through the shared artifact contract.
+- [x] Create deterministic cross-source relationships and source links for exact path references.
 - [ ] Prove one code-to-Confluence and one Confluence-to-code finding.
-- [ ] Test both connection orders, repeated callbacks, repeated pair creation, and concurrent duplicate submissions.
+- [ ] Finish repeated-callback, both-order, and concurrent source-write coverage; repeated pair creation and source resync are covered.
+
+Current Package 3 handoff: the provider-neutral schema, encrypted Confluence OAuth/token lifecycle, source chooser, nested grouping, documentation-first route, initial page sync, and canonical pair deduplication are implemented and validated locally. Production callback registration and a live Confluence smoke test remain blocked on H1. Automatic Confluence change events and bidirectional findings remain subsequent analysis-pipeline work.
 
 Package 3 is complete when users can connect external documentation without learning a second analysis workflow and both sources produce findings in the same feed.
 

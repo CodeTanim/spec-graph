@@ -10,6 +10,8 @@ import { getSource } from "../server/specgraph-repository";
 import { getGitHubConnectionSession, consumeGitHubConnectionSession } from "./connection";
 import type { GitHubSourceProvider } from "../providers/source-provider";
 import { syncGitHubSource } from "./ingestion";
+import { associateSources } from "../providers/source-associations";
+import { rebuildCrossSourceRelationships } from "../providers/cross-source-relationships";
 
 export async function connectGitHubSource(
   workspaceId: string,
@@ -39,6 +41,16 @@ export async function connectGitHubSource(
 
   await client.branchRevision(candidate.installationId, candidate.fullName, branch);
   const now = new Date().toISOString();
+  const [existingSource] = await db
+    .select()
+    .from(sources)
+    .where(and(
+      eq(sources.workspaceId, workspaceId),
+      eq(sources.provider, "github"),
+      eq(sources.externalId, candidate.id),
+    ))
+    .limit(1);
+  const alreadyTracked = Boolean(existingSource);
   await db
     .insert(githubInstallations)
     .values({
@@ -87,6 +99,7 @@ export async function connectGitHubSource(
       externalId: candidate.id,
       name: candidate.fullName,
       detail: branch,
+      canonicalUrl: `https://github.com/${candidate.fullName}`,
       defaultBranch: branch,
       status: "syncing",
       createdAt: now,
@@ -98,6 +111,7 @@ export async function connectGitHubSource(
         githubInstallationId: installation.id,
         name: candidate.fullName,
         detail: branch,
+        canonicalUrl: `https://github.com/${candidate.fullName}`,
         defaultBranch: branch,
         status: "syncing",
         lastError: null,
@@ -119,6 +133,18 @@ export async function connectGitHubSource(
     throw new ApiError(500, "SOURCE_SETUP_FAILED", "The repository could not be saved.");
   }
   await consumeGitHubConnectionSession(session.id, db);
+  let associationAlreadyTracked = false;
+  const documentationSourceId = input.documentationSourceId || session.documentationSourceId;
+  if (documentationSourceId) {
+    associationAlreadyTracked = (
+      await associateSources(workspaceId, source.id, documentationSourceId, db)
+    ).alreadyTracked;
+  }
   await syncGitHubSource(workspaceId, source.id, client, db);
-  return { source: await getSource(workspaceId, source.id, db) };
+  await rebuildCrossSourceRelationships(workspaceId, source.id, db);
+  return {
+    source: await getSource(workspaceId, source.id, db),
+    alreadyTracked,
+    associationAlreadyTracked,
+  };
 }

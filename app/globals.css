@@ -339,6 +339,19 @@ button:disabled {
   grid-template-columns: 34px minmax(0, 1fr) auto;
 }
 
+.source-group + .source-group {
+  border-top: 1px solid var(--line);
+}
+
+.source-group .source-row:last-child {
+  border-bottom: 0;
+}
+
+.documentation-row {
+  margin-left: 34px;
+  padding-left: 18px;
+}
+
 .simple-row:last-child,
 .source-row:last-child {
   border-bottom: 0;
@@ -429,6 +442,17 @@ button:disabled {
 
 .source-remove:hover {
   color: var(--ink);
+}
+
+.source-inline-action {
+  width: max-content;
+  border: 0;
+  border-bottom: 1px solid var(--ink);
+  background: transparent;
+  padding: 2px 0;
+  color: var(--ink);
+  font-size: 10px;
+  text-decoration: none;
 }
 
 .github-setup {
@@ -757,6 +781,42 @@ button:disabled {
   justify-content: flex-end;
   gap: 22px;
   margin-top: 26px;
+}
+
+.source-provider-options {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--ink);
+}
+
+.provider-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 18px;
+  align-items: center;
+  min-height: 74px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.provider-option strong,
+.provider-option small {
+  grid-column: 1;
+}
+
+.provider-option > span {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.provider-option small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.provider-option.disabled {
+  color: var(--muted);
 }
 
 .toast {

@@ -7,11 +7,13 @@ import {
   type AffectedArtifact,
   type ChangeFilter,
   type ChangeItem,
+  type ConfluenceSpaceCandidate,
   type DashboardSnapshot,
   type FindingAction,
   type GitHubRepositoryCandidate,
   type RunItem,
   type SourceItem,
+  type SourceGroup,
 } from "../lib/contracts/specgraph";
 
 type View = "changes" | "runs" | "sources";
@@ -44,10 +46,6 @@ function providerLabel(source: SourceItem) {
   return source.provider === "github" ? "GitHub" : "Confluence";
 }
 
-function providerMonogram(source: SourceItem) {
-  return source.provider === "github" ? "GH" : "CF";
-}
-
 function repositoryName(source: SourceItem) {
   return source.name.split("/").filter(Boolean).at(-1) || source.name;
 }
@@ -58,6 +56,10 @@ function repositoryOwner(source: SourceItem) {
 
 function indexedFiles(count: number) {
   return `${count} indexed ${count === 1 ? "file" : "files"}`;
+}
+
+function indexedPages(count: number) {
+  return `${count} indexed ${count === 1 ? "page" : "pages"}`;
 }
 
 function sourceStatus(source: SourceItem) {
@@ -101,6 +103,7 @@ export function SpecGraphApp({
   const [changes, setChanges] = useState(initial.changes);
   const [runs, setRuns] = useState(initial.runs.items);
   const [sources, setSources] = useState(initial.sources.items);
+  const [sourceGroups, setSourceGroups] = useState<SourceGroup[]>(initial.sources.groups);
   const [loadingChanges, setLoadingChanges] = useState(!initialData);
   const [loadingRuns, setLoadingRuns] = useState(!initialData);
   const [loadingSources, setLoadingSources] = useState(!initialData);
@@ -112,12 +115,21 @@ export function SpecGraphApp({
   const [savingAction, setSavingAction] = useState(false);
   const [toast, setToast] = useState("");
   const [githubConfigured, setGitHubConfigured] = useState<boolean | null>(null);
+  const [confluenceConfigured, setConfluenceConfigured] = useState<boolean | null>(null);
   const [githubSessionState, setGitHubSessionState] = useState("");
   const [githubRepositories, setGitHubRepositories] = useState<
     GitHubRepositoryCandidate[]
   >([]);
   const [selectedRepositoryId, setSelectedRepositoryId] = useState("");
   const [githubBranch, setGitHubBranch] = useState("");
+  const [githubDocumentationSourceId, setGitHubDocumentationSourceId] = useState("");
+  const [confluenceSessionState, setConfluenceSessionState] = useState("");
+  const [confluenceSpaces, setConfluenceSpaces] = useState<ConfluenceSpaceCandidate[]>([]);
+  const [selectedConfluenceSpaceId, setSelectedConfluenceSpaceId] = useState("");
+  const [confluenceRepositorySourceId, setConfluenceRepositorySourceId] = useState("");
+  const [confluenceSetupLoading, setConfluenceSetupLoading] = useState(false);
+  const [addSourceOpen, setAddSourceOpen] = useState(false);
+  const [addSourceRepositoryId, setAddSourceRepositoryId] = useState("");
   const [githubSetupLoading, setGitHubSetupLoading] = useState(false);
   const [syncingSourceId, setSyncingSourceId] = useState("");
   const [sourcePendingRemoval, setSourcePendingRemoval] = useState<SourceItem | null>(null);
@@ -133,6 +145,7 @@ export function SpecGraphApp({
         setChanges(nextChanges);
         setRuns(nextRuns.items);
         setSources(nextSources.items);
+        setSourceGroups(nextSources.groups);
         setError("");
       })
       .catch((loadError: unknown) => {
@@ -158,22 +171,27 @@ export function SpecGraphApp({
   useEffect(() => {
     if (!loadOnMount) return;
     let cancelled = false;
-    void api
-      .loadGitHubStatus()
-      .then((result) => {
-        if (!cancelled) setGitHubConfigured(result.configured);
+    void Promise.all([api.loadGitHubStatus(), api.loadConfluenceStatus()])
+      .then(([github, confluence]) => {
+        if (cancelled) return;
+        setGitHubConfigured(github.configured);
+        setConfluenceConfigured(confluence.configured);
       })
       .catch(() => {
-        if (!cancelled) setGitHubConfigured(false);
+        if (cancelled) return;
+        setGitHubConfigured(false);
+        setConfluenceConfigured(false);
       });
 
     const parameters = new URLSearchParams(window.location.search);
     const githubError = parameters.get("github_error");
     const sessionState = parameters.get("github_session");
+    const confluenceError = parameters.get("confluence_error");
+    const confluenceSession = parameters.get("confluence_session");
     window.queueMicrotask(() => {
       if (cancelled) return;
-      if (githubError) {
-        setToast(githubError);
+      if (githubError || confluenceError) {
+        setToast(githubError || confluenceError || "A source could not be connected.");
         window.history.replaceState({}, "", window.location.pathname);
       } else if (sessionState) {
         setView("sources");
@@ -183,6 +201,7 @@ export function SpecGraphApp({
           .then((session) => {
             if (cancelled) return;
             setGitHubSessionState(sessionState);
+            setGitHubDocumentationSourceId(session.documentationSourceId || "");
             setGitHubRepositories(session.items);
             const first = session.items[0];
             setSelectedRepositoryId(first?.id || "");
@@ -198,6 +217,29 @@ export function SpecGraphApp({
           })
           .finally(() => {
             if (!cancelled) setGitHubSetupLoading(false);
+          });
+      } else if (confluenceSession) {
+        setView("sources");
+        setConfluenceSetupLoading(true);
+        void api
+          .loadConfluenceConnectionSession(confluenceSession)
+          .then((session) => {
+            if (cancelled) return;
+            setConfluenceSessionState(confluenceSession);
+            setConfluenceSpaces(session.items);
+            setSelectedConfluenceSpaceId(session.items[0]?.id || "");
+            setConfluenceRepositorySourceId(session.repositorySourceId || "");
+          })
+          .catch((sessionError: unknown) => {
+            if (cancelled) return;
+            setToast(
+              sessionError instanceof Error
+                ? sessionError.message
+                : "Confluence spaces could not be loaded.",
+            );
+          })
+          .finally(() => {
+            if (!cancelled) setConfluenceSetupLoading(false);
           });
       }
     });
@@ -219,6 +261,7 @@ export function SpecGraphApp({
       setSelectedChange(null);
       setSelectedArtifact(null);
       setShowEvidence(false);
+      setAddSourceOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -263,6 +306,12 @@ export function SpecGraphApp({
 
   async function refreshChanges() {
     setChanges(await api.loadChanges(filter));
+  }
+
+  async function refreshSources() {
+    const next = await api.loadSources();
+    setSources(next.items);
+    setSourceGroups(next.groups);
   }
 
   async function applyFindingAction(action: FindingAction) {
@@ -321,16 +370,18 @@ export function SpecGraphApp({
         sessionState: githubSessionState,
         repositoryId: selectedRepositoryId,
         branch: githubBranch.trim(),
+        documentationSourceId: githubDocumentationSourceId || undefined,
       });
-      setSources((current) => [
-        result.source,
-        ...current.filter((source) => source.id !== result.source.id),
-      ]);
+      await refreshSources();
       setGitHubSessionState("");
       setGitHubRepositories([]);
       window.history.replaceState({}, "", window.location.pathname);
       setToast(
-        `${result.source.name} connected · ${result.source.artifactCount} files indexed`,
+        result.associationAlreadyTracked
+          ? `That repository and documentation are already being tracked together`
+          : result.alreadyTracked
+            ? `${result.source.name} was already connected`
+            : `${result.source.name} connected · ${result.source.artifactCount} files indexed`,
       );
     } catch (connectionError) {
       setToast(
@@ -343,14 +394,44 @@ export function SpecGraphApp({
     }
   }
 
+  async function finishConfluenceConnection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!confluenceSessionState || !selectedConfluenceSpaceId) return;
+    setConfluenceSetupLoading(true);
+    try {
+      const result = await api.connectConfluenceSource({
+        sessionState: confluenceSessionState,
+        spaceId: selectedConfluenceSpaceId,
+        repositorySourceId: confluenceRepositorySourceId || undefined,
+      });
+      await refreshSources();
+      setConfluenceSessionState("");
+      setConfluenceSpaces([]);
+      window.history.replaceState({}, "", window.location.pathname);
+      setToast(
+        result.associationAlreadyTracked && result.repositoryName
+          ? `Already tracked with ${result.repositoryName.split("/").at(-1) || result.repositoryName}`
+          : result.alreadyTracked
+            ? `${result.source.name} was already connected`
+            : `${result.source.name} connected · ${result.source.artifactCount} pages indexed`,
+      );
+    } catch (connectionError) {
+      setToast(
+        connectionError instanceof Error
+          ? connectionError.message
+          : "The Confluence space could not be connected.",
+      );
+    } finally {
+      setConfluenceSetupLoading(false);
+    }
+  }
+
   async function syncSource(sourceId: string) {
     if (syncingSourceId) return;
     setSyncingSourceId(sourceId);
     try {
       const result = await api.syncSource(sourceId);
-      setSources((current) =>
-        current.map((source) => (source.id === result.source.id ? result.source : source)),
-      );
+      await refreshSources();
       setToast(`${result.source.name} is up to date`);
     } catch (syncError) {
       setToast(syncError instanceof Error ? syncError.message : "The source could not be synced.");
@@ -363,11 +444,9 @@ export function SpecGraphApp({
     if (!sourcePendingRemoval || removingSourceId) return;
     setRemovingSourceId(sourcePendingRemoval.id);
     try {
-      const result = await api.removeSource(sourcePendingRemoval.id);
+      await api.removeSource(sourcePendingRemoval.id);
       const removedName = sourcePendingRemoval.name;
-      setSources((current) =>
-        current.filter((source) => source.id !== result.removedSourceId),
-      );
+      await refreshSources();
       setSourcePendingRemoval(null);
       setToast(`${removedName} is no longer being watched`);
     } catch (removeError) {
@@ -379,6 +458,11 @@ export function SpecGraphApp({
     } finally {
       setRemovingSourceId("");
     }
+  }
+
+  function openAddSource(repositorySourceId = "") {
+    setAddSourceRepositoryId(repositorySourceId);
+    setAddSourceOpen(true);
   }
 
   function requestAnalysis() {
@@ -557,76 +641,66 @@ export function SpecGraphApp({
               aria-label="Connected sources"
               aria-busy={loadingSources}
             >
-              {sources.map((source) => (
-                <div className="source-row" key={source.id}>
-                  <span className="source-monogram" aria-hidden="true">
-                    {providerMonogram(source)}
-                  </span>
-                  <div className="source-copy">
-                    <div className="source-title">
-                      <strong>
-                        {source.provider === "github" ? repositoryName(source) : source.name}
-                      </strong>
-                      {source.detail && <span>{source.detail}</span>}
+              {sourceGroups.map((group, groupIndex) => (
+                <div className="source-group" key={group.repository?.id || group.documentation[0]?.id || groupIndex}>
+                  {group.repository && (
+                    <div className="source-row">
+                      <span className="source-monogram" aria-hidden="true">GH</span>
+                      <div className="source-copy">
+                        <div className="source-title">
+                          <strong>{repositoryName(group.repository)}</strong>
+                          {group.repository.detail && <span>{group.repository.detail}</span>}
+                        </div>
+                        <small>GitHub · {repositoryOwner(group.repository)}</small>
+                        <div className="source-contents" aria-label={`Indexed contents for ${repositoryName(group.repository)}`}>
+                          <span><span aria-hidden="true">├──</span> Source code — {indexedFiles(group.repository.codeArtifactCount)}</span>
+                          <span><span aria-hidden="true">└──</span> Repository documentation — {indexedFiles(group.repository.documentationArtifactCount)}</span>
+                        </div>
+                        <button type="button" className="source-inline-action" onClick={() => openAddSource(group.repository?.id)}>
+                          + Add documentation
+                        </button>
+                      </div>
+                      <span className="source-row-actions">
+                        <span className={group.repository.status === "error" ? "source-error" : "connected"}>{sourceStatus(group.repository)}</span>
+                        <button type="button" className="source-sync" disabled={Boolean(syncingSourceId)} onClick={() => void syncSource(group.repository!.id)}>
+                          {syncingSourceId === group.repository.id ? "Syncing…" : "Sync"}
+                        </button>
+                        <button type="button" className="source-remove" disabled={Boolean(syncingSourceId || removingSourceId)} aria-label={`Remove ${repositoryName(group.repository)}`} onClick={() => setSourcePendingRemoval(group.repository)}>
+                          Remove
+                        </button>
+                      </span>
                     </div>
-                    <small>
-                      {providerLabel(source)}
-                      {source.provider === "github" && repositoryOwner(source)
-                        ? ` · ${repositoryOwner(source)}`
-                        : ""}
-                    </small>
-                    {source.provider === "github" ? (
-                      <div
-                        className="source-contents"
-                        aria-label={`Indexed contents for ${repositoryName(source)}`}
-                      >
-                        <span>
-                          <span aria-hidden="true">├──</span> Source code —{" "}
-                          {indexedFiles(source.codeArtifactCount)}
-                        </span>
-                        <span>
-                          <span aria-hidden="true">└──</span> Repository documentation —{" "}
-                          {indexedFiles(source.documentationArtifactCount)}
-                        </span>
+                  )}
+                  {group.documentation.map((source) => (
+                    <div className={group.repository ? "source-row documentation-row" : "source-row"} key={source.id}>
+                      <span className="source-monogram" aria-hidden="true">CF</span>
+                      <div className="source-copy">
+                        <div className="source-title"><strong>Confluence — {source.name}</strong></div>
+                        <small>{source.detail}</small>
+                        <div className="source-contents"><span>{indexedPages(source.documentationArtifactCount)}</span></div>
+                        {!group.repository && (
+                          <a className="source-inline-action" href={`/api/github/connect?documentation_source_id=${encodeURIComponent(source.id)}`}>
+                            + Connect repository
+                          </a>
+                        )}
                       </div>
-                    ) : (
-                      <div className="source-contents">
-                        <span>{indexedFiles(source.documentationArtifactCount)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <span className="source-row-actions">
-                    <span className={source.status === "error" ? "source-error" : "connected"}>
-                      {sourceStatus(source)}
-                    </span>
-                    {source.provider === "github" && (
-                      <button
-                        type="button"
-                        className="source-sync"
-                        disabled={Boolean(syncingSourceId)}
-                        onClick={() => void syncSource(source.id)}
-                      >
-                        {syncingSourceId === source.id ? "Syncing…" : "Sync"}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="source-remove"
-                      disabled={Boolean(syncingSourceId || removingSourceId)}
-                      aria-label={`Remove ${
-                        source.provider === "github" ? repositoryName(source) : source.name
-                      }`}
-                      onClick={() => setSourcePendingRemoval(source)}
-                    >
-                      Remove
-                    </button>
-                  </span>
+                      <span className="source-row-actions">
+                        <span className={source.status === "error" ? "source-error" : "connected"}>{sourceStatus(source)}</span>
+                        <button type="button" className="source-sync" disabled={Boolean(syncingSourceId)} onClick={() => void syncSource(source.id)}>
+                          {syncingSourceId === source.id ? "Syncing…" : "Sync"}
+                        </button>
+                        <button type="button" className="source-remove" disabled={Boolean(syncingSourceId || removingSourceId)} aria-label={`Remove ${source.name}`} onClick={() => setSourcePendingRemoval(source)}>
+                          Remove
+                        </button>
+                      </span>
+                    </div>
+                  ))}
                 </div>
               ))}
               {!loadingSources && !sources.length && (
                 <div className="empty-message">
                   <strong>No sources connected.</strong>
-                  <span>Connect a GitHub repository; its documentation is included automatically.</span>
+                  <span>Add a repository or documentation source to start tracking them.</span>
                 </div>
               )}
             </section>
@@ -665,20 +739,77 @@ export function SpecGraphApp({
                   {githubSetupLoading ? "Preparing repository…" : "Connect repository"}
                 </button>
               </form>
-            ) : githubSetupLoading ? (
-              <p className="connection-note" role="status">Loading GitHub repositories…</p>
-            ) : githubConfigured === false ? (
-              <p className="connection-note">GitHub needs one-time app configuration before it can connect.</p>
+            ) : confluenceSpaces.length > 0 ? (
+              <form className="github-setup" onSubmit={(event) => void finishConfluenceConnection(event)}>
+                <div>
+                  <strong>Choose documentation</strong>
+                  <span>Select the Confluence space SpecGraph should watch.</span>
+                </div>
+                <label htmlFor="confluence-space">Space</label>
+                <select id="confluence-space" value={selectedConfluenceSpaceId} onChange={(event) => setSelectedConfluenceSpaceId(event.target.value)}>
+                  {confluenceSpaces.map((space) => <option key={`${space.cloudId}:${space.id}`} value={space.id}>{space.siteName} / {space.name}</option>)}
+                </select>
+                <button type="submit" className="primary-action wide" disabled={confluenceSetupLoading}>
+                  {confluenceSetupLoading ? "Preparing documentation…" : "Connect documentation"}
+                </button>
+              </form>
+            ) : githubSetupLoading || confluenceSetupLoading ? (
+              <p className="connection-note" role="status">
+                {confluenceSetupLoading ? "Loading Confluence spaces…" : "Loading GitHub repositories…"}
+              </p>
             ) : (
-              <a className="text-action" href="/api/github/connect">
-                {sources.some((source) => source.provider === "github")
-                  ? "+ Add repository"
-                  : "+ Connect GitHub"}
-              </a>
+              <button type="button" className="text-action" onClick={() => openAddSource()}>
+                + Add source
+              </button>
             )}
           </>
         )}
       </main>
+
+      {addSourceOpen && (
+        <div
+          className="scrim modal-scrim"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setAddSourceOpen(false);
+          }}
+        >
+          <section className="analyze-modal source-picker" role="dialog" aria-modal="true" aria-labelledby="add-source-title">
+            <header>
+              <h2 id="add-source-title">
+                {addSourceRepositoryId ? "Add documentation" : "Add source"}
+              </h2>
+              <button type="button" onClick={() => setAddSourceOpen(false)} aria-label="Close source chooser">×</button>
+            </header>
+            <p>
+              {addSourceRepositoryId
+                ? "Choose documentation to track with this repository."
+                : "Choose what SpecGraph should watch."}
+            </p>
+            <div className="source-provider-options">
+              {!addSourceRepositoryId && (
+                githubConfigured === false ? (
+                  <span className="provider-option disabled"><strong>GitHub repository</strong><small>Needs one-time configuration</small></span>
+                ) : (
+                  <a className="provider-option" href="/api/github/connect"><strong>GitHub repository</strong><small>Code and repository documentation</small><Arrow /></a>
+                )
+              )}
+              {confluenceConfigured === false ? (
+                <span className="provider-option disabled"><strong>Confluence documentation</strong><small>Available after hosting and OAuth setup</small></span>
+              ) : (
+                <a
+                  className="provider-option"
+                  href={addSourceRepositoryId
+                    ? `/api/confluence/connect?repository_source_id=${encodeURIComponent(addSourceRepositoryId)}`
+                    : "/api/confluence/connect"}
+                >
+                  <strong>Confluence documentation</strong><small>Site and space</small><Arrow />
+                </a>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
 
       {selectedChange && (
         <div
@@ -915,7 +1046,7 @@ export function SpecGraphApp({
                 disabled={Boolean(removingSourceId)}
                 onClick={() => void removeConnectedSource()}
               >
-                {removingSourceId ? "Removing…" : "Remove repository"}
+                {removingSourceId ? "Removing…" : "Remove source"}
               </button>
             </footer>
           </section>

@@ -26,6 +26,42 @@ function githubResponse(payload, status = 200) {
 
 async function fakeGitHub(request) {
   const url = new URL(request.url);
+  if (url.hostname === "auth.atlassian.com" && url.pathname === "/oauth/token") {
+    return githubResponse({
+      access_token: "atlassian-access-token",
+      refresh_token: "atlassian-refresh-token",
+      expires_in: 3600,
+      scope: "read:space:confluence read:page:confluence offline_access",
+    });
+  }
+  if (url.hostname === "api.atlassian.com" && url.pathname === "/oauth/token/accessible-resources") {
+    return githubResponse([{ id: "cloud-1", name: "Acme", url: "https://acme.atlassian.net", scopes: ["read:space:confluence", "read:page:confluence"] }]);
+  }
+  if (url.hostname === "api.atlassian.com" && url.pathname === "/ex/confluence/cloud-1/wiki/api/v2/spaces") {
+    return githubResponse({ results: [{ id: "space-1", key: "ENG", name: "Engineering" }] });
+  }
+  if (url.hostname === "api.atlassian.com" && url.pathname === "/ex/confluence/cloud-1/wiki/api/v2/spaces/space-1/pages") {
+    return githubResponse({
+      results: [
+        {
+          id: "page-1",
+          title: "Refund policy",
+          spaceId: "space-1",
+          body: { storage: { value: "<p>See docs/refunds.md for the 60 day window.</p>" } },
+          version: { number: 3 },
+          _links: { webui: "/wiki/spaces/ENG/pages/1/Refund+policy" },
+        },
+        {
+          id: "page-2",
+          title: "Release notes",
+          spaceId: "space-1",
+          body: { storage: { value: "<p>Current release notes.</p>" } },
+          version: { number: 2 },
+          _links: { webui: "/wiki/spaces/ENG/pages/2/Release+notes" },
+        },
+      ],
+    });
+  }
   if (url.hostname === "github.com" && url.pathname === "/login/oauth/access_token") {
     return githubResponse({ access_token: "ghu_test_user_token", token_type: "bearer" });
   }
@@ -125,13 +161,16 @@ before(async () => {
     modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],
     compatibilityDate: "2026-05-22",
     compatibilityFlags: ["nodejs_compat"],
-    d1Databases: { DB: "specgraph-api-test" },
+    d1Databases: { DB: "specgraph-api-test-package3" },
     bindings: {
       GITHUB_APP_SLUG: "specgraph-test",
       GITHUB_CLIENT_ID: "Iv1.test",
       GITHUB_CLIENT_SECRET: "test-client-secret",
       GITHUB_APP_ID: "12345",
       GITHUB_PRIVATE_KEY: privateKey,
+      CONFLUENCE_CLIENT_ID: "confluence-client-id",
+      CONFLUENCE_CLIENT_SECRET: "confluence-client-secret",
+      CONNECTOR_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
     },
     outboundService: fakeGitHub,
     serviceBindings: {
@@ -196,7 +235,7 @@ async function workspaceRecord() {
 test("authenticated API requests create one durable personal workspace", async () => {
   const first = await appFetch("/api/sources");
   assert.equal(first.status, 200);
-  assert.deepEqual(await json(first), { items: [] });
+  assert.deepEqual(await json(first), { items: [], groups: [] });
 
   const second = await appFetch("/api/sources");
   assert.equal(second.status, 200);
@@ -534,4 +573,95 @@ test("GitHub authorization, ingestion, graph construction, and PR analysis form 
     .first();
   assert.equal(preservedEvidence.artifactVersionId, null);
   assert.equal(preservedEvidence.sourceUrl.includes("/blob/base123/"), true);
+});
+
+async function authorizeConfluence(repositorySourceId) {
+  const connect = await appFetch(
+    `/api/confluence/connect?repository_source_id=${encodeURIComponent(repositorySourceId)}`,
+    { redirect: "manual" },
+  );
+  assert.equal(connect.status, 302);
+  const state = new URL(connect.headers.get("location")).searchParams.get("state");
+  assert.ok(state);
+  const callback = await appFetch(
+    `/api/confluence/callback?code=confluence-code&state=${encodeURIComponent(state)}`,
+    { redirect: "manual" },
+  );
+  assert.equal(callback.status, 302);
+  assert.equal(
+    new URL(callback.headers.get("location")).searchParams.get("confluence_session"),
+    state,
+  );
+  const replayedCallback = await appFetch(
+    `/api/confluence/callback?code=confluence-code&state=${encodeURIComponent(state)}`,
+    { redirect: "manual" },
+  );
+  assert.equal(replayedCallback.status, 302);
+  assert.equal(
+    new URL(replayedCallback.headers.get("location")).searchParams.get("confluence_session"),
+    state,
+  );
+  const spaces = await json(
+    await appFetch(`/api/confluence/spaces?session=${encodeURIComponent(state)}`),
+  );
+  assert.equal(spaces.items[0].name, "Engineering");
+  assert.equal(spaces.repositorySourceId, repositorySourceId);
+  return state;
+}
+
+test("Confluence pages pair with a repository and reconnect idempotently", async () => {
+  const repository = await database
+    .prepare("SELECT id FROM sources WHERE provider = 'github' ORDER BY created_at LIMIT 1")
+    .first();
+  assert.ok(repository);
+
+  const firstState = await authorizeConfluence(repository.id);
+  const firstResponse = await appFetch("/api/confluence/sources", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionState: firstState, spaceId: "space-1" }),
+  });
+  assert.equal(firstResponse.status, 201);
+  const first = await json(firstResponse);
+  assert.equal(first.source.provider, "confluence");
+  assert.equal(first.source.artifactCount, 2);
+  assert.equal(first.alreadyTracked, false);
+  assert.equal(first.associationAlreadyTracked, false);
+
+  const secondState = await authorizeConfluence(repository.id);
+  const secondResponse = await appFetch("/api/confluence/sources", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionState: secondState, spaceId: "space-1" }),
+  });
+  assert.equal(secondResponse.status, 201);
+  const second = await json(secondResponse);
+  assert.equal(second.source.id, first.source.id);
+  assert.equal(second.alreadyTracked, true);
+  assert.equal(second.associationAlreadyTracked, true);
+
+  const listed = await json(await appFetch("/api/sources"));
+  const group = listed.groups.find((item) => item.repository?.id === repository.id);
+  assert.ok(group);
+  assert.equal(group.documentation.length, 1);
+  assert.equal(group.documentation[0].name, "Engineering");
+
+  const artifacts = await database
+    .prepare("SELECT COUNT(*) AS count FROM artifacts WHERE source_id = ?")
+    .bind(first.source.id)
+    .first();
+  const associations = await database
+    .prepare("SELECT COUNT(*) AS count FROM source_associations WHERE repository_source_id = ? AND documentation_source_id = ?")
+    .bind(repository.id, first.source.id)
+    .first();
+  const token = await database
+    .prepare("SELECT encrypted_access_token AS encryptedAccessToken FROM confluence_connections LIMIT 1")
+    .first();
+  const crossSourceRelationships = await database
+    .prepare("SELECT COUNT(*) AS count FROM relationships WHERE type = 'documents'")
+    .first();
+  assert.equal(artifacts.count, 2);
+  assert.equal(associations.count, 1);
+  assert.equal(token.encryptedAccessToken.includes("atlassian-access-token"), false);
+  assert.equal(crossSourceRelationships.count >= 1, true);
 });

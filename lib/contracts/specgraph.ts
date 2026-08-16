@@ -77,10 +77,17 @@ export type SourceItem = {
   artifactCount: number;
   codeArtifactCount: number;
   documentationArtifactCount: number;
+  canonicalUrl: string | null;
+};
+
+export type SourceGroup = {
+  repository: SourceItem | null;
+  documentation: SourceItem[];
 };
 
 export type SourceListResponse = {
   items: SourceItem[];
+  groups: SourceGroup[];
 };
 
 export type StartRunInput = {
@@ -107,6 +114,7 @@ export type GitHubRepositoryCandidate = {
 export type GitHubConnectionSessionResponse = {
   items: GitHubRepositoryCandidate[];
   expiresAt: string;
+  documentationSourceId: string | null;
 };
 
 export type GitHubStatusResponse = {
@@ -117,10 +125,55 @@ export type ConnectGitHubSourceInput = {
   sessionState: string;
   repositoryId: string;
   branch: string;
+  documentationSourceId?: string;
 };
 
 export type ConnectGitHubSourceResponse = {
   source: SourceItem;
+  alreadyTracked: boolean;
+  associationAlreadyTracked: boolean;
+};
+
+export type ConfluenceStatusResponse = {
+  configured: boolean;
+};
+
+export type ConfluenceSpaceCandidate = {
+  id: string;
+  key: string;
+  name: string;
+  cloudId: string;
+  siteName: string;
+  siteUrl: string;
+};
+
+export type ConfluenceConnectionSessionResponse = {
+  items: ConfluenceSpaceCandidate[];
+  expiresAt: string;
+  repositorySourceId: string | null;
+};
+
+export type ConnectConfluenceSourceInput = {
+  sessionState: string;
+  spaceId: string;
+  repositorySourceId?: string;
+};
+
+export type ConnectConfluenceSourceResponse = {
+  source: SourceItem;
+  alreadyTracked: boolean;
+  associationAlreadyTracked: boolean;
+  repositoryName: string | null;
+};
+
+export type AssociateSourcesInput = {
+  repositorySourceId: string;
+  documentationSourceId: string;
+};
+
+export type AssociateSourcesResponse = {
+  alreadyTracked: boolean;
+  repositoryName: string;
 };
 
 export type SyncSourceResponse = {
@@ -155,5 +208,5 @@ export const emptyDashboardSnapshot: DashboardSnapshot = {
     lastCheckedAt: null,
   },
   runs: { items: [] },
-  sources: { items: [] },
+  sources: { items: [], groups: [] },
 };

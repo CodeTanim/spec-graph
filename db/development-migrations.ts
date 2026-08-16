@@ -1,11 +1,13 @@
 import initialMigration from "../drizzle/0000_good_sersi.sql?raw";
 import githubMigration from "../drizzle/0001_large_devos.sql?raw";
 import sourceRevisionMigration from "../drizzle/0002_glorious_red_ghost.sql?raw";
+import confluenceMigration from "../drizzle/0003_brief_ronan.sql?raw";
 
 const migrations = [
   { id: "0000_good_sersi", sql: initialMigration },
   { id: "0001_large_devos", sql: githubMigration },
   { id: "0002_glorious_red_ghost", sql: sourceRevisionMigration },
+  { id: "0003_brief_ronan", sql: confluenceMigration },
 ];
 
 let migrationPromise: Promise<void> | null = null;

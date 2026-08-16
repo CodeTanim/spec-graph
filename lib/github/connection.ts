@@ -10,6 +10,7 @@ const SESSION_MINUTES = 15;
 export async function createGitHubConnectionSession(
   workspaceId: string,
   userId: string,
+  documentationSourceId: string | null = null,
   db: SpecGraphDb = getDb(),
 ): Promise<{ state: string; expiresAt: string }> {
   const state = randomToken();
@@ -21,6 +22,7 @@ export async function createGitHubConnectionSession(
     userId,
     provider: "github",
     stateHash: await sha256Hex(state),
+    contextJson: JSON.stringify({ documentationSourceId }),
     status: "initiated",
     expiresAt,
     createdAt: now.toISOString(),
@@ -65,6 +67,12 @@ export async function authorizeGitHubConnectionSession(
   db: SpecGraphDb = getDb(),
 ): Promise<void> {
   const session = await sessionForState(state, workspaceId, userId, db);
+  if (
+    (session.status === "authorized" || session.status === "consumed") &&
+    session.candidatesJson
+  ) {
+    return;
+  }
   if (session.status !== "initiated") {
     throw new ApiError(409, "GITHUB_SESSION_USED", "That GitHub connection was already used.");
   }
@@ -87,9 +95,13 @@ export async function getGitHubConnectionSession(
   id: string;
   items: GitHubRepositoryCandidate[];
   expiresAt: string;
+  documentationSourceId: string | null;
 }> {
   const session = await sessionForState(state, workspaceId, userId, db);
-  if (session.status !== "authorized" || !session.candidatesJson) {
+  if (
+    (session.status !== "authorized" && session.status !== "consumed") ||
+    !session.candidatesJson
+  ) {
     throw new ApiError(409, "GITHUB_SESSION_NOT_READY", "GitHub authorization is incomplete.");
   }
   let items: GitHubRepositoryCandidate[];
@@ -98,7 +110,28 @@ export async function getGitHubConnectionSession(
   } catch {
     throw new ApiError(500, "GITHUB_SESSION_INVALID", "GitHub connection data is invalid.");
   }
-  return { id: session.id, items, expiresAt: session.expiresAt };
+  let documentationSourceId: string | null = null;
+  try {
+    documentationSourceId = session.contextJson
+      ? (JSON.parse(session.contextJson) as { documentationSourceId?: string }).documentationSourceId || null
+      : null;
+  } catch {
+    throw new ApiError(500, "GITHUB_SESSION_INVALID", "GitHub connection data is invalid.");
+  }
+  return { id: session.id, items, expiresAt: session.expiresAt, documentationSourceId };
+}
+
+export async function hasAuthorizedGitHubConnectionSession(
+  state: string,
+  workspaceId: string,
+  userId: string,
+  db: SpecGraphDb = getDb(),
+): Promise<boolean> {
+  const session = await sessionForState(state, workspaceId, userId, db);
+  return (
+    (session.status === "authorized" || session.status === "consumed") &&
+    Boolean(session.candidatesJson)
+  );
 }
 
 export async function consumeGitHubConnectionSession(

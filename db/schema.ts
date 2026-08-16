@@ -66,6 +66,7 @@ export const providerConnectionSessions = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     provider: text("provider", { enum: ["github", "confluence"] }).notNull(),
     stateHash: text("state_hash").notNull(),
+    contextJson: text("context_json"),
     candidatesJson: text("candidates_json"),
     status: text("status", {
       enum: ["initiated", "authorized", "consumed", "failed"],
@@ -83,6 +84,35 @@ export const providerConnectionSessions = sqliteTable(
     index("idx_provider_connection_sessions_workspace_status").on(
       table.workspaceId,
       table.status,
+    ),
+  ],
+);
+
+export const confluenceConnections = sqliteTable(
+  "confluence_connections",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    cloudId: text("cloud_id").notNull(),
+    siteName: text("site_name").notNull(),
+    siteUrl: text("site_url").notNull(),
+    encryptedAccessToken: text("encrypted_access_token").notNull(),
+    encryptedRefreshToken: text("encrypted_refresh_token"),
+    accessTokenExpiresAt: text("access_token_expires_at").notNull(),
+    scopes: text("scopes").notNull().default(""),
+    status: text("status", {
+      enum: ["active", "expired", "disconnected"],
+    })
+      .notNull()
+      .default("active"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("idx_confluence_connections_workspace_cloud").on(
+      table.workspaceId,
+      table.cloudId,
     ),
   ],
 );
@@ -123,10 +153,15 @@ export const sources = sqliteTable(
       () => githubInstallations.id,
       { onDelete: "set null" },
     ),
+    confluenceConnectionId: text("confluence_connection_id").references(
+      () => confluenceConnections.id,
+      { onDelete: "set null" },
+    ),
     provider: text("provider", { enum: ["github", "confluence"] }).notNull(),
     externalId: text("external_id").notNull(),
     name: text("name").notNull(),
     detail: text("detail").notNull().default(""),
+    canonicalUrl: text("canonical_url"),
     defaultBranch: text("default_branch"),
     currentRevision: text("current_revision"),
     status: text("status", {
@@ -145,6 +180,32 @@ export const sources = sqliteTable(
       table.externalId,
     ),
     index("idx_sources_workspace_status").on(table.workspaceId, table.status),
+  ],
+);
+
+export const sourceAssociations = sqliteTable(
+  "source_associations",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    repositorySourceId: text("repository_source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    documentationSourceId: text("documentation_source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("idx_source_associations_unique_pair").on(
+      table.workspaceId,
+      table.repositorySourceId,
+      table.documentationSourceId,
+    ),
+    index("idx_source_associations_repository").on(table.repositorySourceId),
+    index("idx_source_associations_documentation").on(table.documentationSourceId),
   ],
 );
 

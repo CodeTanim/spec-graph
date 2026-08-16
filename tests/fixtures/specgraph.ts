@@ -146,6 +146,32 @@ const runs: RunItem[] = changes.map((change) => ({
   errorMessage: null,
 }));
 
+const githubSource = {
+  id: "source-github",
+  provider: "github" as const,
+  name: "acme/platform-api",
+  detail: "main",
+  status: "connected" as const,
+  lastSyncedAt: "2026-08-15T14:12:00.000Z",
+  artifactCount: 24,
+  codeArtifactCount: 16,
+  documentationArtifactCount: 8,
+  canonicalUrl: "https://github.com/acme/platform-api",
+};
+
+const confluenceSource = {
+  id: "source-confluence",
+  provider: "confluence" as const,
+  name: "Engineering",
+  detail: "Acme / API",
+  status: "connected" as const,
+  lastSyncedAt: "2026-08-15T14:00:00.000Z",
+  artifactCount: 12,
+  codeArtifactCount: 0,
+  documentationArtifactCount: 12,
+  canonicalUrl: "https://acme.atlassian.net/wiki/spaces/API",
+};
+
 export const dashboardFixture: DashboardSnapshot = {
   changes: {
     items: changes.filter((change) => change.status === "open"),
@@ -154,30 +180,8 @@ export const dashboardFixture: DashboardSnapshot = {
   },
   runs: { items: runs },
   sources: {
-    items: [
-      {
-        id: "source-github",
-        provider: "github",
-        name: "acme/platform-api",
-        detail: "main",
-        status: "connected",
-        lastSyncedAt: "2026-08-15T14:12:00.000Z",
-        artifactCount: 24,
-        codeArtifactCount: 16,
-        documentationArtifactCount: 8,
-      },
-      {
-        id: "source-confluence",
-        provider: "confluence",
-        name: "Engineering",
-        detail: "API Platform",
-        status: "connected",
-        lastSyncedAt: "2026-08-15T14:00:00.000Z",
-        artifactCount: 12,
-        codeArtifactCount: 0,
-        documentationArtifactCount: 12,
-      },
-    ],
+    items: [githubSource, confluenceSource],
+    groups: [{ repository: githubSource, documentation: [confluenceSource] }],
   },
 };
 
@@ -244,16 +248,33 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
       return { run };
     },
     async loadSources() {
-      return { items: [...currentSources] };
+      return {
+        items: [...currentSources],
+        groups: currentSources.some((source) => source.id === githubSource.id)
+          ? [{
+              repository: currentSources.find((source) => source.id === githubSource.id) || null,
+              documentation: currentSources.filter((source) => source.provider === "confluence"),
+            }]
+          : currentSources.filter((source) => source.provider === "confluence").map((source) => ({ repository: null, documentation: [source] })),
+      };
     },
     async loadGitHubStatus() {
       return { configured: true };
     },
     async loadGitHubConnectionSession() {
-      return { items: [], expiresAt: "2026-08-15T16:00:00.000Z" };
+      return { items: [], expiresAt: "2026-08-15T16:00:00.000Z", documentationSourceId: null };
     },
     async connectGitHubSource() {
       throw new Error("No GitHub connection session in this fixture.");
+    },
+    async loadConfluenceStatus() {
+      return { configured: true };
+    },
+    async loadConfluenceConnectionSession() {
+      return { items: [], expiresAt: "2026-08-15T16:00:00.000Z", repositorySourceId: null };
+    },
+    async connectConfluenceSource() {
+      throw new Error("No Confluence connection session in this fixture.");
     },
     async syncSource(id) {
       const source = currentSources.find((item) => item.id === id);

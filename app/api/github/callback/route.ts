@@ -1,4 +1,7 @@
-import { authorizeGitHubConnectionSession } from "../../../../lib/github/connection";
+import {
+  authorizeGitHubConnectionSession,
+  hasAuthorizedGitHubConnectionSession,
+} from "../../../../lib/github/connection";
 import { GitHubClient } from "../../../../lib/github/client";
 import { getGitHubOAuthConfig } from "../../../../lib/github/config";
 import { getRequestWorkspace } from "../../../../lib/server/current-workspace";
@@ -27,6 +30,15 @@ export async function GET(request: Request) {
       );
     }
     const { workspace, user } = await getRequestWorkspace(request);
+    if (await hasAuthorizedGitHubConnectionSession(
+      state,
+      workspace.id,
+      user.databaseId,
+    )) {
+      const destination = new URL("/", request.url);
+      destination.searchParams.set("github_session", state);
+      return Response.redirect(destination, 302);
+    }
     const config = getGitHubOAuthConfig();
     const client = new GitHubClient(config);
     const token = await client.exchangeOAuthCode(

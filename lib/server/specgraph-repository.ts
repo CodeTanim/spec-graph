@@ -8,6 +8,7 @@ import {
   findingEvidence,
   findings,
   graphNodes,
+  sourceAssociations,
   sources,
 } from "../../db/schema";
 import type {
@@ -20,6 +21,7 @@ import type {
   RunItem,
   RunListResponse,
   SourceItem,
+  SourceGroup,
   SourceListResponse,
   StartRunInput,
   StartRunResponse,
@@ -363,8 +365,7 @@ export async function listSources(
     .where(eq(sources.workspaceId, workspaceId))
     .orderBy(desc(sources.createdAt));
 
-  return {
-    items: await Promise.all(
+  const items = await Promise.all(
       rows.map(async (row): Promise<SourceItem> => {
         const [allArtifacts, codeArtifacts, documentationArtifacts] = await Promise.all([
           db
@@ -401,10 +402,33 @@ export async function listSources(
           artifactCount: allArtifacts[0]?.value ?? 0,
           codeArtifactCount: codeArtifacts[0]?.value ?? 0,
           documentationArtifactCount: documentationArtifacts[0]?.value ?? 0,
+          canonicalUrl: row.canonicalUrl,
         };
       }),
-    ),
-  };
+    );
+  const associations = await db
+    .select()
+    .from(sourceAssociations)
+    .where(eq(sourceAssociations.workspaceId, workspaceId));
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const attachedDocumentation = new Set(associations.map((item) => item.documentationSourceId));
+  const groups: SourceGroup[] = items
+    .filter((item) => item.provider === "github")
+    .map((repository) => ({
+      repository,
+      documentation: associations
+        .filter((item) => item.repositorySourceId === repository.id)
+        .flatMap((item) => {
+          const documentation = byId.get(item.documentationSourceId);
+          return documentation ? [documentation] : [];
+        }),
+    }));
+  groups.push(
+    ...items
+      .filter((item) => item.provider === "confluence" && !attachedDocumentation.has(item.id))
+      .map((documentation) => ({ repository: null, documentation: [documentation] })),
+  );
+  return { items, groups };
 }
 
 export async function getSource(

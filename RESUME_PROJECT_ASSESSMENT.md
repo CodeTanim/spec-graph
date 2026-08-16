@@ -41,7 +41,7 @@ What currently exists:
 - Server-rendered HTML tests
 - Cloudflare/vinext build and deployment scaffolding
 - Stable authenticated-user identity and idempotent personal workspace creation
-- A 15-table Drizzle/D1 product schema with an inspected initial migration
+- A provider-neutral Drizzle/D1 product schema with GitHub, encrypted Confluence connections, canonical source identities, and explicit repository-document associations
 - Workspace-scoped repositories and APIs for changes, runs, sources, and finding actions
 - A production UI that reads server data, persists review actions, and contains no demo records
 - Built-worker integration tests covering persistence, immutable evidence links, and tenant isolation
@@ -49,14 +49,14 @@ What currently exists:
 Current limitations:
 
 - The current OpenAI Sites deployment is temporary; the final hosting, persistence, authentication, and background-job stack must be selected and migrated as one system.
-- No GitHub or Confluence source can be connected yet.
+- GitHub repository authorization and ingestion work end to end. The Confluence OAuth, site/space selection, encrypted-token storage, page indexing, grouping, and deduplication flow is implemented and fixture-tested locally; production activation waits for the replacement domain and secret store.
 - Manual Analyze creates a durable queued run, but no background worker processes it yet.
-- There is no repository ingestion or parsing pipeline.
-- There is no dependency graph, impact-analysis engine, semantic retrieval, or LLM analysis.
+- GitHub files and Confluence pages are ingested into the shared artifact/node model, with deterministic edges for explicit repository and cross-source path references.
+- The graph is still intentionally shallow; symbol parsing, change-driven bidirectional impact analysis, semantic retrieval, and LLM ranking remain incomplete.
 - Findings and evidence can be persisted and served, but no real analyzer produces them yet.
-- Tests validate the persistence and API foundation, but not analysis correctness.
-- The README still describes the generic vinext starter.
-- No Git remote or public repository link is currently configured.
+- Tests validate persistence, GitHub and Confluence connector boundaries, encrypted token storage, pairing/deduplication, and basic deterministic graph construction, but not cross-source analysis quality.
+- The README still needs a product-focused rewrite before release.
+- The project is pushed to `https://github.com/CodeTanim/spec-graph`.
 
 The strongest accurate description of the current state would be:
 
