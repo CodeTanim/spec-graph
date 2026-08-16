@@ -2,12 +2,17 @@ import type {
   ChangeFilter,
   ChangeItem,
   ChangeListResponse,
+  ConnectGitHubSourceInput,
+  ConnectGitHubSourceResponse,
   FindingAction,
+  GitHubConnectionSessionResponse,
+  GitHubStatusResponse,
   RunItem,
   RunListResponse,
   SourceListResponse,
   StartRunInput,
   StartRunResponse,
+  SyncSourceResponse,
 } from "./contracts/specgraph";
 
 export type SpecGraphApi = {
@@ -18,6 +23,10 @@ export type SpecGraphApi = {
   loadRun(id: string): Promise<RunItem>;
   startRun(input: StartRunInput): Promise<StartRunResponse>;
   loadSources(): Promise<SourceListResponse>;
+  loadGitHubStatus(): Promise<GitHubStatusResponse>;
+  loadGitHubConnectionSession(state: string): Promise<GitHubConnectionSessionResponse>;
+  connectGitHubSource(input: ConnectGitHubSourceInput): Promise<ConnectGitHubSourceResponse>;
+  syncSource(id: string): Promise<SyncSourceResponse>;
 };
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -71,5 +80,24 @@ export const httpSpecGraphApi: SpecGraphApi = {
   },
   loadSources() {
     return requestJson<SourceListResponse>("/api/sources");
+  },
+  loadGitHubStatus() {
+    return requestJson<GitHubStatusResponse>("/api/github/status");
+  },
+  loadGitHubConnectionSession(state) {
+    return requestJson<GitHubConnectionSessionResponse>(
+      `/api/github/repositories?session=${encodeURIComponent(state)}`,
+    );
+  },
+  connectGitHubSource(input) {
+    return requestJson<ConnectGitHubSourceResponse>("/api/github/sources", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  syncSource(id) {
+    return requestJson<SyncSourceResponse>(`/api/sources/${id}/sync`, {
+      method: "POST",
+    });
   },
 };

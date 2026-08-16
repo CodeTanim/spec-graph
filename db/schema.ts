@@ -54,6 +54,64 @@ export const workspaceMembers = sqliteTable(
   ],
 );
 
+export const providerConnectionSessions = sqliteTable(
+  "provider_connection_sessions",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: ["github", "confluence"] }).notNull(),
+    stateHash: text("state_hash").notNull(),
+    candidatesJson: text("candidates_json"),
+    status: text("status", {
+      enum: ["initiated", "authorized", "consumed", "failed"],
+    })
+      .notNull()
+      .default("initiated"),
+    expiresAt: text("expires_at").notNull(),
+    consumedAt: text("consumed_at"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("idx_provider_connection_sessions_state_hash").on(
+      table.stateHash,
+    ),
+    index("idx_provider_connection_sessions_workspace_status").on(
+      table.workspaceId,
+      table.status,
+    ),
+  ],
+);
+
+export const githubInstallations = sqliteTable(
+  "github_installations",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    externalInstallationId: text("external_installation_id").notNull(),
+    accountLogin: text("account_login").notNull(),
+    accountType: text("account_type").notNull(),
+    status: text("status", {
+      enum: ["active", "suspended", "disconnected"],
+    })
+      .notNull()
+      .default("active"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("idx_github_installations_workspace_external").on(
+      table.workspaceId,
+      table.externalInstallationId,
+    ),
+  ],
+);
+
 export const sources = sqliteTable(
   "sources",
   {
@@ -61,16 +119,22 @@ export const sources = sqliteTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
+    githubInstallationId: text("github_installation_id").references(
+      () => githubInstallations.id,
+      { onDelete: "set null" },
+    ),
     provider: text("provider", { enum: ["github", "confluence"] }).notNull(),
     externalId: text("external_id").notNull(),
     name: text("name").notNull(),
     detail: text("detail").notNull().default(""),
     defaultBranch: text("default_branch"),
+    currentRevision: text("current_revision"),
     status: text("status", {
       enum: ["pending", "syncing", "connected", "error", "disconnected"],
     })
       .notNull()
       .default("pending"),
+    lastError: text("last_error"),
     lastSyncedAt: text("last_synced_at"),
     ...timestamps,
   },

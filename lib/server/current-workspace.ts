@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { readChatGPTUser, type ChatGPTUser } from "../../app/chatgpt-auth";
-import { getDb, type SpecGraphDb } from "../../db";
+import { getDb, prepareDevelopmentDb, type SpecGraphDb } from "../../db";
 import { users, workspaceMembers, workspaces } from "../../db/schema";
 import { ApiError } from "./http";
 
@@ -87,6 +87,7 @@ export async function getRequestWorkspace(
   request: Request,
   db: SpecGraphDb = getDb(),
 ): Promise<WorkspaceContext> {
+  await prepareDevelopmentDb();
   const allowDevelopmentFallback = process.env.NODE_ENV !== "production";
   const identity = readChatGPTUser(request.headers, allowDevelopmentFallback);
 

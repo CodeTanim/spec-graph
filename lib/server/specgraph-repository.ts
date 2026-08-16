@@ -308,7 +308,11 @@ export async function createManualRun(
     .from(sources)
     .where(
       input.sourceId
-        ? and(eq(sources.workspaceId, workspaceId), eq(sources.id, input.sourceId))
+        ? and(
+            eq(sources.workspaceId, workspaceId),
+            eq(sources.id, input.sourceId),
+            eq(sources.status, "connected"),
+          )
         : and(eq(sources.workspaceId, workspaceId), eq(sources.status, "connected")),
     )
     .orderBy(desc(sources.lastSyncedAt), desc(sources.createdAt))
@@ -360,15 +364,32 @@ export async function listSources(
     .orderBy(desc(sources.createdAt));
 
   return {
-    items: rows.map(
-      (row): SourceItem => ({
+    items: await Promise.all(
+      rows.map(async (row): Promise<SourceItem> => ({
         id: row.id,
         provider: row.provider,
         name: row.name,
         detail: row.detail,
         status: row.status,
         lastSyncedAt: normalizeTimestamp(row.lastSyncedAt),
-      }),
+        artifactCount: (
+          await db
+            .select({ value: count() })
+            .from(artifacts)
+            .where(eq(artifacts.sourceId, row.id))
+        )[0]?.value ?? 0,
+      })),
     ),
   };
+}
+
+export async function getSource(
+  workspaceId: string,
+  sourceId: string,
+  db: SpecGraphDb = getDb(),
+): Promise<SourceItem> {
+  const result = await listSources(workspaceId, db);
+  const source = result.items.find((item) => item.id === sourceId);
+  if (!source) throw new ApiError(404, "SOURCE_NOT_FOUND", "That source was not found.");
+  return source;
 }

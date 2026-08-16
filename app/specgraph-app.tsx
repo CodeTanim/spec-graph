@@ -9,6 +9,7 @@ import {
   type ChangeItem,
   type DashboardSnapshot,
   type FindingAction,
+  type GitHubRepositoryCandidate,
   type RunItem,
   type SourceItem,
 } from "../lib/contracts/specgraph";
@@ -98,6 +99,15 @@ export function SpecGraphApp({
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [savingAction, setSavingAction] = useState(false);
   const [toast, setToast] = useState("");
+  const [githubConfigured, setGitHubConfigured] = useState<boolean | null>(null);
+  const [githubSessionState, setGitHubSessionState] = useState("");
+  const [githubRepositories, setGitHubRepositories] = useState<
+    GitHubRepositoryCandidate[]
+  >([]);
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState("");
+  const [githubBranch, setGitHubBranch] = useState("");
+  const [githubSetupLoading, setGitHubSetupLoading] = useState(false);
+  const [syncingSourceId, setSyncingSourceId] = useState("");
 
   useEffect(() => {
     if (!loadOnMount) return;
@@ -126,6 +136,57 @@ export function SpecGraphApp({
         setLoadingSources(false);
       });
 
+    return () => {
+      cancelled = true;
+    };
+  }, [api, loadOnMount]);
+
+  useEffect(() => {
+    if (!loadOnMount) return;
+    let cancelled = false;
+    void api
+      .loadGitHubStatus()
+      .then((result) => {
+        if (!cancelled) setGitHubConfigured(result.configured);
+      })
+      .catch(() => {
+        if (!cancelled) setGitHubConfigured(false);
+      });
+
+    const parameters = new URLSearchParams(window.location.search);
+    const githubError = parameters.get("github_error");
+    const sessionState = parameters.get("github_session");
+    window.queueMicrotask(() => {
+      if (cancelled) return;
+      if (githubError) {
+        setToast(githubError);
+        window.history.replaceState({}, "", window.location.pathname);
+      } else if (sessionState) {
+        setView("sources");
+        setGitHubSetupLoading(true);
+        void api
+          .loadGitHubConnectionSession(sessionState)
+          .then((session) => {
+            if (cancelled) return;
+            setGitHubSessionState(sessionState);
+            setGitHubRepositories(session.items);
+            const first = session.items[0];
+            setSelectedRepositoryId(first?.id || "");
+            setGitHubBranch(first?.defaultBranch || "main");
+          })
+          .catch((sessionError: unknown) => {
+            if (cancelled) return;
+            setToast(
+              sessionError instanceof Error
+                ? sessionError.message
+                : "GitHub repositories could not be loaded.",
+            );
+          })
+          .finally(() => {
+            if (!cancelled) setGitHubSetupLoading(false);
+          });
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -223,11 +284,64 @@ export function SpecGraphApp({
       setRuns((current) => [result.run, ...current]);
       setAnalyzeOpen(false);
       setView("runs");
-      setToast(`Analysis queued for ${target}`);
+      setToast(
+        result.run.status === "failed"
+          ? result.run.errorMessage || "Analysis failed."
+          : result.run.status === "queued" || result.run.status === "running"
+            ? `Analysis queued for ${target}`
+            : `Analysis complete for ${target}`,
+      );
     } catch (runError) {
       setToast(
         runError instanceof Error ? runError.message : "The analysis could not be started.",
       );
+    }
+  }
+
+  async function finishGitHubConnection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!githubSessionState || !selectedRepositoryId || !githubBranch.trim()) return;
+    setGitHubSetupLoading(true);
+    try {
+      const result = await api.connectGitHubSource({
+        sessionState: githubSessionState,
+        repositoryId: selectedRepositoryId,
+        branch: githubBranch.trim(),
+      });
+      setSources((current) => [
+        result.source,
+        ...current.filter((source) => source.id !== result.source.id),
+      ]);
+      setGitHubSessionState("");
+      setGitHubRepositories([]);
+      window.history.replaceState({}, "", window.location.pathname);
+      setToast(
+        `${result.source.name} connected · ${result.source.artifactCount} files indexed`,
+      );
+    } catch (connectionError) {
+      setToast(
+        connectionError instanceof Error
+          ? connectionError.message
+          : "The repository could not be connected.",
+      );
+    } finally {
+      setGitHubSetupLoading(false);
+    }
+  }
+
+  async function syncSource(sourceId: string) {
+    if (syncingSourceId) return;
+    setSyncingSourceId(sourceId);
+    try {
+      const result = await api.syncSource(sourceId);
+      setSources((current) =>
+        current.map((source) => (source.id === result.source.id ? result.source : source)),
+      );
+      setToast(`${result.source.name} is up to date`);
+    } catch (syncError) {
+      setToast(syncError instanceof Error ? syncError.message : "The source could not be synced.");
+    } finally {
+      setSyncingSourceId("");
     }
   }
 
@@ -417,10 +531,23 @@ export function SpecGraphApp({
                     <small>
                       {source.name}
                       {source.detail ? ` · ${source.detail}` : ""}
+                      {source.artifactCount ? ` · ${source.artifactCount} files` : ""}
                     </small>
                   </span>
-                  <span className={source.status === "error" ? "source-error" : "connected"}>
-                    {sourceStatus(source)}
+                  <span className="source-row-actions">
+                    <span className={source.status === "error" ? "source-error" : "connected"}>
+                      {sourceStatus(source)}
+                    </span>
+                    {source.provider === "github" && (
+                      <button
+                        type="button"
+                        className="source-sync"
+                        disabled={Boolean(syncingSourceId)}
+                        onClick={() => void syncSource(source.id)}
+                      >
+                        {syncingSourceId === source.id ? "Syncing…" : "Sync"}
+                      </button>
+                    )}
                   </span>
                 </div>
               ))}
@@ -431,13 +558,50 @@ export function SpecGraphApp({
                 </div>
               )}
             </section>
-            <button
-              type="button"
-              className="text-action"
-              onClick={() => setToast("GitHub and Confluence connections are the next package.")}
-            >
-              + Add a source
-            </button>
+            {githubRepositories.length > 0 ? (
+              <form className="github-setup" onSubmit={(event) => void finishGitHubConnection(event)}>
+                <div>
+                  <strong>Choose a repository</strong>
+                  <span>Repository documentation is included automatically.</span>
+                </div>
+                <label htmlFor="github-repository">Repository</label>
+                <select
+                  id="github-repository"
+                  value={selectedRepositoryId}
+                  onChange={(event) => {
+                    const repository = githubRepositories.find(
+                      (item) => item.id === event.target.value,
+                    );
+                    setSelectedRepositoryId(event.target.value);
+                    setGitHubBranch(repository?.defaultBranch || "main");
+                  }}
+                >
+                  {githubRepositories.map((repository) => (
+                    <option key={repository.id} value={repository.id}>
+                      {repository.fullName}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="github-branch">Branch to watch</label>
+                <input
+                  id="github-branch"
+                  value={githubBranch}
+                  onChange={(event) => setGitHubBranch(event.target.value)}
+                  required
+                />
+                <button type="submit" className="primary-action wide" disabled={githubSetupLoading}>
+                  {githubSetupLoading ? "Preparing repository…" : "Connect repository"}
+                </button>
+              </form>
+            ) : githubSetupLoading ? (
+              <p className="connection-note" role="status">Loading GitHub repositories…</p>
+            ) : githubConfigured === false ? (
+              <p className="connection-note">GitHub needs one-time app configuration before it can connect.</p>
+            ) : (
+              <a className="text-action" href="/api/github/connect">
+                + Connect GitHub
+              </a>
+            )}
           </>
         )}
       </main>

@@ -162,6 +162,7 @@ export const dashboardFixture: DashboardSnapshot = {
         detail: "main",
         status: "connected",
         lastSyncedAt: "2026-08-15T14:12:00.000Z",
+        artifactCount: 24,
       },
       {
         id: "source-confluence",
@@ -170,6 +171,7 @@ export const dashboardFixture: DashboardSnapshot = {
         detail: "API Platform",
         status: "connected",
         lastSyncedAt: "2026-08-15T14:00:00.000Z",
+        artifactCount: 12,
       },
     ],
   },
@@ -238,6 +240,20 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
     },
     async loadSources() {
       return snapshot.sources;
+    },
+    async loadGitHubStatus() {
+      return { configured: true };
+    },
+    async loadGitHubConnectionSession() {
+      return { items: [], expiresAt: "2026-08-15T16:00:00.000Z" };
+    },
+    async connectGitHubSource() {
+      throw new Error("No GitHub connection session in this fixture.");
+    },
+    async syncSource(id) {
+      const source = snapshot.sources.items.find((item) => item.id === id);
+      if (!source) throw new Error("Source not found");
+      return { source };
     },
   };
 }

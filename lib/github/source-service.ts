@@ -1,0 +1,124 @@
+import { and, eq } from "drizzle-orm";
+import { getDb, type SpecGraphDb } from "../../db";
+import { githubInstallations, sources } from "../../db/schema";
+import type {
+  ConnectGitHubSourceInput,
+  ConnectGitHubSourceResponse,
+} from "../contracts/specgraph";
+import { ApiError } from "../server/http";
+import { getSource } from "../server/specgraph-repository";
+import { getGitHubConnectionSession, consumeGitHubConnectionSession } from "./connection";
+import type { GitHubSourceProvider } from "../providers/source-provider";
+import { syncGitHubSource } from "./ingestion";
+
+export async function connectGitHubSource(
+  workspaceId: string,
+  userId: string,
+  input: ConnectGitHubSourceInput,
+  client: GitHubSourceProvider,
+  db: SpecGraphDb = getDb(),
+): Promise<ConnectGitHubSourceResponse> {
+  const branch = input.branch.trim();
+  if (!branch || branch.length > 255 || /[\x00-\x20~^:?*[\\]/.test(branch)) {
+    throw new ApiError(400, "INVALID_BRANCH", "Choose a valid GitHub branch.");
+  }
+  const session = await getGitHubConnectionSession(
+    input.sessionState,
+    workspaceId,
+    userId,
+    db,
+  );
+  const candidate = session.items.find((item) => item.id === input.repositoryId);
+  if (!candidate) {
+    throw new ApiError(
+      404,
+      "REPOSITORY_NOT_AUTHORIZED",
+      "That repository is not available in this GitHub connection.",
+    );
+  }
+
+  await client.branchRevision(candidate.installationId, candidate.fullName, branch);
+  const now = new Date().toISOString();
+  await db
+    .insert(githubInstallations)
+    .values({
+      id: `ghi_${crypto.randomUUID()}`,
+      workspaceId,
+      externalInstallationId: candidate.installationId,
+      accountLogin: candidate.accountLogin,
+      accountType: candidate.accountType,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        githubInstallations.workspaceId,
+        githubInstallations.externalInstallationId,
+      ],
+      set: {
+        accountLogin: candidate.accountLogin,
+        accountType: candidate.accountType,
+        status: "active",
+        updatedAt: now,
+      },
+    });
+  const [installation] = await db
+    .select()
+    .from(githubInstallations)
+    .where(
+      and(
+        eq(githubInstallations.workspaceId, workspaceId),
+        eq(githubInstallations.externalInstallationId, candidate.installationId),
+      ),
+    )
+    .limit(1);
+  if (!installation) {
+    throw new ApiError(500, "GITHUB_INSTALLATION_FAILED", "GitHub setup could not be saved.");
+  }
+
+  await db
+    .insert(sources)
+    .values({
+      id: `src_${crypto.randomUUID()}`,
+      workspaceId,
+      githubInstallationId: installation.id,
+      provider: "github",
+      externalId: candidate.id,
+      name: candidate.fullName,
+      detail: branch,
+      defaultBranch: branch,
+      status: "syncing",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [sources.workspaceId, sources.provider, sources.externalId],
+      set: {
+        githubInstallationId: installation.id,
+        name: candidate.fullName,
+        detail: branch,
+        defaultBranch: branch,
+        status: "syncing",
+        lastError: null,
+        updatedAt: now,
+      },
+    });
+  const [source] = await db
+    .select()
+    .from(sources)
+    .where(
+      and(
+        eq(sources.workspaceId, workspaceId),
+        eq(sources.provider, "github"),
+        eq(sources.externalId, candidate.id),
+      ),
+    )
+    .limit(1);
+  if (!source) {
+    throw new ApiError(500, "SOURCE_SETUP_FAILED", "The repository could not be saved.");
+  }
+  await consumeGitHubConnectionSession(session.id, db);
+  await syncGitHubSource(workspaceId, source.id, client, db);
+  return { source: await getSource(workspaceId, source.id, db) };
+}

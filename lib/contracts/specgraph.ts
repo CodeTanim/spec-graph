@@ -74,6 +74,7 @@ export type SourceItem = {
   detail: string;
   status: SourceStatus;
   lastSyncedAt: string | null;
+  artifactCount: number;
 };
 
 export type SourceListResponse = {
@@ -87,6 +88,41 @@ export type StartRunInput = {
 
 export type StartRunResponse = {
   run: RunItem;
+};
+
+export type GitHubRepositoryCandidate = {
+  id: string;
+  installationId: string;
+  fullName: string;
+  owner: string;
+  name: string;
+  defaultBranch: string;
+  private: boolean;
+  accountLogin: string;
+  accountType: string;
+};
+
+export type GitHubConnectionSessionResponse = {
+  items: GitHubRepositoryCandidate[];
+  expiresAt: string;
+};
+
+export type GitHubStatusResponse = {
+  configured: boolean;
+};
+
+export type ConnectGitHubSourceInput = {
+  sessionState: string;
+  repositoryId: string;
+  branch: string;
+};
+
+export type ConnectGitHubSourceResponse = {
+  source: SourceItem;
+};
+
+export type SyncSourceResponse = {
+  source: SourceItem;
 };
 
 export type UpdateChangeInput = {

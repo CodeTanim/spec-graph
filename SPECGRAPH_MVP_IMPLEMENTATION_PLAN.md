@@ -375,7 +375,7 @@ Initial ranking inputs:
 | --- | --- | --- | --- |
 | M0 — Contract and test seam | In progress | Current prototype | UI no longer owns product fixtures or domain behavior |
 | M1 — Persistence and identity | In progress | M0 | State survives reload and is tenant-scoped |
-| M2 — GitHub connection and ingestion | Not started | M1 | One real repository is connected and indexed |
+| M2 — GitHub connection and ingestion | In progress — live credentials pending | M1 | One real repository is connected and indexed |
 | M3 — Deterministic graph | Not started | M2 | Supported artifacts have queryable typed relationships |
 | M4 — Manual end-to-end analysis | Not started | M3 | Analyze produces persistent real findings |
 | M5 — Automatic GitHub feed | Not started | M4 | Pushes and pull requests trigger the same pipeline |
@@ -436,24 +436,24 @@ Exit criteria:
 Goal: connect and index one real repository securely.
 
 - [ ] Create and configure a GitHub App with minimum required permissions.
-- [ ] Implement installation state validation and callback handling.
-- [ ] Persist installation and selected repository metadata without storing long-lived tokens in plaintext.
-- [ ] Add a repository picker limited to the installation's accessible repositories.
-- [ ] Implement a `SourceProvider` interface.
-- [ ] Implement the GitHub provider adapter.
-- [ ] Fetch repository metadata and the default branch.
-- [ ] Enumerate supported files without downloading ignored or oversized content.
-- [ ] Store normalized artifact metadata, revision, hash, and canonical URL.
-- [ ] Report initial-sync progress and failures truthfully in Sources.
-- [ ] Add recorded provider fixtures and adapter contract tests.
+- [x] Implement installation state validation and callback handling.
+- [x] Persist installation and selected repository metadata without storing long-lived tokens in plaintext.
+- [x] Add a repository picker limited to the installation's accessible repositories.
+- [x] Implement a `SourceProvider` interface.
+- [x] Implement the GitHub provider adapter.
+- [x] Fetch repository metadata and the default branch.
+- [x] Enumerate supported files without downloading ignored or oversized content.
+- [x] Store normalized artifact metadata, revision, hash, and canonical URL.
+- [x] Report initial-sync progress and failures truthfully in Sources.
+- [x] Add recorded provider fixtures and adapter contract tests.
 - [ ] Add disconnect behavior and document its data-retention policy.
 
 Exit criteria:
 
 - [ ] A real GitHub repository can be connected through the UI.
-- [ ] Supported files appear as persisted artifacts.
-- [ ] Every indexed artifact has a real revision and source URL.
-- [ ] Re-running ingestion skips unchanged content.
+- [x] Supported files appear as persisted artifacts in the integration harness.
+- [x] Every indexed artifact has a revision and immutable source URL in the integration harness.
+- [x] Re-running ingestion skips unchanged content.
 
 ### M3 — Deterministic Dependency Graph
 
@@ -860,6 +860,8 @@ Package 1 is complete when the current UI behaves the same way using persisted s
 
 ### Package 2 — GitHub walking skeleton
 
+**Status:** In progress — implementation and simulated end-to-end coverage complete; GitHub App credentials and a real repository smoke test remain.
+
 - [ ] Connect one repository through a GitHub App.
 - [ ] Ingest supported artifacts and canonical links.
 - [ ] Create a minimal deterministic graph.
@@ -920,3 +922,6 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Updated the MVP so repository docs are discovered automatically and Confluence is the required external documentation connector, implemented after the GitHub walking skeleton.
 - Completed Package 1: shared contracts, a 15-table D1 schema and migration, authenticated personal workspaces, workspace-scoped repositories, changes/runs/sources APIs, persisted review actions, real UI reads, and API-backed component tests.
 - Added built-worker integration coverage proving workspace creation is idempotent, cross-workspace identifiers are rejected, source evidence retains immutable links, review actions persist, and manual runs enter the durable queue.
+- Implemented the Package 2 GitHub walking skeleton: secure installation authorization, repository and branch selection, short-lived installation access, bounded artifact ingestion, immutable revision links, deterministic file relationships, manual pull-request analysis, and persisted evidence-backed findings.
+- Added a simulated GitHub integration test that exercises the built worker from authorization through indexing, unchanged-revision resync, graph construction, pull-request analysis, and feed output without persisting provider tokens.
+- Live completion is waiting on the one-time GitHub App credentials and a small real demonstration repository.

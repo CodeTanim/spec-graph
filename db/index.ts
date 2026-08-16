@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
+import { ensureDevelopmentMigrations } from "./development-migrations";
 
 export function createDb(binding: D1Database) {
   return drizzle(binding, { schema });
@@ -14,6 +15,12 @@ export function getDb() {
   }
 
   return createDb(env.DB);
+}
+
+export async function prepareDevelopmentDb(): Promise<void> {
+  if (process.env.NODE_ENV !== "production") {
+    await ensureDevelopmentMigrations(env.DB);
+  }
 }
 
 export type SpecGraphDb = ReturnType<typeof createDb>;

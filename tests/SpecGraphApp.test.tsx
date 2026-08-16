@@ -106,6 +106,10 @@ describe("SpecGraphApp", () => {
     expect(screen.getByRole("heading", { name: "Connected sources" })).toBeInTheDocument();
     expect(screen.getByText("GitHub")).toBeInTheDocument();
     expect(screen.getByText("Confluence")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "+ Connect GitHub" })).toHaveAttribute(
+      "href",
+      "/api/github/connect",
+    );
     expect(screen.queryByText("Alex Kim")).not.toBeInTheDocument();
   });
 });

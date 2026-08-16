@@ -1,16 +1,124 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { generateKeyPairSync } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
 import { Miniflare } from "miniflare";
 
 let miniflare;
 let database;
+let githubBlobRequests = 0;
+
+const githubBlobs = {
+  "sha-policy": "export const REFUND_WINDOW_DAYS = 60;\n",
+  "sha-test":
+    'import { REFUND_WINDOW_DAYS } from "../src/refunds/policy";\nexpect(REFUND_WINDOW_DAYS).toBe(30);\n',
+  "sha-doc": "# Refunds\n\n[Policy implementation](../src/refunds/policy.ts)\n",
+  "sha-openapi": "openapi: 3.1.0\npaths:\n  /refunds:\n    post:\n",
+};
+
+function githubResponse(payload, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+async function fakeGitHub(request) {
+  const url = new URL(request.url);
+  if (url.hostname === "github.com" && url.pathname === "/login/oauth/access_token") {
+    return githubResponse({ access_token: "ghu_test_user_token", token_type: "bearer" });
+  }
+  if (url.hostname !== "api.github.com") {
+    return githubResponse({ message: `Unexpected host ${url.hostname}` }, 500);
+  }
+  if (url.pathname === "/user/installations") {
+    return githubResponse({
+      installations: [
+        {
+          id: 101,
+          account: { login: "acme", type: "Organization" },
+          suspended_at: null,
+        },
+      ],
+    });
+  }
+  if (url.pathname === "/user/installations/101/repositories") {
+    return githubResponse({
+      repositories: [
+        {
+          id: 501,
+          full_name: "acme/platform-api",
+          name: "platform-api",
+          private: true,
+          default_branch: "main",
+          owner: { login: "acme" },
+        },
+      ],
+    });
+  }
+  if (url.pathname === "/app/installations/101/access_tokens") {
+    return githubResponse({ token: "ghs_test_installation_token" });
+  }
+  if (url.pathname === "/repos/acme/platform-api/branches/main") {
+    return githubResponse({ commit: { sha: "base123" } });
+  }
+  if (url.pathname === "/repos/acme/platform-api/git/trees/base123") {
+    return githubResponse({
+      truncated: false,
+      tree: [
+        { path: "src/refunds/policy.ts", mode: "100644", type: "blob", sha: "sha-policy", size: 40 },
+        { path: "tests/refunds.test.ts", mode: "100644", type: "blob", sha: "sha-test", size: 110 },
+        { path: "docs/refunds.md", mode: "100644", type: "blob", sha: "sha-doc", size: 70 },
+        { path: "api/openapi.yaml", mode: "100644", type: "blob", sha: "sha-openapi", size: 60 },
+        { path: "public/logo.png", mode: "100644", type: "blob", sha: "sha-logo", size: 100 },
+      ],
+    });
+  }
+  const blobMatch = url.pathname.match(/^\/repos\/acme\/platform-api\/git\/blobs\/(.+)$/);
+  if (blobMatch && githubBlobs[blobMatch[1]]) {
+    githubBlobRequests += 1;
+    return githubResponse({
+      encoding: "base64",
+      content: Buffer.from(githubBlobs[blobMatch[1]], "utf8").toString("base64"),
+    });
+  }
+  if (url.pathname === "/repos/acme/platform-api/pulls/7") {
+    return githubResponse({
+      number: 7,
+      title: "Extend the refund window",
+      html_url: "https://github.com/acme/platform-api/pull/7",
+      user: { login: "octocat" },
+      base: { sha: "base123" },
+      head: { sha: "head789" },
+      changed_files: 1,
+    });
+  }
+  if (url.pathname === "/repos/acme/platform-api/pulls/7/files") {
+    return githubResponse([
+      {
+        filename: "src/refunds/policy.ts",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        changes: 2,
+        blob_url:
+          "https://github.com/acme/platform-api/blob/head789/src/refunds/policy.ts",
+      },
+    ]);
+  }
+  return githubResponse({ message: `Unexpected GitHub route ${url.pathname}` }, 500);
+}
 
 before(async () => {
   const workerPath = fileURLToPath(
     new URL("../dist/server/index.js", import.meta.url),
   );
+  const { privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: "pkcs1", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" },
+  });
   miniflare = new Miniflare({
     modules: true,
     scriptPath: workerPath,
@@ -18,21 +126,33 @@ before(async () => {
     compatibilityDate: "2026-05-22",
     compatibilityFlags: ["nodejs_compat"],
     d1Databases: { DB: "specgraph-api-test" },
+    bindings: {
+      GITHUB_APP_SLUG: "specgraph-test",
+      GITHUB_CLIENT_ID: "Iv1.test",
+      GITHUB_CLIENT_SECRET: "test-client-secret",
+      GITHUB_APP_ID: "12345",
+      GITHUB_PRIVATE_KEY: privateKey,
+    },
+    outboundService: fakeGitHub,
     serviceBindings: {
       ASSETS: async () => new Response("Not found", { status: 404 }),
     },
   });
   database = await miniflare.getD1Database("DB");
 
-  const migrationUrl = new URL("../drizzle/0000_good_sersi.sql", import.meta.url);
-  const migration = await readFile(migrationUrl, "utf8");
-  const statements = migration
-    .split("--> statement-breakpoint")
-    .map((statement) => statement.trim())
-    .filter(Boolean);
-
-  for (const statement of statements) {
-    await database.prepare(statement).run();
+  const migrationsUrl = new URL("../drizzle/", import.meta.url);
+  const migrationNames = (await readdir(migrationsUrl))
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+  for (const migrationName of migrationNames) {
+    const migration = await readFile(new URL(migrationName, migrationsUrl), "utf8");
+    const statements = migration
+      .split("--> statement-breakpoint")
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    for (const statement of statements) {
+      await database.prepare(statement).run();
+    }
   }
 });
 
@@ -269,8 +389,83 @@ test("changes, evidence, review actions, and manual runs persist through the API
   });
   assert.equal(runResponse.status, 202);
   const createdRun = await json(runResponse);
-  assert.equal(createdRun.run.status, "queued");
+  assert.equal(createdRun.run.status, "failed");
+  assert.match(createdRun.run.errorMessage, /GitHub source/i);
 
   const runsResponse = await json(await appFetch("/api/runs"));
   assert.equal(runsResponse.items.some((run) => run.id === createdRun.run.id), true);
+});
+
+test("GitHub authorization, ingestion, graph construction, and PR analysis form one real path", async () => {
+  const connect = await appFetch("/api/github/connect", { redirect: "manual" });
+  assert.equal(connect.status, 302);
+  const installUrl = new URL(connect.headers.get("location"));
+  assert.equal(installUrl.hostname, "github.com");
+  assert.equal(installUrl.pathname, "/apps/specgraph-test/installations/new");
+  const state = installUrl.searchParams.get("state");
+  assert.ok(state);
+
+  const callback = await appFetch(
+    `/api/github/callback?code=test-code&state=${encodeURIComponent(state)}`,
+    { redirect: "manual" },
+  );
+  assert.equal(callback.status, 302);
+  assert.equal(new URL(callback.headers.get("location")).searchParams.get("github_session"), state);
+
+  const repositories = await json(
+    await appFetch(`/api/github/repositories?session=${encodeURIComponent(state)}`),
+  );
+  assert.equal(repositories.items.length, 1);
+  assert.equal(repositories.items[0].fullName, "acme/platform-api");
+
+  const sourceResponse = await appFetch("/api/github/sources", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sessionState: state,
+      repositoryId: "501",
+      branch: "main",
+    }),
+  });
+  assert.equal(sourceResponse.status, 201);
+  const connected = await json(sourceResponse);
+  assert.equal(connected.source.status, "connected");
+  assert.equal(connected.source.artifactCount, 4);
+  assert.equal(githubBlobRequests, 4);
+
+  const resync = await appFetch(`/api/sources/${connected.source.id}/sync`, {
+    method: "POST",
+  });
+  assert.equal(resync.status, 200);
+  assert.equal((await json(resync)).source.artifactCount, 4);
+  assert.equal(githubBlobRequests, 4);
+
+  const graph = await database.prepare("SELECT COUNT(*) AS count FROM relationships").first();
+  assert.equal(graph.count >= 2, true);
+  const sessionRecord = await database
+    .prepare(
+      "SELECT status, candidates_json AS candidatesJson FROM provider_connection_sessions WHERE provider = 'github' ORDER BY created_at DESC LIMIT 1",
+    )
+    .first();
+  assert.equal(sessionRecord.status, "consumed");
+  assert.equal(sessionRecord.candidatesJson.includes("ghu_test_user_token"), false);
+
+  const analysisResponse = await appFetch("/api/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sourceId: connected.source.id, target: "#7" }),
+  });
+  assert.equal(analysisResponse.status, 202);
+  const analysis = await json(analysisResponse);
+  assert.equal(analysis.run.status, "succeeded");
+  assert.equal(analysis.run.findingsCount, 2);
+
+  const changesResponse = await json(await appFetch("/api/changes?status=open"));
+  const pullChange = changesResponse.items.find((item) => item.title.includes("PR #7"));
+  assert.ok(pullChange);
+  assert.equal(pullChange.artifacts.length, 2);
+  assert.equal(
+    pullChange.artifacts.every((artifact) => artifact.externalUrl.includes("/blob/base123/")),
+    true,
+  );
 });
