@@ -810,6 +810,10 @@ export function SpecGraphApp({
                 <strong>Notion documentation</strong>
                 <small>Connection coming next</small>
               </span>
+              <span className="provider-option disabled" aria-disabled="true">
+                <strong>Google Docs</strong>
+                <small>Connection coming next</small>
+              </span>
             </div>
           </section>
         </div>
