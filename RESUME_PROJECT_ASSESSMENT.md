@@ -99,12 +99,14 @@ Minimum capabilities:
 
 External documentation is part of the product promise, but connecting it should remain progressive and understandable:
 
-1. The user connects a GitHub repository and tracked branch.
-2. SpecGraph automatically includes documentation already stored in that repository.
-3. Every connected repository keeps an **Add documentation** action available, even after initial setup, so the user can attach Confluence later.
+1. The user may connect a GitHub repository first or begin with external Confluence documentation.
+2. SpecGraph automatically includes documentation already stored in a connected repository.
+3. Every repository keeps an **Add documentation** action, while documentation connected first exposes **Connect repository** until it is attached.
 4. Related documentation appears beneath its repository—such as `StreetFighter-AI → Confluence / Engineering`—and the mapping is stored explicitly when multiple repositories exist.
-5. GitHub and Confluence use simple preparing, connected, or needs-attention states within that repository-centered hierarchy.
-6. Code-first and documentation-first findings appear in one Changes feed and use the same review workflow.
+5. Canonical provider IDs and a unique repository-documentation association prevent duplicate sources and pairs regardless of connection order or retry.
+6. If a pair already exists, the UI says **Already tracked with StreetFighter-AI** and points to the existing group rather than creating duplicate artifacts, runs, or findings.
+7. GitHub and Confluence use simple preparing, connected, or needs-attention states within that repository-centered hierarchy.
+8. Code-first and documentation-first findings appear in one Changes feed and use the same review workflow.
 
 Users should not need to understand provider adapters, ingestion, graph construction, synchronization cursors, webhooks, queues, or model selection. Those remain implementation details.
 

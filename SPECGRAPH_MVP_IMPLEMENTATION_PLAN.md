@@ -107,10 +107,10 @@ These defaults prevent the project from stalling. Change them only through the d
 
 ### Minimal source-connection experience
 
-The product should expose source setup progressively rather than presenting an integration dashboard.
+The product should expose source setup progressively rather than presenting an integration dashboard. GitHub-first is the recommended path, but source connection must work in either order.
 
-1. **Connect your code:** choose a GitHub repository and tracked branch.
-2. **Add related documentation:** after a repository is connected, its Sources row exposes **Add documentation**; repository documentation is already included, and the user may attach Confluence or choose Not now.
+1. **Start with either source:** choose a GitHub repository and tracked branch, or connect external Confluence documentation first.
+2. **Complete the relationship:** a repository row exposes **Add documentation**; an unattached documentation row exposes **Connect repository**. Repository documentation is included automatically.
 3. **Check connections:** show a simple preparing, connected, or needs-attention state.
 4. **Use one feed:** changes from GitHub and Confluence enter the same Changes experience.
 
@@ -123,6 +123,8 @@ StreetFighter-AI · main
 ```
 
 Before external documentation is connected, the final child is an **Add documentation** action. It belongs to that repository row so the resulting Confluence site/space is durably associated with the intended codebase. A workspace with multiple repositories must never leave the external documentation mapping implicit.
+
+Documentation-first setup creates an unattached documentation source until the user chooses its repository. Before creating either a provider source or a repository-documentation association, SpecGraph must compare canonical provider identities. Reconnecting the same Confluence scope, GitHub repository, or exact repository-documentation pair is an idempotent no-op. The UI should say **Already tracked with StreetFighter-AI** and reveal the existing group instead of creating duplicate artifacts, relationships, runs, or findings.
 
 The UI should never require users to understand ingestion, graph construction, webhooks, synchronization cursors, or analysis providers.
 
@@ -547,6 +549,11 @@ Goal: let users connect external documentation without making source setup feel 
 - [ ] Show Add documentation within every connected repository row, including after onboarding has been skipped or completed.
 - [ ] Persist an explicit repository-to-documentation-source association; never infer the target repository from connection order.
 - [ ] Group attached Confluence site/space information beneath its repository instead of showing it as an unrelated top-level source.
+- [ ] Support documentation-first setup by showing an unattached Confluence source with a Connect repository action.
+- [ ] Canonicalize GitHub repository and Confluence site/space/page identities before writes.
+- [ ] Enforce uniqueness for provider sources and the `(workspace, repository source, documentation source)` association in D1.
+- [ ] Make repeated connection callbacks and association requests idempotent under retries and concurrent submissions.
+- [ ] When the exact pair already exists, show Already tracked with the existing repository name and focus that source group.
 - [ ] Implement read-only Confluence authorization and state validation.
 - [ ] Let the user select one accessible site and space.
 - [ ] Persist Confluence source metadata without exposing credentials to the browser.
@@ -566,6 +573,9 @@ Exit criteria:
 - [ ] A user can connect one Confluence space through the Sources experience.
 - [ ] A user can add or replace related documentation from an already-connected repository row.
 - [ ] With multiple repositories connected, each external documentation source is visibly and durably mapped to exactly the intended repository.
+- [ ] Connecting Confluence first and GitHub second produces the same source group as GitHub-first setup.
+- [ ] Repeating either order does not duplicate sources, associations, artifacts, relationships, runs, or findings.
+- [ ] An attempted duplicate clearly identifies the existing tracked repository-documentation group.
 - [ ] A Confluence page edit can create findings against linked code, schemas, or tests.
 - [ ] A code change can identify an affected Confluence page.
 - [ ] Every cross-source finding opens the correct GitHub revision or Confluence page/version.
@@ -890,11 +900,14 @@ Package 2 is complete when a recruiter can be shown a real repository change mov
 - [ ] Add the minimal Where are your docs? onboarding step.
 - [ ] Include GitHub-hosted documentation automatically.
 - [ ] Keep an Add documentation action available on every connected repository after initial setup.
+- [ ] Support the inverse flow: connect documentation first, then attach a repository.
 - [ ] Connect one Confluence site and space read-only.
 - [ ] Persist and display the explicit repository-to-Confluence association as a nested Sources hierarchy.
+- [ ] Detect canonical source and pair duplicates and return the existing group with an Already tracked message.
 - [ ] Ingest pages and page versions through the shared artifact contract.
 - [ ] Create cross-source relationships and source links.
 - [ ] Prove one code-to-Confluence and one Confluence-to-code finding.
+- [ ] Test both connection orders, repeated callbacks, repeated pair creation, and concurrent duplicate submissions.
 
 Package 3 is complete when users can connect external documentation without learning a second analysis workflow and both sources produce findings in the same feed.
 
@@ -925,6 +938,7 @@ Add entries when a default above changes.
 | 2026-08-15 | Build deterministic analysis before semantic analysis | Provides an explainable baseline and a measurable reason to add a model | The semantic layer begins only after M4 works |
 | 2026-08-15 | Freeze visual expansion until the walking skeleton passes | The existing UI already communicates the core workflow | Engineering time stays focused on real product behavior |
 | 2026-08-15 | Make Confluence a core MVP capability | External documentation is central to the product promise | Onboarding stays progressive; GitHub docs are automatic and Confluence is offered as the external source |
+| 2026-08-16 | Make source setup order-independent and deduplicated | Users may naturally start from code or documentation, and retries must not create parallel tracking groups | Provider sources use canonical identities; repository-documentation pairs are unique and duplicate attempts reveal the existing group |
 
 ---
 
@@ -941,4 +955,8 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Added built-worker integration coverage proving workspace creation is idempotent, cross-workspace identifiers are rejected, source evidence retains immutable links, review actions persist, and manual runs enter the durable queue.
 - Implemented the Package 2 GitHub walking skeleton: secure installation authorization, repository and branch selection, short-lived installation access, bounded artifact ingestion, immutable revision links, deterministic file relationships, manual pull-request analysis, and persisted evidence-backed findings.
 - Added a simulated GitHub integration test that exercises the built worker from authorization through indexing, unchanged-revision resync, graph construction, pull-request analysis, and feed output without persisting provider tokens.
+
+### 2026-08-16
+
+- Recorded Package 3 UX requirements for repository-centered documentation grouping, persistent Add documentation and Connect repository actions, documentation-first setup, canonical duplicate detection, idempotent pair creation, and an Already tracked response that links to the existing group.
 - Live completion is waiting on the one-time GitHub App credentials and a small real demonstration repository.
