@@ -11,8 +11,11 @@ export async function GET(request: Request) {
       workspace.id,
       user.databaseId,
     );
-    const destination = new URL(
-      `https://github.com/apps/${encodeURIComponent(config.appSlug)}/installations/new`,
+    const destination = new URL("https://github.com/login/oauth/authorize");
+    destination.searchParams.set("client_id", config.clientId);
+    destination.searchParams.set(
+      "redirect_uri",
+      `${new URL(request.url).origin}/api/github/callback`,
     );
     destination.searchParams.set("state", session.state);
     return Response.redirect(destination, 302);

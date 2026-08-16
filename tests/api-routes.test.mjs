@@ -401,7 +401,12 @@ test("GitHub authorization, ingestion, graph construction, and PR analysis form 
   assert.equal(connect.status, 302);
   const installUrl = new URL(connect.headers.get("location"));
   assert.equal(installUrl.hostname, "github.com");
-  assert.equal(installUrl.pathname, "/apps/specgraph-test/installations/new");
+  assert.equal(installUrl.pathname, "/login/oauth/authorize");
+  assert.equal(installUrl.searchParams.get("client_id"), "Iv1.test");
+  assert.equal(
+    installUrl.searchParams.get("redirect_uri"),
+    "http://localhost/api/github/callback",
+  );
   const state = installUrl.searchParams.get("state");
   assert.ok(state);
 
