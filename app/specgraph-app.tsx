@@ -806,6 +806,10 @@ export function SpecGraphApp({
                   <strong>Confluence documentation</strong><small>Site and space</small><Arrow />
                 </a>
               )}
+              <span className="provider-option disabled" aria-disabled="true">
+                <strong>Notion documentation</strong>
+                <small>Connection coming next</small>
+              </span>
             </div>
           </section>
         </div>

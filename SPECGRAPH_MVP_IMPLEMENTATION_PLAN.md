@@ -988,6 +988,7 @@ Add entries when a default above changes.
 | 2026-08-16 | Make source setup order-independent and deduplicated | Users may naturally start from code or documentation, and retries must not create parallel tracking groups | Provider sources use canonical identities; repository-documentation pairs are unique and duplicate attempts reveal the existing group |
 | 2026-08-16 | Use one Add source provider chooser | Users think in sources, not provider-specific setup buttons | The page-level action is provider-neutral; contextual repository/documentation actions reuse the same chooser with a preselected source type |
 | 2026-08-16 | Move the final deployment away from OpenAI Sites | The project should have an independently controlled, reproducible production environment | Sites remains temporary until a replacement stack passes callbacks, persistence, auth, jobs, and end-to-end smoke tests |
+| 2026-08-16 | Show Notion in the source chooser before its connector is built | Users should see the intended documentation-source direction without encountering a fake connection flow | Notion is labeled Connection coming next and remains non-interactive until a real OAuth and ingestion package exists |
 
 ---
 

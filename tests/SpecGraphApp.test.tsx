@@ -125,6 +125,9 @@ describe("SpecGraphApp", () => {
     expect(screen.getByRole("dialog", { name: "Add source" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /GitHub repository/ })).toHaveAttribute("href", "/api/github/connect");
     expect(screen.getByRole("link", { name: /Confluence documentation/ })).toHaveAttribute("href", "/api/confluence/connect");
+    expect(screen.getByText("Notion documentation")).toBeInTheDocument();
+    expect(screen.getByText("Connection coming next")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Notion documentation/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Close source chooser" }));
     await user.click(screen.getByRole("button", { name: "+ Add documentation" }));
@@ -134,6 +137,7 @@ describe("SpecGraphApp", () => {
       "href",
       "/api/confluence/connect?repository_source_id=source-github",
     );
+    expect(screen.getByText("Notion documentation")).toBeInTheDocument();
   });
 
   it("confirms before removing a connected repository", async () => {
