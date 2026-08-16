@@ -99,14 +99,16 @@ Minimum capabilities:
 
 External documentation is part of the product promise, but connecting it should remain progressive and understandable:
 
-1. The user may connect a GitHub repository first or begin with external Confluence documentation.
-2. SpecGraph automatically includes documentation already stored in a connected repository.
-3. Every repository keeps an **Add documentation** action, while documentation connected first exposes **Connect repository** until it is attached.
-4. Related documentation appears beneath its repository—such as `StreetFighter-AI → Confluence / Engineering`—and the mapping is stored explicitly when multiple repositories exist.
-5. Canonical provider IDs and a unique repository-documentation association prevent duplicate sources and pairs regardless of connection order or retry.
-6. If a pair already exists, the UI says **Already tracked with StreetFighter-AI** and points to the existing group rather than creating duplicate artifacts, runs, or findings.
-7. GitHub and Confluence use simple preparing, connected, or needs-attention states within that repository-centered hierarchy.
-8. Code-first and documentation-first findings appear in one Changes feed and use the same review workflow.
+1. The Sources page has one generic **Add source** action instead of provider-specific page buttons.
+2. Add source opens a small dialog with **GitHub repository** and **Confluence documentation**; each selection begins the corresponding authorization and selection flow.
+3. The user may therefore connect a GitHub repository first or begin with external Confluence documentation.
+4. SpecGraph automatically includes documentation already stored in a connected repository.
+5. Every repository keeps an **Add documentation** action, while documentation connected first exposes **Connect repository** until it is attached; both reuse the same provider chooser with the relevant option preselected.
+6. Related documentation appears beneath its repository—such as `StreetFighter-AI → Confluence / Engineering`—and the mapping is stored explicitly when multiple repositories exist.
+7. Canonical provider IDs and a unique repository-documentation association prevent duplicate sources and pairs regardless of connection order or retry.
+8. If a pair already exists, the UI says **Already tracked with StreetFighter-AI** and points to the existing group rather than creating duplicate artifacts, runs, or findings.
+9. GitHub and Confluence use simple preparing, connected, or needs-attention states within that repository-centered hierarchy.
+10. Code-first and documentation-first findings appear in one Changes feed and use the same review workflow.
 
 Users should not need to understand provider adapters, ingestion, graph construction, synchronization cursors, webhooks, queues, or model selection. Those remain implementation details.
 

@@ -109,10 +109,11 @@ These defaults prevent the project from stalling. Change them only through the d
 
 The product should expose source setup progressively rather than presenting an integration dashboard. GitHub-first is the recommended path, but source connection must work in either order.
 
-1. **Start with either source:** choose a GitHub repository and tracked branch, or connect external Confluence documentation first.
-2. **Complete the relationship:** a repository row exposes **Add documentation**; an unattached documentation row exposes **Connect repository**. Repository documentation is included automatically.
-3. **Check connections:** show a simple preparing, connected, or needs-attention state.
-4. **Use one feed:** changes from GitHub and Confluence enter the same Changes experience.
+1. **Add a source:** the single page-level **Add source** action opens a small dialog with **GitHub repository** and **Confluence documentation**.
+2. **Authorize and choose:** selecting GitHub begins GitHub authorization and repository/branch selection; selecting Confluence begins Confluence authorization and site/space/page selection.
+3. **Complete the relationship:** a repository row exposes **Add documentation**; an unattached documentation row exposes **Connect repository**. These contextual actions reuse the same dialog with the relevant provider preselected. Repository documentation is included automatically.
+4. **Check connections:** show a simple preparing, connected, or needs-attention state.
+5. **Use one feed:** changes from GitHub and Confluence enter the same Changes experience.
 
 The Sources hierarchy must make ownership explicit rather than displaying providers as unrelated rows:
 
@@ -125,6 +126,8 @@ StreetFighter-AI · main
 Before external documentation is connected, the final child is an **Add documentation** action. It belongs to that repository row so the resulting Confluence site/space is durably associated with the intended codebase. A workspace with multiple repositories must never leave the external documentation mapping implicit.
 
 Documentation-first setup creates an unattached documentation source until the user chooses its repository. Before creating either a provider source or a repository-documentation association, SpecGraph must compare canonical provider identities. Reconnecting the same Confluence scope, GitHub repository, or exact repository-documentation pair is an idempotent no-op. The UI should say **Already tracked with StreetFighter-AI** and reveal the existing group instead of creating duplicate artifacts, relationships, runs, or findings.
+
+The page-level action must never say Connect GitHub once the provider dialog exists. The Add source dialog shows only usable MVP provider choices, explains each in one short line, and closes when authorization begins. It is a chooser, not an integrations dashboard.
 
 The UI should never require users to understand ingestion, graph construction, webhooks, synchronization cursors, or analysis providers.
 
@@ -543,6 +546,11 @@ Exit criteria:
 
 Goal: let users connect external documentation without making source setup feel technical or complex.
 
+- [ ] Replace the page-level Connect GitHub/Add repository action with one Add source action.
+- [ ] Open an accessible provider dialog containing GitHub repository and Confluence documentation choices.
+- [ ] Route GitHub selection into GitHub authorization and repository/branch selection.
+- [ ] Route Confluence selection into Confluence authorization and site/space/page selection.
+- [ ] Reuse the same provider dialog for Add documentation and Connect repository, pre-scoped to the relevant missing source type.
 - [ ] Add the onboarding question: Where are your docs?
 - [ ] Explain that documentation inside GitHub is already included.
 - [ ] Offer Connect Confluence and Not now as the only additional choices.
@@ -569,6 +577,7 @@ Goal: let users connect external documentation without making source setup feel 
 
 Exit criteria:
 
+- [ ] Add source is the only generic page-level connection action and both provider choices start the correct authorization flow.
 - [ ] Repository documentation is included automatically after GitHub connection.
 - [ ] A user can connect one Confluence space through the Sources experience.
 - [ ] A user can add or replace related documentation from an already-connected repository row.
@@ -897,6 +906,8 @@ Package 2 is complete when a recruiter can be shown a real repository change mov
 
 ### Package 3 — External documentation connection
 
+- [ ] Replace Connect GitHub/Add repository with an Add source provider dialog.
+- [ ] Offer GitHub repository and Confluence documentation as the two clear, actionable choices.
 - [ ] Add the minimal Where are your docs? onboarding step.
 - [ ] Include GitHub-hosted documentation automatically.
 - [ ] Keep an Add documentation action available on every connected repository after initial setup.
@@ -939,6 +950,7 @@ Add entries when a default above changes.
 | 2026-08-15 | Freeze visual expansion until the walking skeleton passes | The existing UI already communicates the core workflow | Engineering time stays focused on real product behavior |
 | 2026-08-15 | Make Confluence a core MVP capability | External documentation is central to the product promise | Onboarding stays progressive; GitHub docs are automatic and Confluence is offered as the external source |
 | 2026-08-16 | Make source setup order-independent and deduplicated | Users may naturally start from code or documentation, and retries must not create parallel tracking groups | Provider sources use canonical identities; repository-documentation pairs are unique and duplicate attempts reveal the existing group |
+| 2026-08-16 | Use one Add source provider chooser | Users think in sources, not provider-specific setup buttons | The page-level action is provider-neutral; contextual repository/documentation actions reuse the same chooser with a preselected source type |
 
 ---
 
@@ -958,5 +970,5 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 
 ### 2026-08-16
 
-- Recorded Package 3 UX requirements for repository-centered documentation grouping, persistent Add documentation and Connect repository actions, documentation-first setup, canonical duplicate detection, idempotent pair creation, and an Already tracked response that links to the existing group.
+- Recorded Package 3 UX requirements for a single Add source provider chooser, repository-centered documentation grouping, persistent Add documentation and Connect repository actions, documentation-first setup, canonical duplicate detection, idempotent pair creation, and an Already tracked response that links to the existing group.
 - Live completion is waiting on the one-time GitHub App credentials and a small real demonstration repository.
