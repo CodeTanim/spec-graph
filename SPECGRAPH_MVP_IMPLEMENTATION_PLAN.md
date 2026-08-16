@@ -110,9 +110,19 @@ These defaults prevent the project from stalling. Change them only through the d
 The product should expose source setup progressively rather than presenting an integration dashboard.
 
 1. **Connect your code:** choose a GitHub repository and tracked branch.
-2. **Where are your docs?** repository documentation is already included; the user may connect Confluence or choose Not now.
+2. **Add related documentation:** after a repository is connected, its Sources row exposes **Add documentation**; repository documentation is already included, and the user may attach Confluence or choose Not now.
 3. **Check connections:** show a simple preparing, connected, or needs-attention state.
 4. **Use one feed:** changes from GitHub and Confluence enter the same Changes experience.
+
+The Sources hierarchy must make ownership explicit rather than displaying providers as unrelated rows:
+
+```text
+StreetFighter-AI · main
+├── Repository documentation — 1 indexed file
+└── Confluence — Engineering / StreetFighter
+```
+
+Before external documentation is connected, the final child is an **Add documentation** action. It belongs to that repository row so the resulting Confluence site/space is durably associated with the intended codebase. A workspace with multiple repositories must never leave the external documentation mapping implicit.
 
 The UI should never require users to understand ingestion, graph construction, webhooks, synchronization cursors, or analysis providers.
 
@@ -534,6 +544,9 @@ Goal: let users connect external documentation without making source setup feel 
 - [ ] Add the onboarding question: Where are your docs?
 - [ ] Explain that documentation inside GitHub is already included.
 - [ ] Offer Connect Confluence and Not now as the only additional choices.
+- [ ] Show Add documentation within every connected repository row, including after onboarding has been skipped or completed.
+- [ ] Persist an explicit repository-to-documentation-source association; never infer the target repository from connection order.
+- [ ] Group attached Confluence site/space information beneath its repository instead of showing it as an unrelated top-level source.
 - [ ] Implement read-only Confluence authorization and state validation.
 - [ ] Let the user select one accessible site and space.
 - [ ] Persist Confluence source metadata without exposing credentials to the browser.
@@ -551,6 +564,8 @@ Exit criteria:
 
 - [ ] Repository documentation is included automatically after GitHub connection.
 - [ ] A user can connect one Confluence space through the Sources experience.
+- [ ] A user can add or replace related documentation from an already-connected repository row.
+- [ ] With multiple repositories connected, each external documentation source is visibly and durably mapped to exactly the intended repository.
 - [ ] A Confluence page edit can create findings against linked code, schemas, or tests.
 - [ ] A code change can identify an affected Confluence page.
 - [ ] Every cross-source finding opens the correct GitHub revision or Confluence page/version.
@@ -874,7 +889,9 @@ Package 2 is complete when a recruiter can be shown a real repository change mov
 
 - [ ] Add the minimal Where are your docs? onboarding step.
 - [ ] Include GitHub-hosted documentation automatically.
+- [ ] Keep an Add documentation action available on every connected repository after initial setup.
 - [ ] Connect one Confluence site and space read-only.
+- [ ] Persist and display the explicit repository-to-Confluence association as a nested Sources hierarchy.
 - [ ] Ingest pages and page versions through the shared artifact contract.
 - [ ] Create cross-source relationships and source links.
 - [ ] Prove one code-to-Confluence and one Confluence-to-code finding.
