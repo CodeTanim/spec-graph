@@ -260,7 +260,7 @@ button:disabled {
 
 .change-copy,
 .simple-row > span:first-child,
-.source-row > span:nth-child(2) {
+.source-copy {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -347,6 +347,34 @@ button:disabled {
 .simple-row strong,
 .source-row strong {
   font-size: 15px;
+}
+
+.source-title {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.source-title > span {
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+}
+
+.source-contents {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.source-contents > span > span {
+  display: inline-block;
+  width: 28px;
+  color: var(--ink);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 .source-monogram {

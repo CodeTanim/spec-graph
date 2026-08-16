@@ -163,6 +163,8 @@ export const dashboardFixture: DashboardSnapshot = {
         status: "connected",
         lastSyncedAt: "2026-08-15T14:12:00.000Z",
         artifactCount: 24,
+        codeArtifactCount: 16,
+        documentationArtifactCount: 8,
       },
       {
         id: "source-confluence",
@@ -172,6 +174,8 @@ export const dashboardFixture: DashboardSnapshot = {
         status: "connected",
         lastSyncedAt: "2026-08-15T14:00:00.000Z",
         artifactCount: 12,
+        codeArtifactCount: 0,
+        documentationArtifactCount: 12,
       },
     ],
   },

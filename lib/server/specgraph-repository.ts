@@ -365,20 +365,44 @@ export async function listSources(
 
   return {
     items: await Promise.all(
-      rows.map(async (row): Promise<SourceItem> => ({
-        id: row.id,
-        provider: row.provider,
-        name: row.name,
-        detail: row.detail,
-        status: row.status,
-        lastSyncedAt: normalizeTimestamp(row.lastSyncedAt),
-        artifactCount: (
-          await db
+      rows.map(async (row): Promise<SourceItem> => {
+        const [allArtifacts, codeArtifacts, documentationArtifacts] = await Promise.all([
+          db
             .select({ value: count() })
             .from(artifacts)
-            .where(eq(artifacts.sourceId, row.id))
-        )[0]?.value ?? 0,
-      })),
+            .where(eq(artifacts.sourceId, row.id)),
+          db
+            .select({ value: count() })
+            .from(artifacts)
+            .where(
+              and(
+                eq(artifacts.sourceId, row.id),
+                inArray(artifacts.kind, ["code", "test"]),
+              ),
+            ),
+          db
+            .select({ value: count() })
+            .from(artifacts)
+            .where(
+              and(
+                eq(artifacts.sourceId, row.id),
+                inArray(artifacts.kind, ["markdown", "openapi", "confluence"]),
+              ),
+            ),
+        ]);
+
+        return {
+          id: row.id,
+          provider: row.provider,
+          name: row.name,
+          detail: row.detail,
+          status: row.status,
+          lastSyncedAt: normalizeTimestamp(row.lastSyncedAt),
+          artifactCount: allArtifacts[0]?.value ?? 0,
+          codeArtifactCount: codeArtifacts[0]?.value ?? 0,
+          documentationArtifactCount: documentationArtifacts[0]?.value ?? 0,
+        };
+      }),
     ),
   };
 }

@@ -48,6 +48,18 @@ function providerMonogram(source: SourceItem) {
   return source.provider === "github" ? "GH" : "CF";
 }
 
+function repositoryName(source: SourceItem) {
+  return source.name.split("/").filter(Boolean).at(-1) || source.name;
+}
+
+function repositoryOwner(source: SourceItem) {
+  return source.name.split("/").filter(Boolean).slice(0, -1).join("/");
+}
+
+function indexedFiles(count: number) {
+  return `${count} indexed ${count === 1 ? "file" : "files"}`;
+}
+
 function sourceStatus(source: SourceItem) {
   switch (source.status) {
     case "connected":
@@ -526,14 +538,39 @@ export function SpecGraphApp({
                   <span className="source-monogram" aria-hidden="true">
                     {providerMonogram(source)}
                   </span>
-                  <span>
-                    <strong>{providerLabel(source)}</strong>
+                  <div className="source-copy">
+                    <div className="source-title">
+                      <strong>
+                        {source.provider === "github" ? repositoryName(source) : source.name}
+                      </strong>
+                      {source.detail && <span>{source.detail}</span>}
+                    </div>
                     <small>
-                      {source.name}
-                      {source.detail ? ` · ${source.detail}` : ""}
-                      {source.artifactCount ? ` · ${source.artifactCount} files` : ""}
+                      {providerLabel(source)}
+                      {source.provider === "github" && repositoryOwner(source)
+                        ? ` · ${repositoryOwner(source)}`
+                        : ""}
                     </small>
-                  </span>
+                    {source.provider === "github" ? (
+                      <div
+                        className="source-contents"
+                        aria-label={`Indexed contents for ${repositoryName(source)}`}
+                      >
+                        <span>
+                          <span aria-hidden="true">├──</span> Source code —{" "}
+                          {indexedFiles(source.codeArtifactCount)}
+                        </span>
+                        <span>
+                          <span aria-hidden="true">└──</span> Repository documentation —{" "}
+                          {indexedFiles(source.documentationArtifactCount)}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="source-contents">
+                        <span>{indexedFiles(source.documentationArtifactCount)}</span>
+                      </div>
+                    )}
+                  </div>
                   <span className="source-row-actions">
                     <span className={source.status === "error" ? "source-error" : "connected"}>
                       {sourceStatus(source)}
@@ -554,7 +591,7 @@ export function SpecGraphApp({
               {!loadingSources && !sources.length && (
                 <div className="empty-message">
                   <strong>No sources connected.</strong>
-                  <span>Connect GitHub first; repository documentation is included automatically.</span>
+                  <span>Connect a GitHub repository; its documentation is included automatically.</span>
                 </div>
               )}
             </section>
@@ -599,7 +636,9 @@ export function SpecGraphApp({
               <p className="connection-note">GitHub needs one-time app configuration before it can connect.</p>
             ) : (
               <a className="text-action" href="/api/github/connect">
-                + Connect GitHub
+                {sources.some((source) => source.provider === "github")
+                  ? "+ Add repository"
+                  : "+ Connect GitHub"}
               </a>
             )}
           </>

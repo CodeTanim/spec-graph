@@ -104,9 +104,13 @@ describe("SpecGraphApp", () => {
     await user.click(screen.getByRole("button", { name: "Sources" }));
 
     expect(screen.getByRole("heading", { name: "Connected sources" })).toBeInTheDocument();
-    expect(screen.getByText("GitHub")).toBeInTheDocument();
+    expect(screen.getByText("platform-api")).toBeInTheDocument();
+    expect(screen.getByText("Source code — 16 indexed files")).toBeInTheDocument();
+    expect(
+      screen.getByText("Repository documentation — 8 indexed files"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Confluence")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "+ Connect GitHub" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "+ Add repository" })).toHaveAttribute(
       "href",
       "/api/github/connect",
     );

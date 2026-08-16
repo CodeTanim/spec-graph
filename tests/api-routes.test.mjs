@@ -436,6 +436,8 @@ test("GitHub authorization, ingestion, graph construction, and PR analysis form 
   const connected = await json(sourceResponse);
   assert.equal(connected.source.status, "connected");
   assert.equal(connected.source.artifactCount, 4);
+  assert.equal(connected.source.codeArtifactCount, 2);
+  assert.equal(connected.source.documentationArtifactCount, 2);
   assert.equal(githubBlobRequests, 4);
 
   const resync = await appFetch(`/api/sources/${connected.source.id}/sync`, {

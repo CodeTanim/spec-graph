@@ -75,6 +75,8 @@ export type SourceItem = {
   status: SourceStatus;
   lastSyncedAt: string | null;
   artifactCount: number;
+  codeArtifactCount: number;
+  documentationArtifactCount: number;
 };
 
 export type SourceListResponse = {
