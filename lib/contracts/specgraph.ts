@@ -57,6 +57,7 @@ export type RunItem = {
   trigger: RunTrigger;
   target: string;
   status: RunStatus;
+  progress: number;
   createdAt: string;
   completedAt: string | null;
   findingsCount: number;

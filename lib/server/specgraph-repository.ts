@@ -259,6 +259,7 @@ function toRunItem(
     trigger: row.trigger,
     target: row.target,
     status: row.status,
+    progress: row.progress,
     createdAt: normalizeTimestamp(row.createdAt) || row.createdAt,
     completedAt: normalizeTimestamp(row.completedAt),
     findingsCount,

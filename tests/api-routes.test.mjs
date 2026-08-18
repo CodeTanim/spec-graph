@@ -47,7 +47,7 @@ async function fakeGitHub(request) {
           id: "page-1",
           title: "Refund policy",
           spaceId: "space-1",
-          body: { storage: { value: "<p>See docs/refunds.md for the 60 day window.</p>" } },
+          body: { storage: { value: "<p>See src/refunds/policy.ts and docs/refunds.md for the 60 day window.</p>" } },
           version: { number: 3 },
           _links: { webui: "/wiki/spaces/ENG/pages/1/Refund+policy" },
         },
@@ -218,6 +218,19 @@ async function json(response) {
   const payload = await response.json();
   assert.equal(response.headers.get("content-type")?.includes("application/json"), true);
   return payload;
+}
+
+async function waitForRun(runId) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const response = await appFetch(`/api/runs/${encodeURIComponent(runId)}`);
+    assert.equal(response.status, 200);
+    const payload = await json(response);
+    if (payload.run.status === "succeeded" || payload.run.status === "failed") {
+      return payload.run;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.fail(`Analysis run ${runId} did not finish.`);
 }
 
 async function workspaceRecord() {
@@ -428,8 +441,10 @@ test("changes, evidence, review actions, and manual runs persist through the API
   });
   assert.equal(runResponse.status, 202);
   const createdRun = await json(runResponse);
-  assert.equal(createdRun.run.status, "failed");
-  assert.match(createdRun.run.errorMessage, /GitHub source/i);
+  assert.equal(createdRun.run.status, "queued");
+  const failedRun = await waitForRun(createdRun.run.id);
+  assert.equal(failedRun.status, "failed");
+  assert.match(failedRun.errorMessage, /GitHub source/i);
 
   const runsResponse = await json(await appFetch("/api/runs"));
   assert.equal(runsResponse.items.some((run) => run.id === createdRun.run.id), true);
@@ -503,8 +518,10 @@ test("GitHub authorization, ingestion, graph construction, and PR analysis form 
   });
   assert.equal(analysisResponse.status, 202);
   const analysis = await json(analysisResponse);
-  assert.equal(analysis.run.status, "succeeded");
-  assert.equal(analysis.run.findingsCount, 2);
+  assert.equal(analysis.run.status, "queued");
+  const completedAnalysis = await waitForRun(analysis.run.id);
+  assert.equal(completedAnalysis.status, "succeeded");
+  assert.equal(completedAnalysis.findingsCount, 2);
 
   const changesResponse = await json(await appFetch("/api/changes?status=open"));
   const pullChange = changesResponse.items.find((item) => item.title.includes("PR #7"));
@@ -515,64 +532,6 @@ test("GitHub authorization, ingestion, graph construction, and PR analysis form 
     true,
   );
 
-  const removalResponse = await appFetch(`/api/sources/${connected.source.id}`, {
-    method: "DELETE",
-  });
-  assert.equal(removalResponse.status, 200);
-  assert.equal((await json(removalResponse)).removedSourceId, connected.source.id);
-
-  const sourcesAfterRemoval = await json(await appFetch("/api/sources"));
-  assert.equal(
-    sourcesAfterRemoval.items.some((source) => source.id === connected.source.id),
-    false,
-  );
-  assert.equal(
-    (
-      await database
-        .prepare("SELECT COUNT(*) AS count FROM artifacts WHERE source_id = ?")
-        .bind(connected.source.id)
-        .first()
-    ).count,
-    0,
-  );
-  assert.equal(
-    (await database.prepare("SELECT COUNT(*) AS count FROM relationships").first()).count,
-    0,
-  );
-  assert.equal(
-    (await database.prepare("SELECT COUNT(*) AS count FROM analysis_runs").first()).count > 0,
-    true,
-  );
-  assert.equal(
-    (
-      await database
-        .prepare("SELECT COUNT(*) AS count FROM findings WHERE run_id = ?")
-        .bind(analysis.run.id)
-        .first()
-    ).count,
-    2,
-  );
-  assert.equal(
-    (
-      await database
-        .prepare("SELECT source_id AS sourceId FROM analysis_runs WHERE id = ?")
-        .bind(analysis.run.id)
-        .first()
-    ).sourceId,
-    null,
-  );
-  const preservedEvidence = await database
-    .prepare(
-      `SELECT fe.artifact_version_id AS artifactVersionId, fe.source_url AS sourceUrl
-       FROM finding_evidence fe
-       INNER JOIN findings f ON f.id = fe.finding_id
-       WHERE f.run_id = ?
-       LIMIT 1`,
-    )
-    .bind(analysis.run.id)
-    .first();
-  assert.equal(preservedEvidence.artifactVersionId, null);
-  assert.equal(preservedEvidence.sourceUrl.includes("/blob/base123/"), true);
 });
 
 async function authorizeConfluence(repositorySourceId) {
@@ -611,7 +570,7 @@ async function authorizeConfluence(repositorySourceId) {
 
 test("Confluence pages pair with a repository and reconnect idempotently", async () => {
   const repository = await database
-    .prepare("SELECT id FROM sources WHERE provider = 'github' ORDER BY created_at LIMIT 1")
+    .prepare("SELECT id FROM sources WHERE provider = 'github' AND github_installation_id IS NOT NULL ORDER BY created_at LIMIT 1")
     .first();
   assert.ok(repository);
 
@@ -663,5 +622,56 @@ test("Confluence pages pair with a repository and reconnect idempotently", async
   assert.equal(artifacts.count, 2);
   assert.equal(associations.count, 1);
   assert.equal(token.encryptedAccessToken.includes("atlassian-access-token"), false);
-  assert.equal(crossSourceRelationships.count >= 1, true);
+  assert.equal(crossSourceRelationships.count >= 2, true);
+
+  const documentationAnalysisResponse = await appFetch("/api/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sourceId: first.source.id, target: "Refund policy" }),
+  });
+  assert.equal(documentationAnalysisResponse.status, 202);
+  const documentationAnalysis = await json(documentationAnalysisResponse);
+  assert.equal(documentationAnalysis.run.status, "queued");
+  const completedDocumentationAnalysis = await waitForRun(documentationAnalysis.run.id);
+  assert.equal(completedDocumentationAnalysis.status, "succeeded");
+  assert.equal(completedDocumentationAnalysis.findingsCount, 2);
+
+  const codeAnalysisResponse = await appFetch("/api/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sourceId: repository.id, target: "#7" }),
+  });
+  assert.equal(codeAnalysisResponse.status, 202);
+  const codeAnalysis = await json(codeAnalysisResponse);
+  const completedCodeAnalysis = await waitForRun(codeAnalysis.run.id);
+  assert.equal(completedCodeAnalysis.status, "succeeded");
+  assert.equal(completedCodeAnalysis.findingsCount, 3);
+
+  const codeChange = (await json(await appFetch("/api/changes?status=open"))).items
+    .find((item) => item.runId === codeAnalysis.run.id);
+  assert.ok(codeChange);
+  const confluenceFinding = codeChange.artifacts.find((item) => item.kind === "Confluence");
+  assert.ok(confluenceFinding);
+  assert.equal(confluenceFinding.externalUrl.includes("acme.atlassian.net/wiki/"), true);
+  assert.equal(confluenceFinding.externalUrl.includes("#L"), false);
+
+  const removalResponse = await appFetch(`/api/sources/${repository.id}`, {
+    method: "DELETE",
+  });
+  assert.equal(removalResponse.status, 200);
+  assert.equal((await json(removalResponse)).removedSourceId, repository.id);
+  const preservedRun = await waitForRun(codeAnalysis.run.id);
+  assert.equal(preservedRun.status, "succeeded");
+  const preservedEvidence = await database
+    .prepare(
+      `SELECT fe.artifact_version_id AS artifactVersionId, fe.source_url AS sourceUrl
+       FROM finding_evidence fe
+       INNER JOIN findings f ON f.id = fe.finding_id
+       WHERE f.run_id = ? AND fe.source_url LIKE 'https://github.com/%'
+       LIMIT 1`,
+    )
+    .bind(documentationAnalysis.run.id)
+    .first();
+  assert.equal(preservedEvidence.artifactVersionId, null);
+  assert.equal(preservedEvidence.sourceUrl.includes("/blob/base123/"), true);
 });

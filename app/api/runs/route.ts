@@ -1,9 +1,11 @@
+import { waitUntil } from "cloudflare:workers";
 import { getRequestWorkspace } from "../../../lib/server/current-workspace";
 import { ApiError, apiErrorResponse, readJsonObject } from "../../../lib/server/http";
-import { listRuns } from "../../../lib/server/specgraph-repository";
-import { GitHubClient } from "../../../lib/github/client";
-import { getGitHubAppConfig } from "../../../lib/github/config";
-import { runGitHubPullRequestAnalysis } from "../../../lib/github/analysis";
+import {
+  createManualRun,
+  listRuns,
+} from "../../../lib/server/specgraph-repository";
+import { executeManualAnalysis } from "../../../lib/analysis/manual";
 
 export async function GET(request: Request) {
   try {
@@ -25,12 +27,9 @@ export async function POST(request: Request) {
       throw new ApiError(400, "TARGET_REQUIRED", "Enter something to analyze.");
     }
 
-    const result = await runGitHubPullRequestAnalysis(
-      workspace.id,
-      user.databaseId,
-      { target, sourceId },
-      new GitHubClient(getGitHubAppConfig()),
-    );
+    const input = { target, sourceId };
+    const result = await createManualRun(workspace.id, user.databaseId, input);
+    waitUntil(executeManualAnalysis(workspace.id, result.run.id, input));
     return Response.json(result, { status: 202 });
   } catch (error) {
     return apiErrorResponse(error);

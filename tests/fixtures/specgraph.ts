@@ -140,6 +140,7 @@ const runs: RunItem[] = changes.map((change) => ({
       : change.status === "checked" || change.status === "open"
         ? "succeeded"
         : "failed",
+  progress: change.status === "processing" ? 45 : 100,
   createdAt: change.occurredAt,
   completedAt: change.status === "processing" ? null : change.occurredAt,
   findingsCount: change.affected,
@@ -239,6 +240,7 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
         trigger: "manual",
         target: input.target,
         status: "queued",
+        progress: 0,
         createdAt: "2026-08-15T15:00:00.000Z",
         completedAt: null,
         findingsCount: 0,

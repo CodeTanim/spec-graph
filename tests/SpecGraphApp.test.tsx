@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SpecGraphApp } from "../app/specgraph-app";
 import { createFakeApi, dashboardFixture } from "./fixtures/specgraph";
 
@@ -80,6 +80,48 @@ describe("SpecGraphApp", () => {
     expect(screen.getByRole("heading", { name: "Recent activity" })).toBeInTheDocument();
     expect(screen.getByText("Checking release/2026.08")).toBeInTheDocument();
     expect(screen.getByText("Queued")).toBeInTheDocument();
+  });
+
+  it("polls a persisted run and shows its completed result", async () => {
+    const queuedRun = {
+      ...dashboardFixture.runs.items[0],
+      id: "run-polling",
+      title: "Checking #842",
+      target: "#842",
+      status: "queued" as const,
+      progress: 0,
+      findingsCount: 0,
+      completedAt: null,
+    };
+    const completedRun = {
+      ...queuedRun,
+      status: "succeeded" as const,
+      progress: 100,
+      findingsCount: 1,
+      completedAt: "2026-08-17T01:00:00.000Z",
+    };
+    const api = createFakeApi();
+    let runListLoads = 0;
+    api.loadRuns = async () => ({
+      items: [runListLoads++ === 0 ? queuedRun : completedRun],
+    });
+    api.loadRun = vi.fn(async () => completedRun);
+
+    render(
+      <SpecGraphApp
+        api={api}
+        initialData={{
+          ...dashboardFixture,
+          runs: { items: [queuedRun] },
+        }}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Runs" }));
+
+    expect(screen.getByText("Queued")).toBeInTheDocument();
+    expect(await screen.findByText("1 finding", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(api.loadRun).toHaveBeenCalledWith("run-polling");
   });
 
   it("persists a review action through the API contract", async () => {

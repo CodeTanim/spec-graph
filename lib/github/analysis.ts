@@ -1,75 +1,36 @@
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb, type SpecGraphDb } from "../../db";
 import {
   analysisRuns,
   artifacts,
-  artifactVersions,
   changeEvents,
-  findingEvidence,
-  findings,
   githubInstallations,
   graphNodes,
-  relationships,
-  runAttempts,
   sources,
 } from "../../db/schema";
-import type { StartRunInput, StartRunResponse } from "../contracts/specgraph";
-import { ApiError } from "../server/http";
+import { persistDeterministicFindings } from "../analysis/deterministic";
 import {
-  createManualRun,
-  getRun,
-} from "../server/specgraph-repository";
+  beginRunAttempt,
+  completeRunAttempt,
+  failRunAttempt,
+} from "../analysis/run-lifecycle";
+import type { StartRunInput, StartRunResponse } from "../contracts/specgraph";
 import type { GitHubSourceProvider } from "../providers/source-provider";
+import { ApiError } from "../server/http";
+import { createManualRun, getRun } from "../server/specgraph-repository";
 import { parsePullRequestNumber } from "./targets";
 
-function sourceLink(url: string | null, start = 1, end = 4): string | null {
-  if (!url) return null;
-  return `${url}#L${start}-L${end}`;
-}
-
-function excerpt(content: string): string {
-  const lines = content.split("\n").slice(0, 4).join("\n").trim();
-  return lines || "The indexed artifact is empty.";
-}
-
-function relationshipReason(type: string, changedPath: string): string {
-  switch (type) {
-    case "imports":
-      return `It is connected to ${changedPath} through a code import.`;
-    case "links":
-      return `It is connected to ${changedPath} through a documentation link.`;
-    case "covers_endpoint":
-      return `It shares an API endpoint with ${changedPath}.`;
-    default:
-      return `It explicitly references ${changedPath}.`;
-  }
-}
-
-export async function runGitHubPullRequestAnalysis(
+export async function executeGitHubPullRequestAnalysis(
   workspaceId: string,
-  userId: string,
+  runId: string,
   input: StartRunInput,
   client: GitHubSourceProvider,
   db: SpecGraphDb = getDb(),
-): Promise<StartRunResponse> {
-  const created = await createManualRun(workspaceId, userId, input, db);
-  const runId = created.run.id;
-  const now = new Date().toISOString();
-  const attemptId = `attempt_${crypto.randomUUID()}`;
-  await db
-    .update(analysisRuns)
-    .set({ status: "running", progress: 10, attempts: 1, startedAt: now, updatedAt: now })
-    .where(eq(analysisRuns.id, runId));
-  await db.insert(runAttempts).values({
-    id: attemptId,
-    runId,
-    attempt: 1,
-    stage: "github_pull_request",
-    status: "running",
-    startedAt: now,
-  });
+): Promise<void> {
+  let attemptId: string | null = null;
 
   try {
+    attemptId = await beginRunAttempt(runId, "github_pull_request", db);
     const [selectedSource] = await db
       .select({
         id: sources.id,
@@ -94,12 +55,14 @@ export async function runGitHubPullRequestAnalysis(
     if (!selectedSource || selectedSource.provider !== "github" || !selectedSource.installationId) {
       throw new ApiError(409, "GITHUB_SOURCE_REQUIRED", "Choose a connected GitHub source.");
     }
+
     const pullNumber = parsePullRequestNumber(input.target, selectedSource.name);
     const { pull, files } = await client.pullRequest(
       selectedSource.installationId,
       selectedSource.name,
       pullNumber,
     );
+    const now = new Date().toISOString();
     const changeId = `chg_${crypto.randomUUID()}`;
     const changedPaths = new Set(files.map((file) => file.filename));
     await db.insert(changeEvents).values({
@@ -110,7 +73,7 @@ export async function runGitHubPullRequestAnalysis(
       title: `PR #${pull.number}: ${pull.title}`,
       summary: `${files.length} changed ${files.length === 1 ? "file" : "files"} in ${selectedSource.name}.`,
       evidenceSummary:
-        "SpecGraph followed deterministic imports, documentation links, explicit file references, and shared OpenAPI endpoints from the changed files.",
+        "SpecGraph followed deterministic imports, documentation links, explicit references, shared OpenAPI endpoints, and connected documentation from the changed files.",
       sourceLabel: `${selectedSource.name}#${pull.number}`,
       sourceUrl: pull.htmlUrl,
       beforeRevision: pull.baseSha,
@@ -142,128 +105,28 @@ export async function runGitHubPullRequestAnalysis(
             ),
           )
       : [];
-    const changedNodeIds = changedNodes.map((node) => node.id);
-    const changedPathByNode = new Map(changedNodes.map((node) => [node.id, node.path]));
-    const edges = changedNodeIds.length
-      ? await db
-          .select()
-          .from(relationships)
-          .where(
-            or(
-              inArray(relationships.fromNodeId, changedNodeIds),
-              inArray(relationships.toNodeId, changedNodeIds),
-            ),
-          )
-      : [];
-    const affectedNodeIds = [
-      ...new Set(
-        edges
-          .map((edge) =>
-            changedPathByNode.has(edge.fromNodeId) ? edge.toNodeId : edge.fromNodeId,
-          )
-          .filter((id) => !changedPathByNode.has(id)),
-      ),
-    ];
-    const affectedRecords = affectedNodeIds.length
-      ? await db
-          .select({
-            nodeId: graphNodes.id,
-            artifactId: artifacts.id,
-            title: artifacts.title,
-            path: artifacts.path,
-            currentRevision: artifacts.currentRevision,
-            canonicalUrl: artifacts.canonicalUrl,
-          })
-          .from(graphNodes)
-          .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
-          .where(inArray(graphNodes.id, affectedNodeIds))
-      : [];
-    const affectedByNode = new Map(affectedRecords.map((record) => [record.nodeId, record]));
-    const persisted = new Set<string>();
-    for (const edge of edges) {
-      const changedNodeId = changedPathByNode.has(edge.fromNodeId)
-        ? edge.fromNodeId
-        : edge.toNodeId;
-      const affectedNodeId = changedNodeId === edge.fromNodeId ? edge.toNodeId : edge.fromNodeId;
-      const affected = affectedByNode.get(affectedNodeId);
-      if (!affected || persisted.has(affectedNodeId)) continue;
-      persisted.add(affectedNodeId);
-      const changedPath = changedPathByNode.get(changedNodeId) || "the changed file";
-      const [version] = await db
-        .select()
-        .from(artifactVersions)
-        .where(
-          and(
-            eq(artifactVersions.artifactId, affected.artifactId),
-            affected.currentRevision
-              ? eq(artifactVersions.revision, affected.currentRevision)
-              : eq(artifactVersions.artifactId, affected.artifactId),
-          ),
-        )
-        .orderBy(desc(artifactVersions.createdAt))
-        .limit(1);
-      const findingId = `finding_${crypto.randomUUID()}`;
-      await db.insert(findings).values({
-        id: findingId,
-        runId,
-        changedNodeId,
-        affectedNodeId,
-        title: affected.title,
-        summary: relationshipReason(edge.type, changedPath),
-        confidence: edge.confidence,
-        origin: "deterministic",
-        status: "open",
-        deduplicationKey: `${changedNodeId}:${affectedNodeId}`,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await db.insert(findingEvidence).values({
-        id: `evidence_${crypto.randomUUID()}`,
-        findingId,
-        artifactVersionId: version?.id || null,
-        location: `${affected.path}:1`,
-        startLine: 1,
-        endLine: 4,
-        excerpt: version ? excerpt(version.extractedText) : edge.evidence,
-        sourceUrl: sourceLink(affected.canonicalUrl),
-        type: "relationship",
-        createdAt: now,
-      });
-    }
-
-    const completedAt = new Date().toISOString();
-    await db
-      .update(analysisRuns)
-      .set({
-        status: "succeeded",
-        progress: 100,
-        completedAt,
-        updatedAt: completedAt,
-      })
-      .where(eq(analysisRuns.id, runId));
-    await db
-      .update(runAttempts)
-      .set({ status: "succeeded", finishedAt: completedAt })
-      .where(eq(runAttempts.id, attemptId));
+    await persistDeterministicFindings(workspaceId, runId, changedNodes, db);
+    await completeRunAttempt(runId, attemptId, db);
   } catch (error) {
-    const failedAt = new Date().toISOString();
-    const message = error instanceof Error ? error.message : "GitHub analysis failed.";
-    const code = error instanceof ApiError ? error.code : "GITHUB_ANALYSIS_FAILED";
-    await db
-      .update(analysisRuns)
-      .set({
-        status: "failed",
-        errorCode: code,
-        errorMessage: message,
-        completedAt: failedAt,
-        updatedAt: failedAt,
-      })
-      .where(eq(analysisRuns.id, runId));
-    await db
-      .update(runAttempts)
-      .set({ status: "failed", errorCode: code, errorMessage: message, finishedAt: failedAt })
-      .where(eq(runAttempts.id, attemptId));
+    await failRunAttempt(
+      runId,
+      attemptId,
+      error,
+      "GITHUB_ANALYSIS_FAILED",
+      "GitHub analysis failed.",
+      db,
+    );
   }
+}
 
-  return { run: await getRun(workspaceId, runId, db) };
+export async function runGitHubPullRequestAnalysis(
+  workspaceId: string,
+  userId: string,
+  input: StartRunInput,
+  client: GitHubSourceProvider,
+  db: SpecGraphDb = getDb(),
+): Promise<StartRunResponse> {
+  const created = await createManualRun(workspaceId, userId, input, db);
+  await executeGitHubPullRequestAnalysis(workspaceId, created.run.id, input, client, db);
+  return { run: await getRun(workspaceId, created.run.id, db) };
 }

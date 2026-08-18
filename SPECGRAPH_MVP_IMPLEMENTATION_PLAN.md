@@ -1,7 +1,7 @@
 # SpecGraph MVP Implementation Plan
 
-**Status:** Implementation — Package 1 complete  
-**Last updated:** August 15, 2026  
+**Status:** Implementation — Package 4 provider-neutral manual analysis implemented; live smoke pending
+**Last updated:** August 17, 2026
 **Primary reference:** [SpecGraph Resume Project Assessment](./RESUME_PROJECT_ASSESSMENT.md)
 
 ## How to Use This Plan
@@ -528,26 +528,26 @@ Exit criteria:
 Goal: make the existing Analyze action perform genuine backend work.
 
 - [ ] Validate manual targets as branch, pull request, revision range, supported path, or provider document/page.
-- [ ] Persist a queued run before starting work.
+- [x] Persist a queued run before starting work.
 - [ ] Implement job claiming and safe status transitions.
-- [ ] Fetch the exact before and after revisions.
-- [ ] Create a normalized change event.
+- [x] Fetch the exact before and after revisions.
+- [x] Create a normalized change event.
 - [ ] Map diff hunks to changed graph nodes.
 - [ ] Retrieve and rank deterministic candidate impacts.
-- [ ] Persist findings, evidence, and source links.
-- [ ] Poll run status from the UI.
-- [ ] Replace the mock processing row with persisted state.
-- [ ] Load completed findings into the existing feed.
+- [x] Persist findings, evidence, and source links.
+- [x] Poll run status from the UI.
+- [x] Replace the mock processing row with persisted state.
+- [x] Load completed findings into the existing feed.
 - [ ] Show useful failure and retry states.
-- [ ] Add an integration test from submitted run through persisted finding.
+- [x] Add an integration test from submitted run through persisted finding.
 
 Exit criteria — the walking skeleton:
 
 - [ ] Connect a real repository.
 - [ ] Submit a real pull request, branch, or commit range.
 - [ ] Observe queued and running states.
-- [ ] Receive at least one deterministic finding when the fixture change warrants it.
-- [ ] Open the affected artifact at the exact GitHub revision.
+- [x] Receive at least one deterministic finding when the fixture change warrants it.
+- [x] Open the affected artifact at the exact GitHub revision.
 - [ ] Refresh the app without losing the run or finding.
 
 ### M5 — Automatic GitHub Feed
@@ -950,12 +950,29 @@ Hosting gate: provider-neutral Package 3 contracts and local tests may begin bef
 - [x] Detect canonical source and pair duplicates and return the existing group with an Already tracked message.
 - [x] Ingest pages and page versions through the shared artifact contract.
 - [x] Create deterministic cross-source relationships and source links for exact path references.
-- [ ] Prove one code-to-Confluence and one Confluence-to-code finding.
+- [x] Prove one code-to-Confluence and one Confluence-to-code finding in the built-worker integration fixture.
 - [ ] Finish repeated-callback, both-order, and concurrent source-write coverage; repeated pair creation and source resync are covered.
 
 Current Package 3 handoff: the provider-neutral schema, encrypted Confluence OAuth/token lifecycle, source chooser, nested grouping, documentation-first route, initial page sync, and canonical pair deduplication are implemented and validated locally. Production callback registration and a live Confluence smoke test remain blocked on H1. Automatic Confluence change events and bidirectional findings remain subsequent analysis-pipeline work.
 
 Package 3 is complete when users can connect external documentation without learning a second analysis workflow and both sources produce findings in the same feed.
+
+### Package 4 — Provider-neutral manual analysis
+
+**Status:** Implemented and covered in the built worker; live GitHub/Confluence smoke test remains.
+
+- [x] Persist and return a queued manual run before analysis begins.
+- [x] Execute GitHub pull-request analysis through the common run lifecycle.
+- [x] Resolve an indexed Confluence page by title, path, ID, URL, or latest page.
+- [x] Traverse the same deterministic graph and finding writer for both providers.
+- [x] Produce code-to-Confluence and Confluence-to-code evidence with correct provider links.
+- [x] Poll queued/running runs in the UI and reload the feed after completion.
+- [x] Persist failed run states and safe user-facing errors.
+- [x] Preserve run, finding, and evidence history when a source is removed.
+- [ ] Replace staging `waitUntil` execution with a crash-safe durable queue on the replacement production runtime.
+- [ ] Run the complete flow against the connected live GitHub repository and a real Confluence space.
+
+Package 4 is complete when the live smoke test shows both change directions in the same feed and the replacement runtime can retry claimed jobs without request-lifetime coupling.
 
 ---
 
@@ -990,6 +1007,8 @@ Add entries when a default above changes.
 | 2026-08-16 | Move the final deployment away from OpenAI Sites | The project should have an independently controlled, reproducible production environment | Sites remains temporary until a replacement stack passes callbacks, persistence, auth, jobs, and end-to-end smoke tests |
 | 2026-08-16 | Show Notion in the source chooser before its connector is built | Users should see the intended documentation-source direction without encountering a fake connection flow | Notion is labeled Connection coming next and remains non-interactive until a real OAuth and ingestion package exists |
 | 2026-08-16 | Show Google Docs in the source chooser before its connector is built | Teams also keep product documentation in Google Docs and should see that source direction in setup | Google Docs is labeled Connection coming next and remains non-interactive until Google OAuth, document selection, ingestion, and refresh are implemented |
+| 2026-08-17 | Use one provider-neutral deterministic finding writer | GitHub and external documentation must produce the same evidence model and feed behavior | Changed graph nodes traverse workspace-scoped relationships; provider adapters only normalize the changed source |
+| 2026-08-17 | Detach staging analysis with Workers `waitUntil`, but do not call it the production queue | It lets the current Sites staging app return queued runs and continue work after the response without pretending to be crash-safe | D1 remains the source of run truth; the replacement deployment must claim and retry jobs through a durable worker |
 
 ---
 
@@ -1012,3 +1031,8 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Recorded Package 3 UX requirements for a single Add source provider chooser, repository-centered documentation grouping, persistent Add documentation and Connect repository actions, documentation-first setup, canonical duplicate detection, idempotent pair creation, and an Already tracked response that links to the existing group.
 - Decided to migrate the final deployment away from OpenAI Sites. Added a guarded migration plan covering runtime portability, auth, D1/data strategy, secrets, durable jobs, provider callback cutover, staging verification, rollback, and eventual Sites retirement.
 - Live completion is waiting on the one-time GitHub App credentials and a small real demonstration repository.
+
+### 2026-08-17
+
+- Implemented Package 4's queued provider-neutral manual analysis path, shared deterministic finding writer, Confluence page targeting, bidirectional GitHub/Confluence evidence, UI run polling, persisted failures, and built-worker integration coverage.
+- Kept crash-safe claiming and retry semantics explicitly gated on the replacement production runtime; the current Sites staging deployment uses `waitUntil` only as a temporary execution bridge.

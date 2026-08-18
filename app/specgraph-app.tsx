@@ -36,7 +36,7 @@ function statusText(change: ChangeItem) {
 
 function runResult(run: RunItem) {
   if (run.status === "queued") return "Queued";
-  if (run.status === "running") return "Analyzing…";
+  if (run.status === "running") return `Analyzing… ${run.progress}%`;
   if (run.status === "failed") return "Failed";
   if (run.findingsCount === 0) return "No findings";
   return `${run.findingsCount} ${run.findingsCount === 1 ? "finding" : "findings"}`;
@@ -253,6 +253,49 @@ export function SpecGraphApp({
     const timer = window.setTimeout(() => setToast(""), 2800);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!loadOnMount) return;
+    const activeRuns = runs.filter(
+      (run) => run.status === "queued" || run.status === "running",
+    );
+    if (!activeRuns.length) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void Promise.all(activeRuns.map((run) => api.loadRun(run.id)))
+        .then(async (updatedRuns) => {
+          if (cancelled) return;
+          setRuns((current) =>
+            current.map(
+              (run) => updatedRuns.find((updated) => updated.id === run.id) || run,
+            ),
+          );
+          if (
+            updatedRuns.some(
+              (run) => run.status === "succeeded" || run.status === "failed",
+            )
+          ) {
+            const [nextChanges, nextRuns] = await Promise.all([
+              api.loadChanges(filter),
+              api.loadRuns(),
+            ]);
+            if (!cancelled) {
+              setChanges(nextChanges);
+              setRuns(nextRuns.items);
+            }
+          }
+        })
+        .catch(() => {
+          // A later page refresh can resume polling from the persisted run state.
+        });
+    }, 900);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [api, filter, loadOnMount, runs]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -616,7 +659,12 @@ export function SpecGraphApp({
                       <i aria-hidden="true">·</i> {relativeTime(run.createdAt)}
                     </small>
                   </span>
-                  <span>{runResult(run)}</span>
+                  <span>
+                    {runResult(run)}
+                    {run.status === "failed" && run.errorMessage && (
+                      <small>{run.errorMessage}</small>
+                    )}
+                  </span>
                 </div>
               ))}
               {!loadingRuns && !runs.length && (
@@ -962,7 +1010,7 @@ export function SpecGraphApp({
                 ×
               </button>
             </header>
-            <p>Enter a branch, pull request, file, or documentation page.</p>
+            <p>Enter a GitHub pull request or an indexed documentation page.</p>
             <form onSubmit={(event) => void startAnalysis(event)}>
               {sources.length > 1 && (
                 <>
@@ -980,8 +1028,7 @@ export function SpecGraphApp({
               <input
                 id="analysis-target"
                 name="target"
-                defaultValue="main"
-                placeholder="main, #842, or docs/refunds.md"
+                placeholder="#842, Refund policy, or a page URL"
                 required
                 autoFocus
               />
