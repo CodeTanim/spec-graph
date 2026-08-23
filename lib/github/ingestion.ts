@@ -20,7 +20,11 @@ import { assertRepositoryWithinLimits } from "./limits";
 import type { GitHubSourceProvider } from "../providers/source-provider";
 
 const MAX_FILE_BYTES = 160_000;
-const FETCH_CONCURRENCY = 6;
+const FETCH_CONCURRENCY = 12;
+const DB_BATCH_SIZE = 20;
+
+type DbBatch = Parameters<SpecGraphDb["batch"]>[0];
+type DbBatchItem = DbBatch[number];
 
 type IndexedFile = {
   path: string;
@@ -48,6 +52,16 @@ async function mapInBatches<T, R>(
     );
   }
   return results;
+}
+
+async function executeInBatches(
+  db: SpecGraphDb,
+  statements: DbBatchItem[],
+): Promise<void> {
+  for (let index = 0; index < statements.length; index += DB_BATCH_SIZE) {
+    const batch = statements.slice(index, index + DB_BATCH_SIZE);
+    if (batch.length) await db.batch(batch as DbBatch);
+  }
 }
 
 function graphKind(kind: IndexedArtifactKind) {
@@ -145,17 +159,33 @@ export async function syncGitHubSource(
       .select()
       .from(artifacts)
       .where(eq(artifacts.sourceId, sourceId));
+    const existingNodes = await db
+      .select({ node: graphNodes, path: artifacts.externalId })
+      .from(graphNodes)
+      .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
+      .where(eq(artifacts.sourceId, sourceId));
     const existingByPath = new Map(existingArtifacts.map((item) => [item.externalId, item]));
+    const existingNodeByPath = new Map(existingNodes.map((item) => [item.path, item.node]));
     const artifactIds = new Map<string, string>();
     const nodeIds = new Map<string, string>();
 
     for (const file of files) {
       const existing = existingByPath.get(file.path);
       const artifactId = existing?.id || `art_${crypto.randomUUID()}`;
-      const canonicalUrl = githubUrl(record.source.name, revision, file.path);
-      await db
-        .insert(artifacts)
-        .values({
+      const existingNode = existingNodeByPath.get(file.path);
+      artifactIds.set(file.path, artifactId);
+      nodeIds.set(file.path, existingNode?.id || `node_${crypto.randomUUID()}`);
+    }
+
+    await executeInBatches(
+      db,
+      files.map((file) => {
+        const existing = existingByPath.get(file.path);
+        const artifactId = artifactIds.get(file.path)!;
+        const canonicalUrl = githubUrl(record.source.name, revision, file.path);
+        return db
+          .insert(artifacts)
+          .values({
           id: artifactId,
           sourceId,
           externalId: file.path,
@@ -168,49 +198,49 @@ export async function syncGitHubSource(
           createdAt: existing?.createdAt || now,
           updatedAt: now,
         })
-        .onConflictDoUpdate({
-          target: [artifacts.sourceId, artifacts.externalId],
-          set: {
-            kind: file.kind,
-            path: file.path,
-            title: file.path.split("/").at(-1) || file.path,
-            canonicalUrl,
-            currentRevision: revision,
-            contentHash: file.hash,
-            updatedAt: now,
-          },
-        });
-      artifactIds.set(file.path, artifactId);
-      await db
-        .insert(artifactVersions)
-        .values({
-          id: `ver_${crypto.randomUUID()}`,
-          artifactId,
-          revision,
-          contentHash: file.hash,
-          extractedText: file.content,
-          createdAt: now,
-        })
-        .onConflictDoNothing({
-          target: [artifactVersions.artifactId, artifactVersions.revision],
-        });
+          .onConflictDoUpdate({
+            target: [artifacts.sourceId, artifacts.externalId],
+            set: {
+              kind: file.kind,
+              path: file.path,
+              title: file.path.split("/").at(-1) || file.path,
+              canonicalUrl,
+              currentRevision: revision,
+              contentHash: file.hash,
+              updatedAt: now,
+            },
+          });
+      }),
+    );
 
-      const [existingNode] = await db
-        .select()
-        .from(graphNodes)
-        .where(
-          and(
-            eq(graphNodes.artifactId, artifactId),
-            eq(graphNodes.stableKey, `file:${file.path}`),
-          ),
-        )
-        .limit(1);
-      const nodeId = existingNode?.id || `node_${crypto.randomUUID()}`;
-      await db
-        .insert(graphNodes)
-        .values({
-          id: nodeId,
-          artifactId,
+    await executeInBatches(
+      db,
+      files.map((file) =>
+        db
+          .insert(artifactVersions)
+          .values({
+            id: `ver_${crypto.randomUUID()}`,
+            artifactId: artifactIds.get(file.path)!,
+            revision,
+            contentHash: file.hash,
+            extractedText: file.content,
+            createdAt: now,
+          })
+          .onConflictDoNothing({
+            target: [artifactVersions.artifactId, artifactVersions.revision],
+          }),
+      ),
+    );
+
+    await executeInBatches(
+      db,
+      files.map((file) => {
+        const existingNode = existingNodeByPath.get(file.path);
+        return db
+          .insert(graphNodes)
+          .values({
+          id: nodeIds.get(file.path)!,
+          artifactId: artifactIds.get(file.path)!,
           stableKey: `file:${file.path}`,
           kind: graphKind(file.kind),
           name: file.path,
@@ -220,25 +250,26 @@ export async function syncGitHubSource(
           createdAt: existingNode?.createdAt || now,
           updatedAt: now,
         })
-        .onConflictDoUpdate({
-          target: [graphNodes.artifactId, graphNodes.stableKey],
-          set: {
-            kind: graphKind(file.kind),
-            name: file.path,
-            startLine: 1,
-            endLine: file.content.split("\n").length,
-            contentHash: file.hash,
-            updatedAt: now,
-          },
-        });
-      nodeIds.set(file.path, nodeId);
-    }
+          .onConflictDoUpdate({
+            target: [graphNodes.artifactId, graphNodes.stableKey],
+            set: {
+              kind: graphKind(file.kind),
+              name: file.path,
+              startLine: 1,
+              endLine: file.content.split("\n").length,
+              contentHash: file.hash,
+              updatedAt: now,
+            },
+          });
+      }),
+    );
 
     const currentPaths = new Set(files.map((file) => file.path));
-    for (const existing of existingArtifacts) {
-      if (!currentPaths.has(existing.externalId)) {
-        await db.delete(artifacts).where(eq(artifacts.id, existing.id));
-      }
+    const removedArtifactIds = existingArtifacts
+      .filter((existing) => !currentPaths.has(existing.externalId))
+      .map((existing) => existing.id);
+    if (removedArtifactIds.length) {
+      await db.delete(artifacts).where(inArray(artifacts.id, removedArtifactIds));
     }
 
     const allNodeIds = [...nodeIds.values()];
@@ -258,6 +289,7 @@ export async function syncGitHubSource(
         .filter((file) => file.kind === "openapi")
         .map((file) => [file.path, extractOpenApiEndpoints(file.content)]),
     );
+    const relationshipInserts: DbBatchItem[] = [];
     for (const file of files) {
       const fromNodeId = nodeIds.get(file.path);
       if (!fromNodeId) continue;
@@ -270,9 +302,10 @@ export async function syncGitHubSource(
       )) {
         const toNodeId = nodeIds.get(reference.targetPath);
         if (!toNodeId) continue;
-        await db
-          .insert(relationships)
-          .values({
+        relationshipInserts.push(
+          db
+            .insert(relationships)
+            .values({
             id: `rel_${crypto.randomUUID()}`,
             fromNodeId,
             toNodeId,
@@ -283,16 +316,18 @@ export async function syncGitHubSource(
             createdAt: now,
             updatedAt: now,
           })
-          .onConflictDoNothing({
-            target: [
-              relationships.fromNodeId,
-              relationships.toNodeId,
-              relationships.type,
-              relationships.origin,
-            ],
-          });
+            .onConflictDoNothing({
+              target: [
+                relationships.fromNodeId,
+                relationships.toNodeId,
+                relationships.type,
+                relationships.origin,
+              ],
+            }),
+        );
       }
     }
+    await executeInBatches(db, relationshipInserts);
 
     await db
       .update(sources)
