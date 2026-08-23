@@ -2,6 +2,8 @@
 .env.*
 !.env.example
 .openai
+.agents
+skills-lock.json
 .wrangler
 dist
 outputs
