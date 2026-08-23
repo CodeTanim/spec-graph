@@ -636,7 +636,11 @@ button:disabled {
   border-bottom: 1px solid var(--line);
 }
 
-.artifact-list > button {
+.artifact-item {
+  border-top: 1px solid var(--line);
+}
+
+.artifact-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -644,18 +648,17 @@ button:disabled {
   width: 100%;
   min-height: 64px;
   border: 0;
-  border-top: 1px solid var(--line);
   background: var(--paper);
   padding: 12px 2px;
   text-align: left;
 }
 
-.artifact-list > button:hover,
-.artifact-list > button[aria-expanded="true"] {
+.artifact-row:hover,
+.artifact-row[aria-expanded="true"] {
   background: var(--soft);
 }
 
-.artifact-list > button > span:first-child {
+.artifact-row > span:first-child {
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -671,7 +674,6 @@ button:disabled {
 }
 
 .artifact-preview {
-  border-bottom: 1px solid var(--line);
   background: var(--soft);
   padding: 18px;
 }

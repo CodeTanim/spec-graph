@@ -67,6 +67,25 @@ describe("SpecGraphApp", () => {
     ).toBeInTheDocument();
   });
 
+  it("expands affected-item evidence directly beneath the selected row", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(
+      screen.getByRole("button", { name: /Reason is now required for refund requests/ }),
+    );
+    const artifactButton = screen.getByRole("button", { name: /Refund SDK/ });
+    const detailsId = artifactButton.getAttribute("aria-controls");
+
+    expect(detailsId).toBeTruthy();
+    await user.click(artifactButton);
+
+    const details = document.getElementById(detailsId!);
+    expect(artifactButton).toHaveAttribute("aria-expanded", "true");
+    expect(details).toHaveTextContent("createRefund({ transactionId })");
+    expect(details?.previousElementSibling).toBe(artifactButton);
+  });
+
   it("queues a manual analysis through the API and shows it in Runs", async () => {
     const user = userEvent.setup();
     renderApp();

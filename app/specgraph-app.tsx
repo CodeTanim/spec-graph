@@ -934,26 +934,45 @@ export function SpecGraphApp({
               </h3>
               {selectedChange.artifacts.length ? (
                 <div className="artifact-list">
-                  {selectedChange.artifacts.map((artifact) => (
-                    <button
-                      type="button"
-                      key={artifact.id}
-                      aria-expanded={selectedArtifact?.id === artifact.id}
-                      onClick={() =>
-                        setSelectedArtifact((current) =>
-                          current?.id === artifact.id ? null : artifact,
-                        )
-                      }
-                    >
-                      <span>
-                        <strong>{artifact.name}</strong>
-                        <small>{artifact.kind}</small>
-                      </span>
-                      <span aria-hidden="true">
-                        {selectedArtifact?.id === artifact.id ? "−" : "+"}
-                      </span>
-                    </button>
-                  ))}
+                  {selectedChange.artifacts.map((artifact) => {
+                    const expanded = selectedArtifact?.id === artifact.id;
+                    const detailsId = `artifact-details-${artifact.id}`;
+
+                    return (
+                      <div className="artifact-item" key={artifact.id}>
+                        <button
+                          type="button"
+                          className="artifact-row"
+                          aria-expanded={expanded}
+                          aria-controls={detailsId}
+                          onClick={() =>
+                            setSelectedArtifact((current) =>
+                              current?.id === artifact.id ? null : artifact,
+                            )
+                          }
+                        >
+                          <span>
+                            <strong>{artifact.name}</strong>
+                            <small>{artifact.kind}</small>
+                          </span>
+                          <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                        </button>
+
+                        {expanded && (
+                          <div className="artifact-preview" id={detailsId}>
+                            <span>{artifact.location}</span>
+                            <blockquote>{artifact.excerpt}</blockquote>
+                            <p>{artifact.reason}</p>
+                            {artifact.externalUrl && (
+                              <a href={artifact.externalUrl} target="_blank" rel="noreferrer">
+                                Open source <Arrow />
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="analysis-message">
@@ -963,18 +982,6 @@ export function SpecGraphApp({
                 </p>
               )}
 
-              {selectedArtifact && (
-                <div className="artifact-preview">
-                  <span>{selectedArtifact.location}</span>
-                  <blockquote>{selectedArtifact.excerpt}</blockquote>
-                  <p>{selectedArtifact.reason}</p>
-                  {selectedArtifact.externalUrl && (
-                    <a href={selectedArtifact.externalUrl} target="_blank" rel="noreferrer">
-                      Open source <Arrow />
-                    </a>
-                  )}
-                </div>
-              )}
             </section>
 
             {selectedChange.status !== "processing" && selectedChange.evidence && (
