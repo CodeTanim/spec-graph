@@ -22,6 +22,7 @@ import type { GitHubSourceProvider } from "../providers/source-provider";
 const MAX_FILE_BYTES = 160_000;
 const FETCH_CONCURRENCY = 12;
 const DB_BATCH_SIZE = 20;
+const DB_IN_LIST_SIZE = 40;
 
 type DbBatch = Parameters<SpecGraphDb["batch"]>[0];
 type DbBatchItem = DbBatch[number];
@@ -268,18 +269,21 @@ export async function syncGitHubSource(
     const removedArtifactIds = existingArtifacts
       .filter((existing) => !currentPaths.has(existing.externalId))
       .map((existing) => existing.id);
-    if (removedArtifactIds.length) {
-      await db.delete(artifacts).where(inArray(artifacts.id, removedArtifactIds));
+    for (let index = 0; index < removedArtifactIds.length; index += DB_IN_LIST_SIZE) {
+      await db
+        .delete(artifacts)
+        .where(inArray(artifacts.id, removedArtifactIds.slice(index, index + DB_IN_LIST_SIZE)));
     }
 
     const allNodeIds = [...nodeIds.values()];
-    if (allNodeIds.length) {
+    for (let index = 0; index < allNodeIds.length; index += DB_IN_LIST_SIZE) {
+      const nodeIdBatch = allNodeIds.slice(index, index + DB_IN_LIST_SIZE);
       await db
         .delete(relationships)
         .where(
           or(
-            inArray(relationships.fromNodeId, allNodeIds),
-            inArray(relationships.toNodeId, allNodeIds),
+            inArray(relationships.fromNodeId, nodeIdBatch),
+            inArray(relationships.toNodeId, nodeIdBatch),
           ),
         );
     }
