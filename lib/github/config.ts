@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { ApiError } from "../server/http";
 
 export type GitHubOAuthConfig = {
@@ -12,9 +11,8 @@ export type GitHubAppConfig = GitHubOAuthConfig & {
   privateKey: string;
 };
 
-function value(name: keyof Cloudflare.Env): string {
-  const candidate = env[name];
-  return typeof candidate === "string" ? candidate.trim() : "";
+function value(name: string): string {
+  return process.env[name]?.trim() ?? "";
 }
 
 export function getGitHubOAuthConfig(): GitHubOAuthConfig {

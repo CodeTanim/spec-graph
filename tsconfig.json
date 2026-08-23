@@ -13,10 +13,13 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "types": ["@cloudflare/workers-types", "node"],
+    "types": ["node"],
     "plugins": [
       {
         "name": "next"
+      },
+      {
+        "name": "workflow"
       }
     ],
     "paths": {
@@ -31,5 +34,12 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "build",
+    "db/development-migrations.ts",
+    "examples/d1",
+    "vite.config.ts",
+    "worker"
+  ]
 }

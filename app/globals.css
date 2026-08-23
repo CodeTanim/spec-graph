@@ -26,6 +26,40 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.auth-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+}
+
+.auth-card {
+  width: min(560px, 100%);
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  padding: 48px 0;
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: clamp(36px, 7vw, 58px);
+  font-weight: 650;
+  letter-spacing: -0.055em;
+  line-height: 1.02;
+}
+
+.auth-card > p:not(.section-label) {
+  max-width: 500px;
+  margin: 24px 0 32px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.auth-action {
+  min-height: 44px;
+}
+
 button,
 input,
 select {

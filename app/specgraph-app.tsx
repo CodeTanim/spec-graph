@@ -304,11 +304,13 @@ export function SpecGraphApp({
     const timer = window.setInterval(() => {
       if (refreshing) return;
       refreshing = true;
-      void Promise.all([api.loadRuns(), api.loadChanges(filter)])
-        .then(([nextRuns, nextChanges]) => {
+      void Promise.all([api.loadRuns(), api.loadChanges(filter), api.loadSources()])
+        .then(([nextRuns, nextChanges, nextSources]) => {
           if (cancelled) return;
           setRuns(nextRuns.items);
           setChanges(nextChanges);
+          setSources(nextSources.items);
+          setSourceGroups(nextSources.groups);
         })
         .catch(() => {
           // The next poll retries without interrupting the current screen.
@@ -450,7 +452,7 @@ export function SpecGraphApp({
           ? `That repository and documentation are already being tracked together`
           : result.alreadyTracked
             ? `${result.source.name} was already connected`
-            : `${result.source.name} connected · ${result.source.artifactCount} files indexed`,
+            : `${result.source.name} connected · indexing started`,
       );
     } catch (connectionError) {
       setToast(
@@ -482,7 +484,7 @@ export function SpecGraphApp({
           ? `Already tracked with ${result.repositoryName.split("/").at(-1) || result.repositoryName}`
           : result.alreadyTracked
             ? `${result.source.name} was already connected`
-            : `${result.source.name} connected · ${result.source.artifactCount} pages indexed`,
+            : `${result.source.name} connected · indexing started`,
       );
     } catch (connectionError) {
       setToast(
@@ -501,7 +503,7 @@ export function SpecGraphApp({
     try {
       const result = await api.syncSource(sourceId);
       await refreshSources();
-      setToast(`${result.source.name} is up to date`);
+      setToast(`${result.source.name} sync started`);
     } catch (syncError) {
       setToast(syncError instanceof Error ? syncError.message : "The source could not be synced.");
     } finally {

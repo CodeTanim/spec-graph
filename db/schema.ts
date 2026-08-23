@@ -1,20 +1,24 @@
-import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  pgTable,
   primaryKey,
   real,
-  sqliteTable,
   text,
+  timestamp,
   uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+} from "drizzle-orm/pg-core";
 
 const timestamps = {
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow(),
 };
 
-export const users = sqliteTable(
+export const users = pgTable(
   "users",
   {
     id: text("id").primaryKey(),
@@ -28,13 +32,13 @@ export const users = sqliteTable(
   ],
 );
 
-export const workspaces = sqliteTable("workspaces", {
+export const workspaces = pgTable("workspaces", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   ...timestamps,
 });
 
-export const workspaceMembers = sqliteTable(
+export const workspaceMembers = pgTable(
   "workspace_members",
   {
     workspaceId: text("workspace_id")
@@ -46,7 +50,9 @@ export const workspaceMembers = sqliteTable(
     role: text("role", { enum: ["owner", "member"] })
       .notNull()
       .default("member"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.userId] }),
@@ -54,7 +60,7 @@ export const workspaceMembers = sqliteTable(
   ],
 );
 
-export const providerConnectionSessions = sqliteTable(
+export const providerConnectionSessions = pgTable(
   "provider_connection_sessions",
   {
     id: text("id").primaryKey(),
@@ -73,8 +79,8 @@ export const providerConnectionSessions = sqliteTable(
     })
       .notNull()
       .default("initiated"),
-    expiresAt: text("expires_at").notNull(),
-    consumedAt: text("consumed_at"),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true, mode: "string" }),
     ...timestamps,
   },
   (table) => [
@@ -88,7 +94,7 @@ export const providerConnectionSessions = sqliteTable(
   ],
 );
 
-export const confluenceConnections = sqliteTable(
+export const confluenceConnections = pgTable(
   "confluence_connections",
   {
     id: text("id").primaryKey(),
@@ -100,7 +106,10 @@ export const confluenceConnections = sqliteTable(
     siteUrl: text("site_url").notNull(),
     encryptedAccessToken: text("encrypted_access_token").notNull(),
     encryptedRefreshToken: text("encrypted_refresh_token"),
-    accessTokenExpiresAt: text("access_token_expires_at").notNull(),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", {
+      withTimezone: true,
+      mode: "string",
+    }).notNull(),
     scopes: text("scopes").notNull().default(""),
     status: text("status", {
       enum: ["active", "expired", "disconnected"],
@@ -117,7 +126,7 @@ export const confluenceConnections = sqliteTable(
   ],
 );
 
-export const githubInstallations = sqliteTable(
+export const githubInstallations = pgTable(
   "github_installations",
   {
     id: text("id").primaryKey(),
@@ -142,7 +151,7 @@ export const githubInstallations = sqliteTable(
   ],
 );
 
-export const sources = sqliteTable(
+export const sources = pgTable(
   "sources",
   {
     id: text("id").primaryKey(),
@@ -170,7 +179,10 @@ export const sources = sqliteTable(
       .notNull()
       .default("pending"),
     lastError: text("last_error"),
-    lastSyncedAt: text("last_synced_at"),
+    lastSyncedAt: timestamp("last_synced_at", {
+      withTimezone: true,
+      mode: "string",
+    }),
     ...timestamps,
   },
   (table) => [
@@ -183,7 +195,7 @@ export const sources = sqliteTable(
   ],
 );
 
-export const sourceAssociations = sqliteTable(
+export const sourceAssociations = pgTable(
   "source_associations",
   {
     id: text("id").primaryKey(),
@@ -209,7 +221,7 @@ export const sourceAssociations = sqliteTable(
   ],
 );
 
-export const artifacts = sqliteTable(
+export const artifacts = pgTable(
   "artifacts",
   {
     id: text("id").primaryKey(),
@@ -236,7 +248,7 @@ export const artifacts = sqliteTable(
   ],
 );
 
-export const artifactVersions = sqliteTable(
+export const artifactVersions = pgTable(
   "artifact_versions",
   {
     id: text("id").primaryKey(),
@@ -246,7 +258,9 @@ export const artifactVersions = sqliteTable(
     revision: text("revision").notNull(),
     contentHash: text("content_hash").notNull(),
     extractedText: text("extracted_text").notNull().default(""),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     uniqueIndex("idx_artifact_versions_artifact_revision").on(
@@ -256,7 +270,7 @@ export const artifactVersions = sqliteTable(
   ],
 );
 
-export const graphNodes = sqliteTable(
+export const graphNodes = pgTable(
   "graph_nodes",
   {
     id: text("id").primaryKey(),
@@ -282,7 +296,7 @@ export const graphNodes = sqliteTable(
   ],
 );
 
-export const relationships = sqliteTable(
+export const relationships = pgTable(
   "relationships",
   {
     id: text("id").primaryKey(),
@@ -312,7 +326,7 @@ export const relationships = sqliteTable(
   ],
 );
 
-export const changeEvents = sqliteTable(
+export const changeEvents = pgTable(
   "change_events",
   {
     id: text("id").primaryKey(),
@@ -333,8 +347,13 @@ export const changeEvents = sqliteTable(
     beforeRevision: text("before_revision"),
     afterRevision: text("after_revision"),
     actor: text("actor"),
-    occurredAt: text("occurred_at").notNull(),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    occurredAt: timestamp("occurred_at", {
+      withTimezone: true,
+      mode: "string",
+    }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     index("idx_change_events_workspace_occurred").on(
@@ -344,7 +363,7 @@ export const changeEvents = sqliteTable(
   ],
 );
 
-export const analysisRuns = sqliteTable(
+export const analysisRuns = pgTable(
   "analysis_runs",
   {
     id: text("id").primaryKey(),
@@ -374,8 +393,9 @@ export const analysisRuns = sqliteTable(
     attempts: integer("attempts").notNull().default(0),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),
-    startedAt: text("started_at"),
-    completedAt: text("completed_at"),
+    workflowRunId: text("workflow_run_id"),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
     ...timestamps,
   },
   (table) => [
@@ -388,7 +408,7 @@ export const analysisRuns = sqliteTable(
   ],
 );
 
-export const runAttempts = sqliteTable(
+export const runAttempts = pgTable(
   "run_attempts",
   {
     id: text("id").primaryKey(),
@@ -402,8 +422,8 @@ export const runAttempts = sqliteTable(
       .default("running"),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),
-    startedAt: text("started_at").notNull(),
-    finishedAt: text("finished_at"),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
   },
   (table) => [
     uniqueIndex("idx_run_attempts_run_attempt_stage").on(
@@ -414,7 +434,7 @@ export const runAttempts = sqliteTable(
   ],
 );
 
-export const findings = sqliteTable(
+export const findings = pgTable(
   "findings",
   {
     id: text("id").primaryKey(),
@@ -448,7 +468,7 @@ export const findings = sqliteTable(
   ],
 );
 
-export const findingEvidence = sqliteTable(
+export const findingEvidence = pgTable(
   "finding_evidence",
   {
     id: text("id").primaryKey(),
@@ -467,12 +487,14 @@ export const findingEvidence = sqliteTable(
     type: text("type", { enum: ["source", "relationship", "semantic"] })
       .notNull()
       .default("source"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [index("idx_finding_evidence_finding").on(table.findingId)],
 );
 
-export const findingActions = sqliteTable(
+export const findingActions = pgTable(
   "finding_actions",
   {
     id: text("id").primaryKey(),
@@ -484,7 +506,9 @@ export const findingActions = sqliteTable(
       .references(() => users.id, { onDelete: "restrict" }),
     action: text("action", { enum: ["dismiss", "resolve", "reopen"] }).notNull(),
     note: text("note"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     index("idx_finding_actions_finding_created").on(
@@ -494,7 +518,7 @@ export const findingActions = sqliteTable(
   ],
 );
 
-export const webhookDeliveries = sqliteTable(
+export const webhookDeliveries = pgTable(
   "webhook_deliveries",
   {
     id: text("id").primaryKey(),
@@ -508,8 +532,8 @@ export const webhookDeliveries = sqliteTable(
     status: text("status", { enum: ["received", "processed", "ignored", "failed"] })
       .notNull()
       .default("received"),
-    receivedAt: text("received_at").notNull(),
-    processedAt: text("processed_at"),
+    receivedAt: timestamp("received_at", { withTimezone: true, mode: "string" }).notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true, mode: "string" }),
     errorMessage: text("error_message"),
   },
   (table) => [

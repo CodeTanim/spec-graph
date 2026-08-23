@@ -1,11 +1,14 @@
-import { waitUntil } from "cloudflare:workers";
+import { eq } from "drizzle-orm";
+import { start } from "workflow/api";
+import { getDb } from "../../../db";
+import { analysisRuns } from "../../../db/schema";
 import { getRequestWorkspace } from "../../../lib/server/current-workspace";
 import { ApiError, apiErrorResponse, readJsonObject } from "../../../lib/server/http";
 import {
   createManualRun,
   listRuns,
 } from "../../../lib/server/specgraph-repository";
-import { executeManualAnalysis } from "../../../lib/analysis/manual";
+import { manualAnalysisWorkflow } from "../../../workflows/manual-analysis";
 
 export async function GET(request: Request) {
   try {
@@ -29,7 +32,15 @@ export async function POST(request: Request) {
 
     const input = { target, sourceId };
     const result = await createManualRun(workspace.id, user.databaseId, input);
-    waitUntil(executeManualAnalysis(workspace.id, result.run.id, input));
+    const workflowRun = await start(manualAnalysisWorkflow, [
+      workspace.id,
+      result.run.id,
+      input,
+    ]);
+    await getDb()
+      .update(analysisRuns)
+      .set({ workflowRunId: workflowRun.runId })
+      .where(eq(analysisRuns.id, result.run.id));
     return Response.json(result, { status: 202 });
   } catch (error) {
     return apiErrorResponse(error);

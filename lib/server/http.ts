@@ -21,7 +21,9 @@ export function apiErrorResponse(error: unknown): Response {
 
   const message = error instanceof Error ? error.message : "Unexpected error";
   const databaseUnavailable =
-    message.includes("no such table") || message.includes("D1 binding `DB` is unavailable");
+    message.includes("does not exist") ||
+    message.includes("DATABASE_URL is required") ||
+    message.includes("database system is starting up");
 
   return Response.json(
     {

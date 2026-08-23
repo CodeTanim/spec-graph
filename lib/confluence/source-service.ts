@@ -5,17 +5,12 @@ import type { ConnectConfluenceSourceInput, ConnectConfluenceSourceResponse } fr
 import { associateSources } from "../providers/source-associations";
 import { ApiError } from "../server/http";
 import { getSource } from "../server/specgraph-repository";
-import type { ConfluenceSourceProvider } from "./client";
 import { consumeConfluenceConnectionSession, getConfluenceConnectionSession } from "./connection";
-import { syncConfluenceSource } from "./ingestion";
-import { rebuildCrossSourceRelationships } from "../providers/cross-source-relationships";
 
 export async function connectConfluenceSource(
   workspaceId: string,
   userId: string,
   input: ConnectConfluenceSourceInput,
-  encryptionKey: string,
-  client: ConfluenceSourceProvider,
   db: SpecGraphDb = getDb(),
 ): Promise<ConnectConfluenceSourceResponse> {
   const session = await getConfluenceConnectionSession(input.sessionState, workspaceId, userId, db);
@@ -77,8 +72,6 @@ export async function connectConfluenceSource(
     repositoryName = association.repositoryName;
   }
   await consumeConfluenceConnectionSession(session.id, db);
-  await syncConfluenceSource(workspaceId, source.id, encryptionKey, client, db);
-  await rebuildCrossSourceRelationships(workspaceId, source.id, db);
   return {
     source: await getSource(workspaceId, source.id, db),
     alreadyTracked,

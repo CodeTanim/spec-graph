@@ -1,7 +1,7 @@
 # SpecGraph MVP Implementation Plan
 
-**Status:** Implementation — Package 5 automatic GitHub feed implemented; live webhook activation pending
-**Last updated:** August 19, 2026
+**Status:** Implementation — Package 5 live GitHub webhook processing verified; linked-impact finding smoke pending
+**Last updated:** August 23, 2026
 **Primary reference:** [SpecGraph Resume Project Assessment](./RESUME_PROJECT_ASSESSMENT.md)
 
 ## How to Use This Plan
@@ -98,13 +98,13 @@ These defaults prevent the project from stalling. Change them only through the d
 | First code source | GitHub App | Provides scoped access, webhooks, installation identity, and a credible production integration. |
 | Repository documentation | Discover Markdown, MDX, README, and OpenAPI automatically | Users should not reconnect documentation that already lives beside their code. |
 | First external documentation source | Confluence | Makes the cross-source product promise real without introducing a broad connector catalog. |
-| Graph storage | D1 relational tables | Sufficient for the MVP graph size and keeps deployment simple; no graph database is required. |
+| Graph storage | Neon Postgres relational tables | The MVP graph remains relational and bounded while gaining portable SQL persistence outside Sites. |
 | Artifact snapshots | Git commit SHA and provider revision links | GitHub already retains immutable revisions; add blob storage only when external documents require it. |
 | Analysis strategy | Deterministic graph first, semantic model second | Improves explainability, precision, and cost control. |
 | Run updates | Client polling | Simple and adequate for MVP-scale jobs. |
 | Product action | Detect and explain only | Keeps the first release safe and measurable. |
-| Initial tenancy | Private, identity-aware workspace | Uses the platform's authenticated-user identity and avoids building a separate auth system. |
-| Deployment direction | Migrate away from OpenAI Sites before the final release; replacement host is not yet selected | The repository and runtime should be independently deployable and controlled outside the temporary Sites environment. |
+| Initial tenancy | Auth.js GitHub identity with one private workspace per user | Authentication is explicit, portable, and server-enforced rather than supplied by a hosting-specific header. |
+| Deployment direction | Vercel Hobby, Neon Postgres, Auth.js, and Vercel Workflow | This noncommercial MVP gets a reproducible Next.js runtime, durable jobs, managed secrets, and a free development database. |
 
 ### Minimal source-connection experience
 
@@ -146,9 +146,9 @@ The UI should never require users to understand ingestion, graph construction, w
 - [x] Responsive and accessible interaction states.
 - [x] Component tests for the main UI behaviors.
 - [x] Rendered HTML tests.
-- [x] Cloudflare/vinext build and deployment scaffolding.
-- [x] Drizzle and D1 scaffolding.
-- [x] Optional authenticated-user helpers.
+- [x] Standard Next.js and Vercel deployment scaffolding.
+- [x] Drizzle and Neon Postgres persistence.
+- [x] Auth.js GitHub identity and protected API helpers.
 - [x] Persistent database schema and initial migration.
 - [x] Authenticated personal workspace resolution.
 - [x] Product read APIs and persisted finding actions.
@@ -160,9 +160,9 @@ The UI should never require users to understand ingestion, graph construction, w
 - [x] Source ingestion and revision-aware synchronization.
 - [x] Initial supported artifact parsers.
 - [x] Initial typed dependency graph.
-- [x] Manual detached analysis on the staging runtime.
+- [x] Manual durable analysis on the Vercel runtime.
 - [x] Signed GitHub webhook ingestion with delivery deduplication.
-- [ ] Crash-safe durable execution, retry, and failure recovery.
+- [x] Crash-safe durable execution with bounded workflow retries and persisted failures.
 - [ ] Semantic candidate analysis.
 - [ ] Evidence verification.
 - [ ] Evaluation dataset and quality metrics.
@@ -178,8 +178,8 @@ flowchart LR
     UI --> API["Authenticated API routes"]
     GitHub["GitHub App and webhooks"] --> API
     Confluence["Confluence pages and changes"] --> API
-    API --> DB["D1 product database"]
-    API --> Jobs["Durable analysis jobs"]
+    API --> DB["Neon Postgres product database"]
+    API --> Jobs["Vercel Workflows"]
     Jobs --> Fetch["Provider content and change fetcher"]
     Fetch --> Parse["Typed artifact parsers"]
     Parse --> Graph["Dependency graph updater"]
@@ -392,10 +392,10 @@ Initial ranking inputs:
 | M0 — Contract and test seam | In progress | Current prototype | UI no longer owns product fixtures or domain behavior |
 | M1 — Persistence and identity | In progress | M0 | State survives reload and is tenant-scoped |
 | M2 — GitHub connection and ingestion | Complete | M1 | One real repository is connected and indexed |
-| H1 — Hosting migration | Planned | M2 | The application runs outside Sites with portable auth, persistence, secrets, and callbacks |
+| H1 — Hosting migration | Vercel auth, repository sync, and GitHub webhook smoke passed; Confluence and remaining lifecycle smoke pending | M2 | The application runs outside Sites with portable auth, persistence, secrets, and callbacks |
 | M3 — Deterministic graph | Initial implementation complete | M2 | Supported artifacts have queryable typed relationships |
 | M4 — Manual end-to-end analysis | Staging implementation complete; live smoke pending | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
-| M5 — Automatic GitHub feed | Implementation complete; live webhook activation pending | M4 | Pushes and pull requests trigger the same pipeline |
+| M5 — Automatic GitHub feed | Live push processed exactly once; linked-impact finding smoke pending | M4 | Pushes and pull requests trigger the same pipeline |
 | M6 — Confluence documentation connection | In progress (local contracts complete; production gated) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
 | M7 — Semantic ranking and evidence | Not started | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
 | M8 — Review lifecycle and resilience | Not started | M5, M7 | Actions persist; failures retry safely |
@@ -429,11 +429,11 @@ Exit criteria:
 
 Goal: establish durable, authenticated product state.
 
-- [x] Activate the logical D1 database binding.
+- [x] Provision Neon Postgres and configure pooled application and direct migration URLs.
 - [x] Implement the core Drizzle schema and enums.
 - [x] Generate and inspect the initial SQL migration.
 - [x] Add repository modules for sources, runs, findings, and actions.
-- [x] Resolve stable user identity from authenticated request headers.
+- [x] Resolve stable user identity from an Auth.js GitHub session.
 - [x] Create or resolve a default workspace for the authenticated user.
 - [x] Enforce workspace ownership in every repository query.
 - [x] Implement real read APIs for changes, runs, and sources.
@@ -443,7 +443,7 @@ Goal: establish durable, authenticated product state.
 
 Exit criteria:
 
-- [x] Feed, Runs, and Sources load from D1.
+- [x] Feed, Runs, and Sources load from Neon Postgres.
 - [x] A finding action survives page refresh.
 - [x] One user cannot access another workspace's IDs in integration tests.
 - [ ] Migrations work against a fresh database and an existing local database.
@@ -476,28 +476,28 @@ Exit criteria:
 
 Goal: move SpecGraph away from OpenAI Sites without losing the working product or binding the architecture prematurely to another vendor.
 
-Sites remains the temporary live environment until the replacement deployment passes the full smoke test. Do not remove `.openai/hosting.json`, delete the Sites project, or cut over callback URLs before that gate passes.
+The existing Sites deployment remains available as rollback until GitHub authentication, repository connection, sync, analysis, and webhooks pass on the stable Vercel domain. Do not delete the Sites project during that verification window.
 
-- [ ] Inventory Sites-specific dependencies: vinext/Worker output, authenticated-user headers, D1 bindings, runtime environment access, deployment packaging, and the current domain.
-- [ ] Select the replacement hosting, relational database, authentication, background-job, and secret-management stack as one compatible system.
-- [ ] Keep product repositories and provider adapters independent from the hosting runtime through small auth, database, queue, and environment boundaries.
-- [ ] Decide whether to migrate D1 data into the replacement database or intentionally start the pre-release environment from an empty schema.
-- [ ] Run all migrations from an empty replacement database and verify tenant isolation and source-removal retention behavior.
-- [ ] Configure GitHub App credentials and update its homepage, OAuth callback, setup, and later webhook URLs for the replacement domain.
+- [x] Inventory Sites-specific dependencies: vinext/Worker output, authenticated-user headers, D1 bindings, runtime environment access, deployment packaging, and the current domain.
+- [x] Select Vercel Hobby, Neon Postgres, Auth.js GitHub sign-in, Vercel Workflow, and Vercel secret management as one compatible system.
+- [x] Keep product repositories and provider adapters independent from the hosting runtime through small auth, database, job, and environment boundaries.
+- [x] Start the pre-release Neon environment from an empty schema; the former D1 data is disposable staging data and is not migrated.
+- [x] Run all migrations from an empty replacement database and verify workspace idempotency, source-pair deduplication, evidence links, review persistence, and run retries against Postgres.
+- [x] Configure GitHub App credentials and update its homepage, OAuth callback, and webhook URL for the replacement domain.
 - [ ] Configure Confluence OAuth callbacks against the replacement domain before production Confluence authorization begins.
-- [ ] Provide a durable job mechanism that does not depend on an HTTP request remaining alive.
-- [ ] Recreate production secrets outside source control and confirm no provider token or private key is exposed to the browser or logs.
+- [x] Provide durable source-sync, manual-analysis, and GitHub-webhook workflows that do not depend on an HTTP request remaining alive.
+- [x] Recreate database, GitHub App, webhook, and Auth.js secrets in Vercel Preview and Production as sensitive values.
 - [ ] Deploy a staging environment from the GitHub repository and run the complete repository connection, sync, analysis, persistence, and removal smoke test.
-- [ ] Cut over the stable URL only after the replacement deployment passes; keep the Sites deployment available for rollback during the verification window.
+- [x] Deploy the replacement at `https://spec-graph.vercel.app`; keep the Sites deployment available for rollback during the verification window.
 - [ ] Retire the Sites deployment and remove Sites-only configuration only after callbacks, data, authentication, and observability are confirmed on the replacement.
 
 Exit criteria:
 
-- [ ] A clean GitHub checkout can deploy without OpenAI Sites tooling.
-- [ ] Authentication and workspace identity remain stable and server-enforced.
-- [ ] Structured data persists across deploys and migrations on the replacement database.
+- [x] A clean GitHub checkout builds and deploys with standard Next.js tooling; removal of archived Sites-only files waits for the live smoke gate.
+- [x] Authentication and workspace identity are server-enforced through Auth.js and workspace-scoped repositories.
+- [x] Structured data persists across deploys and migrations in Neon Postgres.
 - [ ] GitHub and Confluence callbacks use the replacement domain.
-- [ ] Background jobs, retries, and logs work without request-lifetime coupling.
+- [x] Background jobs and bounded retries use Vercel Workflow without request-lifetime coupling; live log inspection remains part of the smoke test.
 - [ ] The end-to-end smoke test passes before Sites is decommissioned.
 
 ### M3 — Deterministic Dependency Graph
@@ -579,23 +579,23 @@ Goal: let users connect external documentation without making source setup feel 
 - [x] Replace the page-level Connect GitHub/Add repository action with one Add source action.
 - [x] Open an accessible provider dialog containing GitHub repository and Confluence documentation choices.
 - [x] Route GitHub selection into GitHub authorization and repository/branch selection.
-- [ ] Route Confluence selection into Confluence authorization and site/space/page selection.
-- [ ] Reuse the same provider dialog for Add documentation and Connect repository, pre-scoped to the relevant missing source type.
+- [x] Route Confluence selection into Confluence authorization and site/space selection; live callback activation remains gated on credentials.
+- [x] Reuse the same provider dialog for Add documentation and Connect repository, pre-scoped to the relevant missing source type.
 - [ ] Add the onboarding question: Where are your docs?
-- [ ] Explain that documentation inside GitHub is already included.
+- [x] Explain that documentation inside GitHub is already included.
 - [ ] Offer Connect Confluence and Not now as the only additional choices.
 - [x] Show Add documentation within every connected repository row, including after onboarding has been skipped or completed.
 - [x] Persist an explicit repository-to-documentation-source association; never infer the target repository from connection order.
 - [x] Group attached Confluence site/space information beneath its repository instead of showing it as an unrelated top-level source.
 - [x] Support documentation-first setup by showing an unattached Confluence source with a Connect repository action.
 - [x] Canonicalize GitHub repository and Confluence site/space/page identities before writes.
-- [x] Enforce uniqueness for provider sources and the `(workspace, repository source, documentation source)` association in D1.
+- [x] Enforce uniqueness for provider sources and the `(workspace, repository source, documentation source)` association in Postgres.
 - [ ] Make repeated connection callbacks and association requests idempotent under retries and concurrent submissions.
-- [ ] When the exact pair already exists, show Already tracked with the existing repository name and focus that source group.
+- [x] When the exact pair already exists, show Already tracked with the existing repository name.
 - [x] Implement read-only Confluence authorization and state validation locally; activate production callbacks after H1.
 - [x] Let the user select one accessible site and space.
 - [x] Persist Confluence source metadata without exposing credentials to the browser.
-- [ ] Ingest page IDs, versions, titles, sections, links, and canonical URLs.
+- [x] Ingest page IDs, versions, titles, text, explicit links, and canonical URLs.
 - [x] Normalize Confluence pages through the same artifact and graph-node contracts used for repository documentation.
 - [ ] Store durable external page snapshots when immutable provider retrieval is insufficient.
 - [x] Create deterministic relationships when Confluence pages reference exact paired-repository paths.
@@ -707,11 +707,11 @@ Exit criteria:
 
 Goal: make the implementation independently verifiable by recruiters and interviewers.
 
-- [ ] Replace the starter README with a SpecGraph README.
-- [ ] Include the one-sentence problem statement and product demo.
-- [ ] Document architecture, data flow, graph model, and analysis tradeoffs.
-- [ ] Document local setup, test, evaluation, and deployment procedures.
-- [ ] Document the replacement hosting architecture and the completed Sites migration.
+- [x] Replace the starter README with a SpecGraph README.
+- [x] Include the one-sentence problem statement; add the final product demo after live smoke testing.
+- [x] Document the current architecture, data flow, and deterministic analysis tradeoff; expand the graph model with evaluation results later.
+- [x] Document local setup, tests, migrations, and deployment; add evaluation commands when the harness exists.
+- [x] Document the Vercel, Neon, Auth.js, and Workflow replacement architecture and remaining Sites retirement gate.
 - [ ] Include screenshots or a short demo recording.
 - [ ] Publish measured evaluation and latency results.
 - [ ] Document security choices and known limitations.
@@ -909,7 +909,7 @@ These are planning ranges, not commitments. They assume focused implementation a
 
 Do not begin with the model or Confluence adapter. The next implementation package should establish the provider-neutral seam that both GitHub and external documentation will use.
 
-### Package 1 — Contracts, D1, and real reads
+### Package 1 — Contracts, persistence, and real reads
 
 - [x] Freeze the domain DTOs.
 - [x] Move mock records out of production UI code.
@@ -969,14 +969,14 @@ Package 3 is complete when users can connect external documentation without lear
 - [x] Poll queued/running runs in the UI and reload the feed after completion.
 - [x] Persist failed run states and safe user-facing errors.
 - [x] Preserve run, finding, and evidence history when a source is removed.
-- [ ] Replace staging `waitUntil` execution with a crash-safe durable queue on the replacement production runtime.
+- [x] Replace staging `waitUntil` execution with durable Vercel Workflows and persisted workflow/run identifiers.
 - [ ] Run the complete flow against the connected live GitHub repository and a real Confluence space.
 
 Package 4 is complete when the live smoke test shows both change directions in the same feed and the replacement runtime can retry claimed jobs without request-lifetime coupling.
 
 ### Package 5 — Automatic GitHub feed
 
-**Status:** Implemented and covered in the built worker; production signing secret and live GitHub App smoke remain.
+**Status:** Live signed push processing verified; a change to an already-related artifact must still prove automatic finding creation.
 
 - [x] Accept GitHub App webhooks at `/api/github/webhook`.
 - [x] Reject unsigned or incorrectly signed bodies before any database write.
@@ -988,7 +988,7 @@ Package 4 is complete when the live smoke test shows both change directions in t
 - [x] Re-index the tracked repository before analyzing a push.
 - [x] Poll Runs and Changes every five seconds so automatic work appears without a reload.
 - [x] Cover signatures, malformed events, replay mismatches, duplicate delivery IDs, push context, PR context, and branch filtering in the built Worker.
-- [ ] Add the same `GITHUB_WEBHOOK_SECRET` to Sites and the GitHub App, enable push and pull-request events, then perform one live push smoke test.
+- [x] Point the GitHub App webhook to the stable Vercel domain with the configured signing secret, enable push and pull-request events, then perform one live push smoke test.
 
 Package 5 is complete when the live GitHub App delivery is marked processed, exactly one automatic run appears, and its findings appear in the existing feed.
 
@@ -1000,8 +1000,8 @@ Package 5 is complete when the live GitHub App delivery is marked processed, exa
 | --- | --- | --- | --- |
 | Demo repository | Create a small public fixture repository with intentionally linked code, docs, OpenAPI, and tests | M2 | Proposed |
 | GitHub App ownership | Create under the account or organization that will host the public project | M2 | Proposed |
-| Durable job runner | Use the simplest durable queue/worker supported by the deployment environment; do not rely on request lifetime for beta | M4 | Proposed |
-| Replacement deployment stack | Choose hosting, SQL persistence, authentication, jobs, secrets, and observability together; do not migrate only the frontend | H1, before production Confluence OAuth | Open |
+| Durable job runner | Vercel Workflow with idempotent persisted operations and bounded retries | M4 | Decided |
+| Replacement deployment stack | Vercel Hobby + Neon Postgres + Auth.js + Vercel Workflow and managed secrets | H1, before production Confluence OAuth | Decided |
 | Confluence site and space | Use one read-only demo space containing intentionally linked product documentation | M6 | Proposed |
 | Semantic model and budget | Choose after deterministic evaluation baseline exists | M7 | Deferred |
 | Recruiter access | Public app with a safe demo mode, or private app with a frictionless review path | M10 | Deferred |
@@ -1027,6 +1027,7 @@ Add entries when a default above changes.
 | 2026-08-16 | Show Google Docs in the source chooser before its connector is built | Teams also keep product documentation in Google Docs and should see that source direction in setup | Google Docs is labeled Connection coming next and remains non-interactive until Google OAuth, document selection, ingestion, and refresh are implemented |
 | 2026-08-17 | Use one provider-neutral deterministic finding writer | GitHub and external documentation must produce the same evidence model and feed behavior | Changed graph nodes traverse workspace-scoped relationships; provider adapters only normalize the changed source |
 | 2026-08-17 | Detach staging analysis with Workers `waitUntil`, but do not call it the production queue | It lets the current Sites staging app return queued runs and continue work after the response without pretending to be crash-safe | D1 remains the source of run truth; the replacement deployment must claim and retry jobs through a durable worker |
+| 2026-08-23 | Use Vercel Hobby, Neon Postgres, Auth.js, and Vercel Workflow for the noncommercial MVP | The stack fits standard Next.js, provides portable SQL identity and state, and removes request-lifetime coupling without requiring commercial infrastructure | The pre-release database starts clean; GitHub and Confluence callbacks must move to `spec-graph.vercel.app` before Sites can be retired |
 
 ---
 
@@ -1060,3 +1061,13 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Implemented Package 5 signed GitHub webhooks, persisted delivery auditing, payload-hash replay protection, stable delivery-derived run IDs, push and pull-request normalization, tracked-branch filtering, shared automatic analysis, and five-second UI feed polling.
 - Added built-worker tests proving invalid signatures write nothing, unsupported and malformed events remain observable, duplicate deliveries create one run, mismatched replays are rejected, and both code and repository-documentation paths produce automatic findings.
 - Kept the live activation gate explicit: Sites and the GitHub App must share a new signing secret before the first real webhook smoke test.
+
+### 2026-08-23
+
+- Linked `CodeTanim/spec-graph` to Vercel, provisioned the free Neon integration, generated and applied a clean Postgres migration, and deployed the stable replacement at `https://spec-graph.vercel.app`.
+- Replaced vinext runtime usage, D1 access, Sites identity headers, and Worker `waitUntil` calls with standard Next.js, Neon/Drizzle, Auth.js GitHub sign-in, and three durable Vercel Workflows.
+- Added Postgres integration coverage for workspace idempotency, source-pair duplication checks, persisted evidence/review actions, and bounded run retries; component tests, lint, local build, remote build, sign-in rendering, and unauthenticated API rejection pass.
+- Upgraded Next.js to the patched 16.3.2 line and constrained vulnerable nested Workflow dependencies; `npm audit --omit=dev` reports zero production vulnerabilities.
+- Kept the Sites deployment as rollback. Remaining H1 work is updating provider callbacks, completing the authenticated GitHub/webhook smoke test, configuring Confluence on the stable domain, and only then removing Sites-only files and retiring the old deployment.
+- Verified the stable Vercel GitHub sign-in, repository installation, Neon-backed initial sync, and live signed push webhook. Commit `ffb91c0` produced one processed delivery and one successful durable run on its first attempt; the new standalone Markdown artifact was indexed once and correctly produced no finding because it had no graph relationship.
+- Confirmed that the Git-triggered deployment for `ffb91c0` failed safely because remote `main` still contains the former vinext build configuration; Vercel kept the verified replacement deployment on the production alias. The full local Vercel migration must be reviewed, committed, and pushed before Git-based deployments become authoritative.

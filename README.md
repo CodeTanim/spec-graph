@@ -1,40 +1,80 @@
-# vinext-starter
+# SpecGraph
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+SpecGraph detects when code and documentation drift apart, then explains what
+may need updating with exact, revision-linked evidence.
 
-## Prerequisites
+The MVP keeps the product surface intentionally small: connect a GitHub
+repository and optional Confluence documentation, watch one feed of detected
+changes, or start an analysis manually.
 
-- Node.js `>=22.13.0`
+## Stack
 
-## Quick Start
+- Next.js 16 and React 19
+- Auth.js with GitHub sign-in
+- Neon Postgres with Drizzle ORM
+- Vercel Workflow for durable source sync, webhook analysis, and manual runs
+- GitHub App and read-only Confluence OAuth connectors
+- Vitest, Testing Library, and PGlite for component and Postgres integration tests
+
+## Local setup
+
+Requirements: Node.js 22 and a Neon-compatible Postgres database.
 
 ```bash
 npm install
+cp .env.example .env.local
+npm run db:migrate
 npm run dev
-npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Fill in `.env.local` before migrating. Use the pooled `DATABASE_URL` for the app
+and the direct `DATABASE_URL_UNPOOLED` for migrations. Generate `AUTH_SECRET`
+with a cryptographically secure random value. Provider private keys and secrets
+must stay in local or hosting environment variables; never commit them.
 
-## Included Shape
+When no GitHub client ID is configured outside production, local development
+uses a development-only identity. Production always requires GitHub sign-in.
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+## GitHub App URLs
 
-## Useful Commands
+For a deployment at `https://your-domain.example`, configure:
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+- Homepage: `https://your-domain.example`
+- User sign-in callback: `https://your-domain.example/api/auth/callback/github`
+- Repository connection callback: `https://your-domain.example/api/github/callback`
+- Webhook: `https://your-domain.example/api/github/webhook`
 
-## Learn More
+The GitHub App needs read access to contents, metadata, and pull requests, plus
+push and pull-request webhook events.
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+## Commands
+
+- `npm run dev` — start the Next.js development server
+- `npm run build` — compile the production app and durable workflows
+- `npm test` — run component and Postgres integration tests
+- `npm run lint` — run ESLint
+- `npm run db:generate` — generate a reviewed Postgres migration
+- `npm run db:migrate` — apply migrations using `.env.local`
+- `npm run db:studio` — inspect the database with Drizzle Studio
+
+## Runtime flow
+
+1. Auth.js resolves a GitHub identity and SpecGraph creates one tenant-scoped workspace.
+2. A source connection stores provider metadata, then queues a durable sync.
+3. Sync normalizes code, tests, repository docs, OpenAPI, or Confluence pages into artifacts and relationships.
+4. Manual requests and signed GitHub webhooks enter the same durable analysis pipeline.
+5. Findings, evidence links, run state, and review actions persist in Postgres and appear in the same minimal feed.
+
+The current analyzer deliberately starts with deterministic imports, links,
+paths, and OpenAPI references. Semantic ranking remains a later package, after
+the deterministic evaluation baseline is measured.
+
+## Deployment
+
+The repository is linked to Vercel and Neon. Vercel environment variables must
+contain the database, Auth.js, GitHub App, and optional Confluence secrets before
+deployment. Drizzle migrations are applied separately before the new app version
+is promoted.
+
+See [SPECGRAPH_MVP_IMPLEMENTATION_PLAN.md](./SPECGRAPH_MVP_IMPLEMENTATION_PLAN.md)
+for scope, acceptance gates, current status, and remaining work.

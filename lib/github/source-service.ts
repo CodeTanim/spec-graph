@@ -9,9 +9,7 @@ import { ApiError } from "../server/http";
 import { getSource } from "../server/specgraph-repository";
 import { getGitHubConnectionSession, consumeGitHubConnectionSession } from "./connection";
 import type { GitHubSourceProvider } from "../providers/source-provider";
-import { syncGitHubSource } from "./ingestion";
 import { associateSources } from "../providers/source-associations";
-import { rebuildCrossSourceRelationships } from "../providers/cross-source-relationships";
 
 export async function connectGitHubSource(
   workspaceId: string,
@@ -140,8 +138,6 @@ export async function connectGitHubSource(
       await associateSources(workspaceId, source.id, documentationSourceId, db)
     ).alreadyTracked;
   }
-  await syncGitHubSource(workspaceId, source.id, client, db);
-  await rebuildCrossSourceRelationships(workspaceId, source.id, db);
   return {
     source: await getSource(workspaceId, source.id, db),
     alreadyTracked,

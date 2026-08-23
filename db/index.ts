@@ -1,26 +1,23 @@
-import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema";
-import { ensureDevelopmentMigrations } from "./development-migrations";
 
-export function createDb(binding: D1Database) {
-  return drizzle(binding, { schema });
+export function createDb(connectionString: string) {
+  return drizzle(neon(connectionString), { schema });
 }
 
-export function getDb() {
-  if (!env.DB) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
-    );
+let database: ReturnType<typeof createDb> | undefined;
+
+export function getDb(): ReturnType<typeof createDb> {
+  if (database) return database;
+
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is required to use SpecGraph persistence.");
   }
 
-  return createDb(env.DB);
-}
-
-export async function prepareDevelopmentDb(): Promise<void> {
-  if (process.env.NODE_ENV !== "production") {
-    await ensureDevelopmentMigrations(env.DB);
-  }
+  database = createDb(connectionString);
+  return database;
 }
 
 export type SpecGraphDb = ReturnType<typeof createDb>;

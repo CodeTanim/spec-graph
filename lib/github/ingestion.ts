@@ -61,7 +61,7 @@ async function executeInBatches(
 ): Promise<void> {
   for (let index = 0; index < statements.length; index += DB_BATCH_SIZE) {
     const batch = statements.slice(index, index + DB_BATCH_SIZE);
-    if (batch.length) await db.batch(batch as DbBatch);
+    if (batch.length) await db.batch(batch as unknown as DbBatch);
   }
 }
 

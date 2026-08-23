@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { ApiError } from "../server/http";
 
 export type ConfluenceConfig = {
@@ -7,9 +6,8 @@ export type ConfluenceConfig = {
   encryptionKey: string;
 };
 
-function value(name: keyof Cloudflare.Env): string {
-  const candidate = env[name];
-  return typeof candidate === "string" ? candidate.trim() : "";
+function value(name: string): string {
+  return process.env[name]?.trim() ?? "";
 }
 
 export function getConfluenceConfig(): ConfluenceConfig {

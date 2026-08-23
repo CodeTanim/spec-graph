@@ -353,7 +353,20 @@ export async function createManualRun(
   };
 
   await db.insert(analysisRuns).values(run);
-  return { run: toRunItem({ ...run, changeEventId: null, errorCode: null, errorMessage: null, startedAt: null, completedAt: null }, 0) };
+  return {
+    run: toRunItem(
+      {
+        ...run,
+        changeEventId: null,
+        errorCode: null,
+        errorMessage: null,
+        workflowRunId: null,
+        startedAt: null,
+        completedAt: null,
+      },
+      0,
+    ),
+  };
 }
 
 export async function listSources(

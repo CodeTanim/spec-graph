@@ -33,7 +33,7 @@ type ConnectedGitHubSource = {
   defaultBranch: string;
 };
 
-type NormalizedGitHubChange = {
+export type NormalizedGitHubChange = {
   kind: "push" | "pull_request";
   source: ConnectedGitHubSource;
   title: string;
@@ -59,7 +59,13 @@ export type GitHubWebhookAcceptance = {
     runId?: string;
     reason?: string;
   };
-  task?: Promise<void>;
+  job?: GitHubWebhookJob;
+};
+
+export type GitHubWebhookJob = {
+  deliveryId: string;
+  runId: string;
+  change: NormalizedGitHubChange;
 };
 
 function object(value: unknown): JsonObject | null {
@@ -86,7 +92,10 @@ function hexToBytes(value: string): Uint8Array | null {
 }
 
 async function sha256(value: Uint8Array | string): Promise<string> {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  const bytes =
+    typeof value === "string"
+      ? new TextEncoder().encode(value)
+      : new Uint8Array(value);
   return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
 }
 
@@ -105,7 +114,12 @@ export async function verifyGitHubWebhookSignature(
     false,
     ["verify"],
   );
-  return crypto.subtle.verify("HMAC", key, signature, payload);
+  return crypto.subtle.verify(
+    "HMAC",
+    key,
+    new Uint8Array(signature),
+    new Uint8Array(payload),
+  );
 }
 
 function repositoryContext(payload: JsonObject) {
@@ -270,12 +284,11 @@ async function markDelivery(
     );
 }
 
-async function processRun(
-  deliveryId: string,
-  runId: string,
-  change: NormalizedGitHubChange,
-  db: SpecGraphDb,
+export async function processGitHubWebhookJob(
+  job: GitHubWebhookJob,
+  db: SpecGraphDb = getDb(),
 ) {
+  const { deliveryId, runId, change } = job;
   try {
     const client = new GitHubClient(getGitHubAppConfig());
     if (change.kind === "pull_request") {
@@ -476,6 +489,6 @@ export async function acceptGitHubWebhook(
       status: "received",
       runId,
     },
-    task: processRun(deliveryId, runId, normalized, db),
+    job: { deliveryId, runId, change: normalized },
   };
 }

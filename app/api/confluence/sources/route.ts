@@ -1,8 +1,8 @@
-import { ConfluenceClient } from "../../../../lib/confluence/client";
-import { getConfluenceConfig } from "../../../../lib/confluence/config";
 import { connectConfluenceSource } from "../../../../lib/confluence/source-service";
 import { getRequestWorkspace } from "../../../../lib/server/current-workspace";
 import { ApiError, apiErrorResponse, readJsonObject } from "../../../../lib/server/http";
+import { sourceSyncWorkflow } from "../../../../workflows/source-sync";
+import { start } from "workflow/api";
 
 export async function POST(request: Request) {
   try {
@@ -14,14 +14,13 @@ export async function POST(request: Request) {
     if (!sessionState || !spaceId) {
       throw new ApiError(400, "CONFLUENCE_SOURCE_INVALID", "Choose a Confluence space.");
     }
-    const config = getConfluenceConfig();
-    return Response.json(await connectConfluenceSource(
+    const result = await connectConfluenceSource(
       workspace.id,
       user.databaseId,
       { sessionState, spaceId, repositorySourceId },
-      config.encryptionKey,
-      new ConfluenceClient(config),
-    ), { status: 201 });
+    );
+    await start(sourceSyncWorkflow, [workspace.id, result.source.id]);
+    return Response.json(result, { status: 201 });
   } catch (error) {
     return apiErrorResponse(error);
   }
