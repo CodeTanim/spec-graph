@@ -4,6 +4,7 @@ import {
   extractDeterministicReferences,
   extractOpenApiEndpoints,
 } from "../lib/github/artifacts";
+import { assertRepositoryWithinLimits } from "../lib/github/limits";
 import { parsePullRequestNumber } from "../lib/github/targets";
 
 describe("GitHub artifact indexing", () => {
@@ -59,6 +60,19 @@ describe("GitHub artifact indexing", () => {
         type: "links",
       }),
     );
+  });
+
+  it("accepts repositories the size of the SpecGraph demo while retaining a bounded cap", () => {
+    expect(() =>
+      assertRepositoryWithinLimits(
+        Array.from({ length: 86 }, () => ({ size: 25_000 })),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertRepositoryWithinLimits(
+        Array.from({ length: 121 }, () => ({ size: 1 })),
+      ),
+    ).toThrow("up to 120 supported files");
   });
 });
 

@@ -16,11 +16,10 @@ import {
   type IndexedArtifactKind,
 } from "./artifacts";
 import { contentHash } from "./crypto";
+import { assertRepositoryWithinLimits } from "./limits";
 import type { GitHubSourceProvider } from "../providers/source-provider";
 
-const MAX_FILES = 60;
 const MAX_FILE_BYTES = 160_000;
-const MAX_TOTAL_BYTES = 4_000_000;
 const FETCH_CONCURRENCY = 6;
 
 type IndexedFile = {
@@ -127,21 +126,7 @@ export async function syncGitHubSource(
         (entry.size ?? 0) <= MAX_FILE_BYTES
       );
     });
-    if (entries.length > MAX_FILES) {
-      throw new ApiError(
-        413,
-        "REPOSITORY_FILE_LIMIT",
-        `This MVP indexes up to ${MAX_FILES} supported files per repository.`,
-      );
-    }
-    const totalBytes = entries.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
-    if (totalBytes > MAX_TOTAL_BYTES) {
-      throw new ApiError(
-        413,
-        "REPOSITORY_SIZE_LIMIT",
-        "The supported files in this repository exceed the current MVP size limit.",
-      );
-    }
+    assertRepositoryWithinLimits(entries);
 
     const files = await mapInBatches(entries, async (entry): Promise<IndexedFile> => {
       const content = await client.blob(record.source.name, entry.sha, tree.token);
