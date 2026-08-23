@@ -15,6 +15,24 @@ export type ChangedGraphNode = {
   path: string;
 };
 
+type IndexedArtifactKind =
+  | "code"
+  | "test"
+  | "markdown"
+  | "openapi"
+  | "confluence";
+
+function isDocumentation(kind: IndexedArtifactKind): boolean {
+  return kind === "markdown" || kind === "openapi" || kind === "confluence";
+}
+
+export function shouldCreateImpactFinding(
+  changedKind: IndexedArtifactKind,
+  affectedKind: IndexedArtifactKind,
+): boolean {
+  return isDocumentation(changedKind) || isDocumentation(affectedKind);
+}
+
 function evidenceExcerpt(content: string, startLine: number): string {
   const lines = content.split("\n").slice(Math.max(0, startLine - 1), startLine + 3);
   const excerpt = lines.join("\n").trim();
@@ -56,23 +74,53 @@ export async function persistDeterministicFindings(
 
   const changedNodeIds = changedNodes.map((node) => node.id);
   const changedPathByNode = new Map(changedNodes.map((node) => [node.id, node.path]));
+  const changedRecords = await db
+    .select({ nodeId: graphNodes.id, kind: artifacts.kind })
+    .from(graphNodes)
+    .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
+    .innerJoin(sources, eq(artifacts.sourceId, sources.id))
+    .where(
+      and(
+        eq(sources.workspaceId, workspaceId),
+        inArray(graphNodes.id, changedNodeIds),
+      ),
+    );
+  const changedKindByNode = new Map(
+    changedRecords.map((record) => [record.nodeId, record.kind]),
+  );
+  const validChangedNodeIds = [...changedKindByNode.keys()];
+  if (!validChangedNodeIds.length) return 0;
+
   const edges = await db
     .select()
     .from(relationships)
     .where(
       or(
-        inArray(relationships.fromNodeId, changedNodeIds),
-        inArray(relationships.toNodeId, changedNodeIds),
+        inArray(relationships.fromNodeId, validChangedNodeIds),
+        inArray(relationships.toNodeId, validChangedNodeIds),
       ),
     );
+  const candidates = edges.flatMap((edge) => {
+    const fromChanged = changedKindByNode.has(edge.fromNodeId);
+    const toChanged = changedKindByNode.has(edge.toNodeId);
+    if (fromChanged === toChanged) return [];
+
+    return [
+      fromChanged
+        ? {
+            edge,
+            changedNodeId: edge.fromNodeId,
+            affectedNodeId: edge.toNodeId,
+          }
+        : {
+            edge,
+            changedNodeId: edge.toNodeId,
+            affectedNodeId: edge.fromNodeId,
+          },
+    ];
+  });
   const affectedNodeIds = [
-    ...new Set(
-      edges
-        .map((edge) =>
-          changedPathByNode.has(edge.fromNodeId) ? edge.toNodeId : edge.fromNodeId,
-        )
-        .filter((id) => !changedPathByNode.has(id)),
-    ),
+    ...new Set(candidates.map((candidate) => candidate.affectedNodeId)),
   ];
   if (!affectedNodeIds.length) return 0;
 
@@ -101,13 +149,17 @@ export async function persistDeterministicFindings(
   const persisted = new Set<string>();
   const now = new Date().toISOString();
 
-  for (const edge of edges) {
-    const changedNodeId = changedPathByNode.has(edge.fromNodeId)
-      ? edge.fromNodeId
-      : edge.toNodeId;
-    const affectedNodeId = changedNodeId === edge.fromNodeId ? edge.toNodeId : edge.fromNodeId;
+  for (const { edge, changedNodeId, affectedNodeId } of candidates) {
     const affected = affectedByNode.get(affectedNodeId);
-    if (!affected || persisted.has(affectedNodeId)) continue;
+    const changedKind = changedKindByNode.get(changedNodeId);
+    if (
+      !affected ||
+      !changedKind ||
+      !shouldCreateImpactFinding(changedKind, affected.kind) ||
+      persisted.has(affectedNodeId)
+    ) {
+      continue;
+    }
     persisted.add(affectedNodeId);
 
     const versions = await db

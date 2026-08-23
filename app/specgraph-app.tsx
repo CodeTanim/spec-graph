@@ -953,7 +953,10 @@ export function SpecGraphApp({
                         >
                           <span>
                             <strong>{artifact.name}</strong>
-                            <small>{artifact.kind}</small>
+                            <small>
+                              {artifact.kind} <span aria-hidden="true">·</span>{" "}
+                              {artifact.location}
+                            </small>
                           </span>
                           <span aria-hidden="true">{expanded ? "−" : "+"}</span>
                         </button>

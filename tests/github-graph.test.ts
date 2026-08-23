@@ -6,6 +6,7 @@ import {
 } from "../lib/github/artifacts";
 import { assertRepositoryWithinLimits } from "../lib/github/limits";
 import { parsePullRequestNumber } from "../lib/github/targets";
+import { shouldCreateImpactFinding } from "../lib/analysis/deterministic";
 
 describe("GitHub artifact indexing", () => {
   it("keeps the supported MVP surface small and predictable", () => {
@@ -94,5 +95,26 @@ describe("GitHub pull request targets", () => {
         "acme/platform-api",
       ),
     ).toThrow("Enter a pull request number");
+  });
+});
+
+describe("directional impact policy", () => {
+  it("keeps ordinary code-to-code import neighbors out of the update feed", () => {
+    expect(shouldCreateImpactFinding("code", "code")).toBe(false);
+    expect(shouldCreateImpactFinding("code", "test")).toBe(false);
+    expect(shouldCreateImpactFinding("test", "code")).toBe(false);
+  });
+
+  it("allows code changes to flag linked documentation", () => {
+    expect(shouldCreateImpactFinding("code", "markdown")).toBe(true);
+    expect(shouldCreateImpactFinding("code", "openapi")).toBe(true);
+    expect(shouldCreateImpactFinding("code", "confluence")).toBe(true);
+  });
+
+  it("allows documentation changes to flag code, tests, and other documentation", () => {
+    expect(shouldCreateImpactFinding("confluence", "code")).toBe(true);
+    expect(shouldCreateImpactFinding("markdown", "test")).toBe(true);
+    expect(shouldCreateImpactFinding("confluence", "markdown")).toBe(true);
+    expect(shouldCreateImpactFinding("markdown", "confluence")).toBe(true);
   });
 });

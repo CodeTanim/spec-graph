@@ -82,6 +82,7 @@ describe("SpecGraphApp", () => {
 
     const details = document.getElementById(detailsId!);
     expect(artifactButton).toHaveAttribute("aria-expanded", "true");
+    expect(artifactButton).toHaveTextContent("packages/sdk/src/refunds.ts / createRefund");
     expect(details).toHaveTextContent("createRefund({ transactionId })");
     expect(details?.previousElementSibling).toBe(artifactButton);
   });

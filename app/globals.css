@@ -671,6 +671,7 @@ button:disabled {
 .artifact-list small {
   color: var(--muted);
   font-size: 10px;
+  overflow-wrap: anywhere;
 }
 
 .artifact-preview {

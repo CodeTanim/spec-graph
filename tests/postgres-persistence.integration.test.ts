@@ -13,8 +13,10 @@ import {
   findingEvidence,
   findings,
   graphNodes,
+  relationships,
   sources,
 } from "../db/schema";
+import { persistDeterministicFindings } from "../lib/analysis/deterministic";
 import {
   beginRunAttempt,
   completeRunAttempt,
@@ -251,5 +253,221 @@ describe("Neon-compatible Postgres persistence", () => {
       .from(findings)
       .where(eq(findings.id, "finding_1"));
     expect(persistedFinding.status).toBe("dismissed");
+  });
+
+  it("persists only cross-domain impacts and supports documentation-to-documentation", async () => {
+    const context = await workspace();
+    const now = new Date().toISOString();
+
+    await db.insert(sources).values({
+      id: "src_policy",
+      workspaceId: context.workspace.id,
+      provider: "github",
+      externalId: "policy-repo",
+      name: "acme/policy",
+      detail: "main",
+      status: "connected",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(artifacts).values([
+      {
+        id: "art_changed_code",
+        sourceId: "src_policy",
+        externalId: "src/policy.ts",
+        kind: "code",
+        path: "src/policy.ts",
+        title: "policy.ts",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "art_code_neighbor",
+        sourceId: "src_policy",
+        externalId: "src/types.ts",
+        kind: "code",
+        path: "src/types.ts",
+        title: "types.ts",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "art_primary_doc",
+        sourceId: "src_policy",
+        externalId: "docs/policy.md",
+        kind: "markdown",
+        path: "docs/policy.md",
+        title: "Policy guide",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "art_secondary_doc",
+        sourceId: "src_policy",
+        externalId: "docs/customer-policy.md",
+        kind: "confluence",
+        path: "docs/customer-policy.md",
+        title: "Customer policy",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(graphNodes).values([
+      {
+        id: "node_changed_code",
+        artifactId: "art_changed_code",
+        stableKey: "file:src/policy.ts",
+        kind: "file",
+        name: "policy.ts",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "node_code_neighbor",
+        artifactId: "art_code_neighbor",
+        stableKey: "file:src/types.ts",
+        kind: "file",
+        name: "types.ts",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "node_primary_doc",
+        artifactId: "art_primary_doc",
+        stableKey: "file:docs/policy.md",
+        kind: "doc_section",
+        name: "Policy guide",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "node_secondary_doc",
+        artifactId: "art_secondary_doc",
+        stableKey: "page:customer-policy",
+        kind: "doc_section",
+        name: "Customer policy",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(relationships).values([
+      {
+        id: "rel_code_import",
+        fromNodeId: "node_changed_code",
+        toNodeId: "node_code_neighbor",
+        type: "imports",
+        origin: "deterministic",
+        confidence: 1,
+        evidence: "policy.ts imports types.ts",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "rel_doc_code",
+        fromNodeId: "node_primary_doc",
+        toNodeId: "node_changed_code",
+        type: "documents",
+        origin: "deterministic",
+        confidence: 1,
+        evidence: "The policy guide documents policy.ts",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "rel_doc_doc",
+        fromNodeId: "node_primary_doc",
+        toNodeId: "node_secondary_doc",
+        type: "documents",
+        origin: "deterministic",
+        confidence: 1,
+        evidence: "The customer page mirrors the policy guide",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(analysisRuns).values([
+      {
+        id: "run_code_policy",
+        workspaceId: context.workspace.id,
+        sourceId: "src_policy",
+        trigger: "github",
+        title: "Code policy changed",
+        target: "main",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "run_doc_policy",
+        workspaceId: context.workspace.id,
+        sourceId: "src_policy",
+        trigger: "github",
+        title: "Documentation policy changed",
+        target: "main",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "run_mixed_policy",
+        workspaceId: context.workspace.id,
+        sourceId: "src_policy",
+        trigger: "github",
+        title: "Code and documentation changed together",
+        target: "main",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    expect(
+      await persistDeterministicFindings(
+        context.workspace.id,
+        "run_code_policy",
+        [{ id: "node_changed_code", path: "src/policy.ts" }],
+        db,
+      ),
+    ).toBe(1);
+    expect(
+      await db
+        .select({ affectedNodeId: findings.affectedNodeId })
+        .from(findings)
+        .where(eq(findings.runId, "run_code_policy")),
+    ).toEqual([{ affectedNodeId: "node_primary_doc" }]);
+
+    expect(
+      await persistDeterministicFindings(
+        context.workspace.id,
+        "run_doc_policy",
+        [{ id: "node_primary_doc", path: "docs/policy.md" }],
+        db,
+      ),
+    ).toBe(2);
+    expect(
+      new Set(
+        (
+          await db
+            .select({ affectedNodeId: findings.affectedNodeId })
+            .from(findings)
+            .where(eq(findings.runId, "run_doc_policy"))
+        ).map((finding) => finding.affectedNodeId),
+      ),
+    ).toEqual(new Set(["node_changed_code", "node_secondary_doc"]));
+
+    expect(
+      await persistDeterministicFindings(
+        context.workspace.id,
+        "run_mixed_policy",
+        [
+          { id: "node_changed_code", path: "src/policy.ts" },
+          { id: "node_primary_doc", path: "docs/policy.md" },
+        ],
+        db,
+      ),
+    ).toBe(1);
+    expect(
+      await db
+        .select({ affectedNodeId: findings.affectedNodeId })
+        .from(findings)
+        .where(eq(findings.runId, "run_mixed_policy")),
+    ).toEqual([{ affectedNodeId: "node_secondary_doc" }]);
   });
 });

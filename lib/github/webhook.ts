@@ -442,7 +442,7 @@ export async function acceptGitHubWebhook(
   const changeId = `chg_wh_${idSuffix}`;
   const runId = `run_wh_${idSuffix}`;
   const evidenceSummary =
-    "SpecGraph followed deterministic imports, documentation links, explicit references, shared OpenAPI endpoints, and connected documentation from the changed files.";
+    "SpecGraph checked unchanged linked documentation for code changes, and linked code, tests, or documentation for documentation changes.";
   await db
     .insert(changeEvents)
     .values({

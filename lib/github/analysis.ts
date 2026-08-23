@@ -81,7 +81,7 @@ export async function executeGitHubPullRequestAnalysis(
       title: `PR #${pull.number}: ${pull.title}`,
       summary: `${files.length} changed ${files.length === 1 ? "file" : "files"} in ${selectedSource.name}.`,
       evidenceSummary:
-        "SpecGraph followed deterministic imports, documentation links, explicit references, shared OpenAPI endpoints, and connected documentation from the changed files.",
+        "SpecGraph checked unchanged linked documentation for code changes, and linked code, tests, or documentation for documentation changes.",
       sourceLabel: `${selectedSource.name}#${pull.number}`,
       sourceUrl: pull.htmlUrl,
       beforeRevision: pull.baseSha,
