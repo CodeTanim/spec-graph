@@ -6,6 +6,7 @@ declare namespace Cloudflare {
     GITHUB_CLIENT_SECRET?: string;
     GITHUB_APP_ID?: string;
     GITHUB_PRIVATE_KEY?: string;
+    GITHUB_WEBHOOK_SECRET?: string;
     CONFLUENCE_CLIENT_ID?: string;
     CONFLUENCE_CLIENT_SECRET?: string;
     CONNECTOR_ENCRYPTION_KEY?: string;

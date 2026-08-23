@@ -56,6 +56,7 @@ async function executeConfluencePageAnalysis(
   let attemptId: string | null = null;
   try {
     attemptId = await beginRunAttempt(runId, "confluence_page", db);
+    if (!attemptId) return;
     const [selectedSource] = await db
       .select({ id: sources.id, name: sources.name, provider: sources.provider })
       .from(analysisRuns)

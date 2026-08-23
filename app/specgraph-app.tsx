@@ -298,6 +298,32 @@ export function SpecGraphApp({
   }, [api, filter, loadOnMount, runs]);
 
   useEffect(() => {
+    if (!loadOnMount) return;
+    let cancelled = false;
+    let refreshing = false;
+    const timer = window.setInterval(() => {
+      if (refreshing) return;
+      refreshing = true;
+      void Promise.all([api.loadRuns(), api.loadChanges(filter)])
+        .then(([nextRuns, nextChanges]) => {
+          if (cancelled) return;
+          setRuns(nextRuns.items);
+          setChanges(nextChanges);
+        })
+        .catch(() => {
+          // The next poll retries without interrupting the current screen.
+        })
+        .finally(() => {
+          refreshing = false;
+        });
+    }, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [api, filter, loadOnMount]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setAnalyzeOpen(false);

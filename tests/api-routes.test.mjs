@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
+import { createHmac, generateKeyPairSync } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
@@ -8,6 +8,7 @@ import { Miniflare } from "miniflare";
 let miniflare;
 let database;
 let githubBlobRequests = 0;
+const githubWebhookSecret = "test-webhook-secret";
 
 const githubBlobs = {
   "sha-policy": "export const REFUND_WINDOW_DAYS = 60;\n",
@@ -161,13 +162,14 @@ before(async () => {
     modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],
     compatibilityDate: "2026-05-22",
     compatibilityFlags: ["nodejs_compat"],
-    d1Databases: { DB: "specgraph-api-test-package3" },
+    d1Databases: { DB: "specgraph-api-test-package5" },
     bindings: {
       GITHUB_APP_SLUG: "specgraph-test",
       GITHUB_CLIENT_ID: "Iv1.test",
       GITHUB_CLIENT_SECRET: "test-client-secret",
       GITHUB_APP_ID: "12345",
       GITHUB_PRIVATE_KEY: privateKey,
+      GITHUB_WEBHOOK_SECRET: githubWebhookSecret,
       CONFLUENCE_CLIENT_ID: "confluence-client-id",
       CONFLUENCE_CLIENT_SECRET: "confluence-client-secret",
       CONNECTOR_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
@@ -231,6 +233,37 @@ async function waitForRun(runId) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   assert.fail(`Analysis run ${runId} did not finish.`);
+}
+
+function githubWebhook(eventType, deliveryId, payload, signature = null) {
+  const body = JSON.stringify(payload);
+  const digest = signature || `sha256=${createHmac("sha256", githubWebhookSecret).update(body).digest("hex")}`;
+  return miniflare.dispatchFetch("http://localhost/api/github/webhook", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-github-delivery": deliveryId,
+      "x-github-event": eventType,
+      "x-hub-signature-256": digest,
+    },
+    body,
+  });
+}
+
+async function waitForDelivery(deliveryId) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const delivery = await database
+      .prepare(
+        `SELECT status, error_message AS errorMessage
+         FROM webhook_deliveries
+         WHERE provider = 'github' AND provider_delivery_id = ?`,
+      )
+      .bind(deliveryId)
+      .first();
+    if (delivery && delivery.status !== "received") return delivery;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.fail(`Webhook delivery ${deliveryId} did not finish.`);
 }
 
 async function workspaceRecord() {
@@ -532,6 +565,148 @@ test("GitHub authorization, ingestion, graph construction, and PR analysis form 
     true,
   );
 
+});
+
+test("signed GitHub webhooks create one automatic run and reject replays", async () => {
+  const pullRequestPayload = {
+    action: "synchronize",
+    number: 7,
+    installation: { id: 101 },
+    repository: { full_name: "acme/platform-api" },
+    sender: { login: "octocat" },
+    pull_request: {
+      number: 7,
+      title: "Extend the refund window",
+      html_url: "https://github.com/acme/platform-api/pull/7",
+      updated_at: "2026-08-18T12:00:00.000Z",
+      user: { login: "octocat" },
+      base: { ref: "main", sha: "base123" },
+      head: { ref: "refund-window", sha: "head789" },
+    },
+  };
+
+  const invalid = await githubWebhook(
+    "pull_request",
+    "delivery-invalid-signature",
+    pullRequestPayload,
+    `sha256=${"0".repeat(64)}`,
+  );
+  assert.equal(invalid.status, 401);
+  const invalidPersisted = await database
+    .prepare("SELECT COUNT(*) AS count FROM webhook_deliveries WHERE provider_delivery_id = ?")
+    .bind("delivery-invalid-signature")
+    .first();
+  assert.equal(invalidPersisted.count, 0);
+
+  const unsupported = await githubWebhook("issues", "delivery-unsupported", {
+    action: "opened",
+    installation: { id: 101 },
+    repository: { full_name: "acme/platform-api" },
+  });
+  assert.equal(unsupported.status, 202);
+  assert.equal((await json(unsupported)).status, "ignored");
+  assert.equal((await waitForDelivery("delivery-unsupported")).status, "ignored");
+
+  const accepted = await githubWebhook(
+    "pull_request",
+    "delivery-pr-7",
+    pullRequestPayload,
+  );
+  assert.equal(accepted.status, 202);
+  const acceptedPayload = await json(accepted);
+  assert.equal(acceptedPayload.duplicate, false);
+  const automaticPullRun = await waitForRun(acceptedPayload.runId);
+  assert.equal(automaticPullRun.status, "succeeded");
+  assert.equal(automaticPullRun.trigger, "github");
+  assert.equal(automaticPullRun.findingsCount, 2);
+  assert.equal((await waitForDelivery("delivery-pr-7")).status, "processed");
+
+  const duplicate = await githubWebhook(
+    "pull_request",
+    "delivery-pr-7",
+    pullRequestPayload,
+  );
+  assert.equal(duplicate.status, 200);
+  assert.equal((await json(duplicate)).duplicate, true);
+  const uniqueRun = await database
+    .prepare("SELECT COUNT(*) AS count FROM analysis_runs WHERE id = ?")
+    .bind(acceptedPayload.runId)
+    .first();
+  assert.equal(uniqueRun.count, 1);
+
+  const mismatchedReplay = await githubWebhook(
+    "pull_request",
+    "delivery-pr-7",
+    {
+      ...pullRequestPayload,
+      pull_request: { ...pullRequestPayload.pull_request, title: "Different payload" },
+    },
+  );
+  assert.equal(mismatchedReplay.status, 409);
+
+  const push = await githubWebhook("push", "delivery-push-main", {
+    ref: "refs/heads/main",
+    before: "base122",
+    after: "base123",
+    compare: "https://github.com/acme/platform-api/compare/base122...base123",
+    installation: { id: 101 },
+    repository: { full_name: "acme/platform-api" },
+    sender: { login: "writer" },
+    pusher: { name: "writer" },
+    commits: [
+      { added: [], modified: ["docs/refunds.md"], removed: [] },
+    ],
+    head_commit: {
+      message: "Clarify refund documentation",
+      timestamp: "2026-08-18T12:05:00.000Z",
+      added: [],
+      modified: ["docs/refunds.md"],
+      removed: [],
+    },
+  });
+  assert.equal(push.status, 202);
+  const pushPayload = await json(push);
+  const automaticPushRun = await waitForRun(pushPayload.runId);
+  assert.equal(automaticPushRun.status, "succeeded");
+  assert.equal(automaticPushRun.findingsCount >= 1, true);
+  assert.equal((await waitForDelivery("delivery-push-main")).status, "processed");
+  const pushContext = await database
+    .prepare(
+      `SELECT ce.actor, ce.before_revision AS beforeRevision,
+              ce.after_revision AS afterRevision, ar.target, ar.trigger
+       FROM analysis_runs ar
+       INNER JOIN change_events ce ON ce.id = ar.change_event_id
+       WHERE ar.id = ?`,
+    )
+    .bind(pushPayload.runId)
+    .first();
+  assert.deepEqual(pushContext, {
+    actor: "writer",
+    beforeRevision: "base122",
+    afterRevision: "base123",
+    target: "main",
+    trigger: "github",
+  });
+
+  const branchIgnored = await githubWebhook("push", "delivery-push-feature", {
+    ref: "refs/heads/feature",
+    before: "base123",
+    after: "head999",
+    installation: { id: 101 },
+    repository: { full_name: "acme/platform-api" },
+    commits: [],
+  });
+  assert.equal(branchIgnored.status, 202);
+  assert.equal((await json(branchIgnored)).status, "ignored");
+
+  const malformed = await githubWebhook("pull_request", "delivery-malformed", {
+    action: "synchronize",
+    number: 7,
+    installation: { id: 101 },
+    repository: { full_name: "acme/platform-api" },
+  });
+  assert.equal(malformed.status, 422);
+  assert.equal((await waitForDelivery("delivery-malformed")).status, "failed");
 });
 
 async function authorizeConfluence(repositorySourceId) {

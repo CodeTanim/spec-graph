@@ -48,3 +48,15 @@ export function getGitHubAppConfig(): GitHubAppConfig {
 
   return { ...oauth, appId, privateKey };
 }
+
+export function getGitHubWebhookSecret(): string {
+  const secret = value("GITHUB_WEBHOOK_SECRET");
+  if (!secret) {
+    throw new ApiError(
+      503,
+      "GITHUB_WEBHOOK_NOT_CONFIGURED",
+      "GitHub automatic change detection is not configured yet.",
+    );
+  }
+  return secret;
+}

@@ -1,7 +1,7 @@
 # SpecGraph MVP Implementation Plan
 
-**Status:** Implementation — Package 4 provider-neutral manual analysis implemented; live smoke pending
-**Last updated:** August 17, 2026
+**Status:** Implementation — Package 5 automatic GitHub feed implemented; live webhook activation pending
+**Last updated:** August 19, 2026
 **Primary reference:** [SpecGraph Resume Project Assessment](./RESUME_PROJECT_ASSESSMENT.md)
 
 ## How to Use This Plan
@@ -154,15 +154,15 @@ The UI should never require users to understand ingestion, graph construction, w
 - [x] Product read APIs and persisted finding actions.
 - [x] Production UI backed by the API contract rather than fixtures.
 
-### Still mocked or absent
+### Still incomplete or absent
 
-- [ ] GitHub installation and repository connection.
-- [ ] Source ingestion and incremental synchronization.
-- [ ] Artifact parsers.
-- [ ] Typed dependency graph.
-- [ ] Manual background analysis.
-- [ ] Signed GitHub webhooks.
-- [ ] Idempotency, retry, and failure recovery.
+- [x] GitHub installation and repository connection.
+- [x] Source ingestion and revision-aware synchronization.
+- [x] Initial supported artifact parsers.
+- [x] Initial typed dependency graph.
+- [x] Manual detached analysis on the staging runtime.
+- [x] Signed GitHub webhook ingestion with delivery deduplication.
+- [ ] Crash-safe durable execution, retry, and failure recovery.
 - [ ] Semantic candidate analysis.
 - [ ] Evidence verification.
 - [ ] Evaluation dataset and quality metrics.
@@ -393,9 +393,9 @@ Initial ranking inputs:
 | M1 — Persistence and identity | In progress | M0 | State survives reload and is tenant-scoped |
 | M2 — GitHub connection and ingestion | Complete | M1 | One real repository is connected and indexed |
 | H1 — Hosting migration | Planned | M2 | The application runs outside Sites with portable auth, persistence, secrets, and callbacks |
-| M3 — Deterministic graph | Not started | M2 | Supported artifacts have queryable typed relationships |
-| M4 — Manual end-to-end analysis | Not started | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
-| M5 — Automatic GitHub feed | Not started | M4 | Pushes and pull requests trigger the same pipeline |
+| M3 — Deterministic graph | Initial implementation complete | M2 | Supported artifacts have queryable typed relationships |
+| M4 — Manual end-to-end analysis | Staging implementation complete; live smoke pending | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
+| M5 — Automatic GitHub feed | Implementation complete; live webhook activation pending | M4 | Pushes and pull requests trigger the same pipeline |
 | M6 — Confluence documentation connection | In progress (local contracts complete; production gated) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
 | M7 — Semantic ranking and evidence | Not started | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
 | M8 — Review lifecycle and resilience | Not started | M5, M7 | Actions persist; failures retry safely |
@@ -554,23 +554,23 @@ Exit criteria — the walking skeleton:
 
 Goal: create feed items automatically when relevant code or documentation changes.
 
-- [ ] Add the GitHub webhook endpoint.
-- [ ] Verify every webhook signature before processing.
-- [ ] Persist delivery metadata before acknowledging the event.
-- [ ] Deduplicate repeated provider delivery IDs.
-- [ ] Normalize supported push events.
-- [ ] Normalize supported pull-request events.
-- [ ] Ignore unsupported events explicitly and observably.
-- [ ] Enqueue automatic runs through the same service used by manual runs.
-- [ ] Preserve actor, repository, branch, PR, and revision context.
-- [ ] Add webhook signature, replay, idempotency, and event-shape tests.
+- [x] Add the GitHub webhook endpoint.
+- [x] Verify every webhook signature before processing.
+- [x] Persist delivery metadata before acknowledging the event.
+- [x] Deduplicate repeated provider delivery IDs.
+- [x] Normalize supported push events.
+- [x] Normalize supported pull-request events.
+- [x] Ignore unsupported events explicitly and observably.
+- [x] Enqueue automatic runs through the same run lifecycle used by manual runs.
+- [x] Preserve actor, repository, branch, PR, and revision context.
+- [x] Add webhook signature, replay, idempotency, and event-shape tests.
 
 Exit criteria:
 
-- [ ] A real push or pull-request update creates one and only one run.
-- [ ] The run appears in Runs without a page refresh after the next poll.
-- [ ] Completed findings appear in the same feed as manual findings.
-- [ ] Code-first and repository-documentation-first changes use the same pipeline.
+- [ ] A real push or pull-request update creates one and only one run. Local built-worker coverage passes; live GitHub App activation remains.
+- [x] The run appears in Runs without a page refresh after the next poll.
+- [x] Completed findings appear in the same feed as manual findings.
+- [x] Code-first and repository-documentation-first changes use the same pipeline.
 
 ### M6 — Confluence Documentation Connection
 
@@ -974,6 +974,24 @@ Package 3 is complete when users can connect external documentation without lear
 
 Package 4 is complete when the live smoke test shows both change directions in the same feed and the replacement runtime can retry claimed jobs without request-lifetime coupling.
 
+### Package 5 — Automatic GitHub feed
+
+**Status:** Implemented and covered in the built worker; production signing secret and live GitHub App smoke remain.
+
+- [x] Accept GitHub App webhooks at `/api/github/webhook`.
+- [x] Reject unsigned or incorrectly signed bodies before any database write.
+- [x] Persist each provider delivery and its payload hash before acknowledging it.
+- [x] Use stable delivery-derived run and change IDs so retries cannot duplicate work.
+- [x] Normalize tracked-branch pushes and relevant pull-request updates.
+- [x] Ignore unsupported events, actions, repositories, and branches with a persisted reason.
+- [x] Run automatic events through the shared graph traversal, finding writer, evidence, and run lifecycle.
+- [x] Re-index the tracked repository before analyzing a push.
+- [x] Poll Runs and Changes every five seconds so automatic work appears without a reload.
+- [x] Cover signatures, malformed events, replay mismatches, duplicate delivery IDs, push context, PR context, and branch filtering in the built Worker.
+- [ ] Add the same `GITHUB_WEBHOOK_SECRET` to Sites and the GitHub App, enable push and pull-request events, then perform one live push smoke test.
+
+Package 5 is complete when the live GitHub App delivery is marked processed, exactly one automatic run appears, and its findings appear in the existing feed.
+
 ---
 
 ## 16. Open Decisions
@@ -1036,3 +1054,9 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 
 - Implemented Package 4's queued provider-neutral manual analysis path, shared deterministic finding writer, Confluence page targeting, bidirectional GitHub/Confluence evidence, UI run polling, persisted failures, and built-worker integration coverage.
 - Kept crash-safe claiming and retry semantics explicitly gated on the replacement production runtime; the current Sites staging deployment uses `waitUntil` only as a temporary execution bridge.
+
+### 2026-08-19
+
+- Implemented Package 5 signed GitHub webhooks, persisted delivery auditing, payload-hash replay protection, stable delivery-derived run IDs, push and pull-request normalization, tracked-branch filtering, shared automatic analysis, and five-second UI feed polling.
+- Added built-worker tests proving invalid signatures write nothing, unsupported and malformed events remain observable, duplicate deliveries create one run, mismatched replays are rejected, and both code and repository-documentation paths produce automatic findings.
+- Kept the live activation gate explicit: Sites and the GitHub App must share a new signing secret before the first real webhook smoke test.

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, type SpecGraphDb } from "../../db";
 import { analysisRuns, runAttempts } from "../../db/schema";
 import { ApiError } from "../server/http";
@@ -7,13 +7,15 @@ export async function beginRunAttempt(
   runId: string,
   stage: string,
   db: SpecGraphDb = getDb(),
-): Promise<string> {
+): Promise<string | null> {
   const now = new Date().toISOString();
   const attemptId = `attempt_${crypto.randomUUID()}`;
-  await db
+  const claimed = await db
     .update(analysisRuns)
     .set({ status: "running", progress: 10, attempts: 1, startedAt: now, updatedAt: now })
-    .where(eq(analysisRuns.id, runId));
+    .where(and(eq(analysisRuns.id, runId), eq(analysisRuns.status, "queued")))
+    .returning({ id: analysisRuns.id });
+  if (!claimed.length) return null;
   await db.insert(runAttempts).values({
     id: attemptId,
     runId,

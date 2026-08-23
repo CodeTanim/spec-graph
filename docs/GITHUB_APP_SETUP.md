@@ -9,7 +9,10 @@ Create a GitHub App from **Settings → Developer settings → GitHub Apps** wit
 - Homepage URL: `https://specgraph-mvp.codetanim.chatgpt.site`
 - Callback URL: `https://specgraph-mvp.codetanim.chatgpt.site/api/github/callback`
 - Request user authorization during installation: enabled
-- Webhooks: inactive for Package 2; signed webhook ingestion is added in Package 4
+- Webhooks: active
+- Webhook URL: `https://specgraph-mvp.codetanim.chatgpt.site/api/github/webhook`
+- Webhook secret: a new random value stored as `GITHUB_WEBHOOK_SECRET` in the SpecGraph runtime
+- Subscribe to events: **Push** and **Pull request**
 - Repository permissions:
   - Contents: read-only
   - Pull requests: read-only
@@ -34,8 +37,9 @@ Add these values to `.env` for local development and to the Sites runtime enviro
 | `GITHUB_CLIENT_SECRET` | Client secret |
 | `GITHUB_APP_ID` | Numeric App ID |
 | `GITHUB_PRIVATE_KEY` | Complete downloaded PEM private key |
+| `GITHUB_WEBHOOK_SECRET` | The exact secret entered in the GitHub App webhook settings |
 
-Keep the client secret and private key out of source control. `GITHUB_PRIVATE_KEY` may contain real newlines or escaped `\\n` sequences.
+Keep the client secret, private key, and webhook secret out of source control. `GITHUB_PRIVATE_KEY` may contain real newlines or escaped `\\n` sequences. The webhook secret must match exactly in GitHub and the deployed runtime; changing one side without the other causes every delivery to be rejected.
 
 ## Current indexing boundary
 
@@ -46,4 +50,4 @@ The walking skeleton indexes up to 60 supported files and 4 MB total per reposit
 - Markdown and MDX documentation
 - OpenAPI or Swagger JSON, YAML, and YML files using conventional filenames
 
-Generated, dependency, coverage, build, and binary files are excluded. A manual analysis target must be a pull-request number such as `#42` or a pull-request URL for the connected repository.
+Generated, dependency, coverage, build, and binary files are excluded. A manual GitHub analysis target must be a pull-request number such as `#42` or a pull-request URL for the connected repository. Automatic analysis accepts pushes to the tracked branch plus opened, reopened, synchronized, and ready-for-review pull requests targeting that branch.
