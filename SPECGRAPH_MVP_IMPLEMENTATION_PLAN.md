@@ -1,6 +1,6 @@
 # SpecGraph MVP Implementation Plan
 
-**Status:** Implementation — Package 5 live GitHub webhook processing verified; linked-impact finding smoke pending
+**Status:** Implementation — Package 5 automatic GitHub feed complete; Package 6 Confluence activation is next
 **Last updated:** August 23, 2026
 **Primary reference:** [SpecGraph Resume Project Assessment](./RESUME_PROJECT_ASSESSMENT.md)
 
@@ -395,7 +395,7 @@ Initial ranking inputs:
 | H1 — Hosting migration | Vercel auth, repository sync, and GitHub webhook smoke passed; Confluence and remaining lifecycle smoke pending | M2 | The application runs outside Sites with portable auth, persistence, secrets, and callbacks |
 | M3 — Deterministic graph | Initial implementation complete | M2 | Supported artifacts have queryable typed relationships |
 | M4 — Manual end-to-end analysis | Staging implementation complete; live smoke pending | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
-| M5 — Automatic GitHub feed | Live push processed exactly once; linked-impact finding smoke pending | M4 | Pushes and pull requests trigger the same pipeline |
+| M5 — Automatic GitHub feed | Complete — live push processed exactly once and produced persistent findings | M4 | Pushes and pull requests trigger the same pipeline |
 | M6 — Confluence documentation connection | In progress (local contracts complete; production gated) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
 | M7 — Semantic ranking and evidence | Not started | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
 | M8 — Review lifecycle and resilience | Not started | M5, M7 | Actions persist; failures retry safely |
@@ -724,7 +724,7 @@ Goal: make the implementation independently verifiable by recruiters and intervi
 Resume-ready gate:
 
 - [ ] A reviewer can connect or inspect a real repository and external documentation flow.
-- [ ] A real manual or webhook-triggered run produces persistent findings.
+- [x] A real manual or webhook-triggered run produces persistent findings.
 - [ ] Code-first and Confluence-first changes both produce findings in the same feed.
 - [ ] The graph and ranking implementation can be explained from source code.
 - [ ] Findings contain exact evidence and revision links.
@@ -976,7 +976,7 @@ Package 4 is complete when the live smoke test shows both change directions in t
 
 ### Package 5 — Automatic GitHub feed
 
-**Status:** Live signed push processing verified; a change to an already-related artifact must still prove automatic finding creation.
+**Status:** Complete — a live signed push on Vercel created one durable run with 37 persistent findings.
 
 - [x] Accept GitHub App webhooks at `/api/github/webhook`.
 - [x] Reject unsigned or incorrectly signed bodies before any database write.
@@ -1068,6 +1068,7 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Replaced vinext runtime usage, D1 access, Sites identity headers, and Worker `waitUntil` calls with standard Next.js, Neon/Drizzle, Auth.js GitHub sign-in, and three durable Vercel Workflows.
 - Added Postgres integration coverage for workspace idempotency, source-pair duplication checks, persisted evidence/review actions, and bounded run retries; component tests, lint, local build, remote build, sign-in rendering, and unauthenticated API rejection pass.
 - Upgraded Next.js to the patched 16.3.2 line and constrained vulnerable nested Workflow dependencies; `npm audit --omit=dev` reports zero production vulnerabilities.
-- Kept the Sites deployment as rollback. Remaining H1 work is updating provider callbacks, completing the authenticated GitHub/webhook smoke test, configuring Confluence on the stable domain, and only then removing Sites-only files and retiring the old deployment.
+- Kept the Sites deployment as rollback. Remaining H1 work is configuring Confluence on the stable domain, completing the manual/removal smoke checks, and only then removing Sites-only files and retiring the old deployment.
 - Verified the stable Vercel GitHub sign-in, repository installation, Neon-backed initial sync, and live signed push webhook. Commit `ffb91c0` produced one processed delivery and one successful durable run on its first attempt; the new standalone Markdown artifact was indexed once and correctly produced no finding because it had no graph relationship.
 - Confirmed that the Git-triggered deployment for `ffb91c0` failed safely because remote `main` still contains the former vinext build configuration; Vercel kept the verified replacement deployment on the production alias. The full local Vercel migration must be reviewed, committed, and pushed before Git-based deployments become authoritative.
+- Committed and pushed the complete migration as `f2a7b8f`; its Git-triggered Vercel production deployment completed successfully and received the stable alias. The signed push delivery was processed once, its durable workflow succeeded on the first attempt, and it produced 37 persistent findings.
