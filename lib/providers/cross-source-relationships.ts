@@ -56,6 +56,10 @@ async function rebuildPair(
   for (const documentation of documentationNodes) {
     for (const repository of repositoryNodes) {
       if (!documentation.text.includes(repository.path)) continue;
+      const evidenceLines = documentation.text.split("\n");
+      const evidenceIndex = evidenceLines.findIndex((line) =>
+        line.includes(repository.path),
+      );
       await db.insert(relationships).values({
         id: `rel_${crypto.randomUUID()}`,
         fromNodeId: documentation.nodeId,
@@ -63,7 +67,10 @@ async function rebuildPair(
         type: "documents",
         origin: "deterministic",
         confidence: 1,
-        evidence: `Confluence page references ${repository.path}`,
+        evidence:
+          evidenceLines[evidenceIndex]?.trim() ||
+          `Confluence page references ${repository.path}`,
+        evidenceStartLine: evidenceIndex >= 0 ? evidenceIndex + 1 : 1,
         createdAt: now,
         updatedAt: now,
       }).onConflictDoNothing({

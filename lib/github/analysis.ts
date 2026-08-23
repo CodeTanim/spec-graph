@@ -19,6 +19,7 @@ import type { GitHubSourceProvider } from "../providers/source-provider";
 import { rebuildCrossSourceRelationships } from "../providers/cross-source-relationships";
 import { ApiError } from "../server/http";
 import { createManualRun, getRun } from "../server/specgraph-repository";
+import { changedArtifactSnapshot } from "./artifacts";
 import { syncGitHubSource } from "./ingestion";
 import { parsePullRequestNumber } from "./targets";
 
@@ -80,6 +81,11 @@ export async function executeGitHubPullRequestAnalysis(
     const changeValues = {
       title: `PR #${pull.number}: ${pull.title}`,
       summary: `${files.length} changed ${files.length === 1 ? "file" : "files"} in ${selectedSource.name}.`,
+      changedArtifactsJson: JSON.stringify(
+        files.map((file) =>
+          changedArtifactSnapshot(file.filename, `${pull.htmlUrl}/files`),
+        ),
+      ),
       evidenceSummary:
         "SpecGraph checked unchanged linked documentation for code changes, and linked code, tests, or documentation for documentation changes.",
       sourceLabel: `${selectedSource.name}#${pull.number}`,

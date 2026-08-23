@@ -317,6 +317,7 @@ export async function syncGitHubSource(
             origin: "deterministic",
             confidence: 1,
             evidence: reference.evidence,
+            evidenceStartLine: reference.evidenceStartLine,
             createdAt: now,
             updatedAt: now,
           })

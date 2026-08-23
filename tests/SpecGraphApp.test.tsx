@@ -51,12 +51,25 @@ describe("SpecGraphApp", () => {
     expect(
       screen.getByRole("dialog", { name: "Refund validation window changed" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /src\/refunds\/policy\.ts/ }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts",
+    );
     await user.click(screen.getByRole("button", { name: /Customer Refund Guide/ }));
 
     expect(
       screen.getByText("Refunds are available within 30 days of the original charge."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Open source/ })).toHaveAttribute(
+    expect(screen.getByText(/Relationship evidence/)).toHaveTextContent(
+      "src/refunds/policy.ts:18",
+    );
+    expect(screen.getByRole("link", { name: /Open evidence/ })).toHaveAttribute(
+      "href",
+      "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts#L18-L21",
+    );
+    expect(screen.getByRole("link", { name: /Open affected source/ })).toHaveAttribute(
       "href",
       "https://acme.atlassian.net/wiki/spaces/OPS/pages/100/refunds",
     );

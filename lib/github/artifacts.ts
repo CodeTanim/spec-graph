@@ -1,4 +1,4 @@
-import type { ArtifactKind } from "../contracts/specgraph";
+import type { ArtifactKind, ChangedArtifact } from "../contracts/specgraph";
 
 const CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
 const DOC_EXTENSIONS = [".md", ".mdx"];
@@ -55,6 +55,20 @@ export function displayArtifactKind(kind: IndexedArtifactKind): ArtifactKind {
   }
 }
 
+export function changedArtifactSnapshot(
+  path: string,
+  externalUrl: string | null,
+): ChangedArtifact {
+  const indexedKind = classifyGitHubArtifact(path);
+  return {
+    id: path,
+    name: path.split("/").at(-1) || path,
+    kind: indexedKind ? displayArtifactKind(indexedKind) : "File",
+    location: path,
+    externalUrl,
+  };
+}
+
 function normalizePath(path: string): string {
   const output: string[] = [];
   for (const part of path.split("/")) {
@@ -94,7 +108,21 @@ export type DeterministicReference = {
   targetPath: string;
   type: "imports" | "links" | "references" | "covers_endpoint";
   evidence: string;
+  evidenceStartLine: number;
 };
+
+function referenceEvidence(content: string, index: number): {
+  evidence: string;
+  evidenceStartLine: number;
+} {
+  const before = content.slice(0, Math.max(0, index));
+  const evidenceStartLine = before.split("\n").length;
+  const evidence = content.split("\n")[evidenceStartLine - 1]?.trim();
+  return {
+    evidence: evidence || "The indexed source contains an explicit reference.",
+    evidenceStartLine,
+  };
+}
 
 export function extractDeterministicReferences(
   sourcePath: string,
@@ -117,7 +145,7 @@ export function extractDeterministicReferences(
         add({
           targetPath,
           type: sourceKind === "test" ? "references" : "imports",
-          evidence: `References ${match[1]} from ${sourcePath}`,
+          ...referenceEvidence(content, match.index ?? 0),
         });
       }
     }
@@ -131,7 +159,7 @@ export function extractDeterministicReferences(
         add({
           targetPath,
           type: "links",
-          evidence: `Links to ${match[1]} from ${sourcePath}`,
+          ...referenceEvidence(content, match.index ?? 0),
         });
       }
     }
@@ -139,10 +167,11 @@ export function extractDeterministicReferences(
 
   for (const targetPath of knownPaths) {
     if (targetPath !== sourcePath && content.includes(targetPath)) {
+      const index = content.indexOf(targetPath);
       add({
         targetPath,
         type: "references",
-        evidence: `Mentions ${targetPath} in ${sourcePath}`,
+        ...referenceEvidence(content, index),
       });
     }
   }
@@ -151,10 +180,11 @@ export function extractDeterministicReferences(
     for (const [openApiPath, endpoints] of openApiEndpoints) {
       const endpoint = endpoints.find((candidate) => content.includes(candidate));
       if (endpoint) {
+        const index = content.indexOf(endpoint);
         add({
           targetPath: openApiPath,
           type: "covers_endpoint",
-          evidence: `Shares endpoint ${endpoint} with ${openApiPath}`,
+          ...referenceEvidence(content, index),
         });
       }
     }

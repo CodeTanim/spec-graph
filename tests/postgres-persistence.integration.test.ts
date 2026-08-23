@@ -194,6 +194,15 @@ describe("Neon-compatible Postgres persistence", () => {
       trigger: "github",
       title: "Refund window changed",
       summary: "The implementation now allows 60 days.",
+      changedArtifactsJson: JSON.stringify([
+        {
+          id: "src/refunds/policy.ts",
+          name: "policy.ts",
+          kind: "Code",
+          location: "src/refunds/policy.ts",
+          externalUrl: "https://github.com/acme/platform-api/commit/abc123",
+        },
+      ]),
       evidenceSummary: "A deterministic documentation link connected the files.",
       sourceLabel: "acme/platform-api@abc123",
       sourceUrl: "https://github.com/acme/platform-api/commit/abc123",
@@ -236,7 +245,11 @@ describe("Neon-compatible Postgres persistence", () => {
     });
 
     const open = await listChanges(context.workspace.id, "open", db);
+    expect(open.items[0].changedArtifacts).toEqual([
+      expect.objectContaining({ location: "src/refunds/policy.ts", kind: "Code" }),
+    ]);
     expect(open.items[0].artifacts[0].externalUrl).toContain("github.com");
+    expect(open.items[0].artifacts[0].evidenceLocation).toBe("docs/refunds.md:1");
     await updateChange(
       context.workspace.id,
       "chg_1",

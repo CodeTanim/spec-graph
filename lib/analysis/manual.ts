@@ -119,6 +119,15 @@ async function executeConfluencePageAnalysis(
       summary: previous
         ? `The Confluence page moved from version ${previous.revision} to ${current?.revision || page.currentRevision || "current"}.`
         : "SpecGraph checked the current page against its explicitly connected repository resources.",
+      changedArtifactsJson: JSON.stringify([
+        {
+          id: page.id,
+          name: page.title,
+          kind: "Confluence",
+          location: page.path,
+          externalUrl: page.canonicalUrl,
+        },
+      ]),
       evidenceSummary:
         "SpecGraph checked linked code, tests, and other documentation without changing any connected source.",
       sourceLabel: `Confluence / ${page.title}`,

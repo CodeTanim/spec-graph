@@ -21,15 +21,28 @@ const changes: ChangeItem[] = [
     summary:
       "The refund window changed from 30 to 60 days. Connected resources still describe the old behavior.",
     evidence: "The code and listed resources refer to the same refund-window rule.",
+    changedArtifacts: [
+      {
+        id: "src/refunds/policy.ts",
+        name: "policy.ts",
+        kind: "Code",
+        location: "src/refunds/policy.ts",
+        externalUrl:
+          "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts",
+      },
+    ],
     artifacts: [
       {
         id: "finding-customer-refund-guide",
         name: "Customer Refund Guide",
         kind: "Confluence",
         location: "Customer Operations / Refunds / Eligibility",
+        evidenceLocation: "src/refunds/policy.ts:18",
         excerpt: "Refunds are available within 30 days of the original charge.",
         reason: "The page still contains the previous refund window.",
         externalUrl: "https://acme.atlassian.net/wiki/spaces/OPS/pages/100/refunds",
+        evidenceUrl:
+          "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts#L18-L21",
       },
     ],
   },
@@ -44,24 +57,40 @@ const changes: ChangeItem[] = [
     affected: 2,
     summary: "The API contract now requires a reason.",
     evidence: "The affected resources create the RefundRequest object.",
+    changedArtifacts: [
+      {
+        id: "api/openapi.yaml",
+        name: "openapi.yaml",
+        kind: "OpenAPI",
+        location: "api/openapi.yaml",
+        externalUrl:
+          "https://github.com/acme/platform-api/blob/def456/api/openapi.yaml",
+      },
+    ],
     artifacts: [
       {
         id: "finding-refund-sdk",
         name: "Refund SDK",
         kind: "Code",
         location: "packages/sdk/src/refunds.ts / createRefund",
+        evidenceLocation: "api/openapi.yaml:42",
         excerpt: "createRefund({ transactionId })",
         reason: "The SDK still omits the new reason field.",
         externalUrl: "https://github.com/acme/platform-api/blob/def456/packages/sdk/src/refunds.ts",
+        evidenceUrl:
+          "https://github.com/acme/platform-api/blob/def456/api/openapi.yaml#L42-L45",
       },
       {
         id: "finding-refund-docs",
         name: "API request guide",
         kind: "Markdown",
         location: "docs/api/refunds.md / Request body",
+        evidenceLocation: "docs/api/refunds.md:22",
         excerpt: "{ \"transactionId\": \"txn_123\" }",
         reason: "The request example still omits the reason field.",
         externalUrl: "https://github.com/acme/platform-api/blob/def456/docs/api/refunds.md",
+        evidenceUrl:
+          "https://github.com/acme/platform-api/blob/def456/docs/api/refunds.md#L22-L25",
       },
     ],
   },
@@ -76,15 +105,26 @@ const changes: ChangeItem[] = [
     affected: 1,
     summary: "The response now includes settlementStatus.",
     evidence: "The guide contains an example of the changed response schema.",
+    changedArtifacts: [
+      {
+        id: "api/openapi.yaml",
+        name: "openapi.yaml",
+        kind: "OpenAPI",
+        location: "api/openapi.yaml",
+        externalUrl: null,
+      },
+    ],
     artifacts: [
       {
         id: "finding-payout-guide",
         name: "Payout API guide",
         kind: "Markdown",
         location: "docs/api/payouts.md / Response",
+        evidenceLocation: "docs/api/payouts.md:31",
         excerpt: "{ \"id\": \"po_123\", \"amount\": 4200 }",
         reason: "The response example does not include settlementStatus.",
         externalUrl: null,
+        evidenceUrl: null,
       },
     ],
   },
@@ -99,6 +139,15 @@ const changes: ChangeItem[] = [
     affected: 0,
     summary: "SpecGraph is checking which resources describe the retry policy.",
     evidence: "",
+    changedArtifacts: [
+      {
+        id: "worker/retry.ts",
+        name: "retry.ts",
+        kind: "Code",
+        location: "worker/retry.ts",
+        externalUrl: null,
+      },
+    ],
     artifacts: [],
   },
   {
@@ -112,6 +161,15 @@ const changes: ChangeItem[] = [
     affected: 0,
     summary: "A documentation clarification was reviewed against the repository README.",
     evidence: "The README and page describe the same authentication flow.",
+    changedArtifacts: [
+      {
+        id: "confluence-authentication",
+        name: "Authentication",
+        kind: "Confluence",
+        location: "Engineering / Authentication",
+        externalUrl: null,
+      },
+    ],
     artifacts: [],
   },
   {
@@ -125,6 +183,15 @@ const changes: ChangeItem[] = [
     affected: 0,
     summary: "The runbook owner changed.",
     evidence: "The ownership entry was reviewed.",
+    changedArtifacts: [
+      {
+        id: "confluence-settlement-operations",
+        name: "Settlement Operations",
+        kind: "Confluence",
+        location: "Operations / Settlement Operations",
+        externalUrl: null,
+      },
+    ],
     artifacts: [],
   },
 ];

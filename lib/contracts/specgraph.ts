@@ -16,16 +16,27 @@ export type ArtifactKind =
   | "OpenAPI"
   | "Test"
   | "Markdown"
-  | "Code";
+  | "Code"
+  | "File";
+
+export type ChangedArtifact = {
+  id: string;
+  name: string;
+  kind: ArtifactKind;
+  location: string;
+  externalUrl: string | null;
+};
 
 export type AffectedArtifact = {
   id: string;
   name: string;
   kind: ArtifactKind;
   location: string;
+  evidenceLocation: string;
   excerpt: string;
   reason: string;
   externalUrl: string | null;
+  evidenceUrl: string | null;
 };
 
 export type ChangeItem = {
@@ -39,6 +50,7 @@ export type ChangeItem = {
   affected: number;
   summary: string;
   evidence: string;
+  changedArtifacts: ChangedArtifact[];
   artifacts: AffectedArtifact[];
 };
 

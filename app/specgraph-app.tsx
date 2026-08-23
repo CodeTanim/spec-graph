@@ -923,8 +923,44 @@ export function SpecGraphApp({
             </p>
 
             <section className="details-section">
-              <h3>What changed</h3>
-              <p>{selectedChange.summary}</p>
+              <h3>
+                What changed
+                {selectedChange.changedArtifacts.length > 0 && (
+                  <span>{selectedChange.changedArtifacts.length}</span>
+                )}
+              </h3>
+              {selectedChange.changedArtifacts.length ? (
+                <div className="changed-artifact-list">
+                  {selectedChange.changedArtifacts.map((artifact) => {
+                    const content = (
+                      <>
+                        <span>
+                          <strong>{artifact.location}</strong>
+                          <small>{artifact.kind}</small>
+                        </span>
+                        {artifact.externalUrl && <Arrow />}
+                      </>
+                    );
+                    return artifact.externalUrl ? (
+                      <a
+                        className="changed-artifact-row"
+                        href={artifact.externalUrl}
+                        key={artifact.id}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {content}
+                      </a>
+                    ) : (
+                      <div className="changed-artifact-row" key={artifact.id}>
+                        {content}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p>{selectedChange.summary}</p>
+              )}
             </section>
 
             <section className="details-section affected-section">
@@ -963,14 +999,25 @@ export function SpecGraphApp({
 
                         {expanded && (
                           <div className="artifact-preview" id={detailsId}>
-                            <span>{artifact.location}</span>
-                            <blockquote>{artifact.excerpt}</blockquote>
                             <p>{artifact.reason}</p>
-                            {artifact.externalUrl && (
-                              <a href={artifact.externalUrl} target="_blank" rel="noreferrer">
-                                Open source <Arrow />
-                              </a>
-                            )}
+                            <span>
+                              Relationship evidence <span aria-hidden="true">·</span>{" "}
+                              {artifact.evidenceLocation}
+                            </span>
+                            <blockquote>{artifact.excerpt}</blockquote>
+                            <div className="artifact-preview-links">
+                              {artifact.evidenceUrl && (
+                                <a href={artifact.evidenceUrl} target="_blank" rel="noreferrer">
+                                  Open evidence <Arrow />
+                                </a>
+                              )}
+                              {artifact.externalUrl &&
+                                artifact.externalUrl !== artifact.evidenceUrl && (
+                                  <a href={artifact.externalUrl} target="_blank" rel="noreferrer">
+                                    Open affected source <Arrow />
+                                  </a>
+                                )}
+                            </div>
                           </div>
                         )}
                       </div>

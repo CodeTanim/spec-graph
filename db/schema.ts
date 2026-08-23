@@ -312,6 +312,7 @@ export const relationships = pgTable(
       .default("deterministic"),
     confidence: real("confidence").notNull().default(1),
     evidence: text("evidence").notNull().default(""),
+    evidenceStartLine: integer("evidence_start_line"),
     ...timestamps,
   },
   (table) => [
@@ -341,6 +342,7 @@ export const changeEvents = pgTable(
     }).notNull(),
     title: text("title").notNull(),
     summary: text("summary").notNull().default(""),
+    changedArtifactsJson: text("changed_artifacts_json").notNull().default("[]"),
     evidenceSummary: text("evidence_summary").notNull().default(""),
     sourceLabel: text("source_label").notNull(),
     sourceUrl: text("source_url"),

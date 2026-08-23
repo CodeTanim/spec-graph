@@ -6,7 +6,10 @@ import {
 } from "../lib/github/artifacts";
 import { assertRepositoryWithinLimits } from "../lib/github/limits";
 import { parsePullRequestNumber } from "../lib/github/targets";
-import { shouldCreateImpactFinding } from "../lib/analysis/deterministic";
+import {
+  relationshipReason,
+  shouldCreateImpactFinding,
+} from "../lib/analysis/deterministic";
 
 describe("GitHub artifact indexing", () => {
   it("keeps the supported MVP surface small and predictable", () => {
@@ -51,7 +54,7 @@ describe("GitHub artifact indexing", () => {
     const docReferences = extractDeterministicReferences(
       "docs/refunds.md",
       "markdown",
-      "[Policy implementation](../src/refunds/policy.ts)",
+      "# Refunds\n\n[Policy implementation](../src/refunds/policy.ts)",
       knownPaths,
       endpoints,
     );
@@ -59,6 +62,8 @@ describe("GitHub artifact indexing", () => {
       expect.objectContaining({
         targetPath: "src/refunds/policy.ts",
         type: "links",
+        evidence: "[Policy implementation](../src/refunds/policy.ts)",
+        evidenceStartLine: 3,
       }),
     );
   });
@@ -116,5 +121,28 @@ describe("directional impact policy", () => {
     expect(shouldCreateImpactFinding("markdown", "test")).toBe(true);
     expect(shouldCreateImpactFinding("confluence", "markdown")).toBe(true);
     expect(shouldCreateImpactFinding("markdown", "confluence")).toBe(true);
+  });
+
+  it("describes the relationship from the actual referring side", () => {
+    expect(
+      relationshipReason(
+        "references",
+        "docs/WEBHOOK_SMOKE_TEST.md",
+        "markdown",
+        "code",
+        true,
+      ),
+    ).toBe(
+      "The changed file docs/WEBHOOK_SMOKE_TEST.md references this file.",
+    );
+    expect(
+      relationshipReason(
+        "documents",
+        "src/policy.ts",
+        "code",
+        "markdown",
+        false,
+      ),
+    ).toBe("This file references the changed file src/policy.ts.");
   });
 });

@@ -1,19 +1,23 @@
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { getDb, type SpecGraphDb } from "../../db";
 import {
   analysisRuns,
   artifacts,
+  artifactVersions,
   changeEvents,
   findingActions,
   findingEvidence,
   findings,
   graphNodes,
+  relationships,
   sourceAssociations,
   sources,
 } from "../../db/schema";
 import type {
   AffectedArtifact,
   ArtifactKind,
+  ChangedArtifact,
   ChangeFilter,
   ChangeItem,
   ChangeListResponse,
@@ -26,7 +30,14 @@ import type {
   StartRunInput,
   StartRunResponse,
 } from "../contracts/specgraph";
+import { relationshipReason } from "../analysis/deterministic";
 import { ApiError } from "./http";
+
+const changedGraphNodes = alias(graphNodes, "changed_graph_nodes");
+const changedArtifactRecords = alias(artifacts, "changed_artifact_records");
+const evidenceGraphNodes = alias(graphNodes, "evidence_graph_nodes");
+const evidenceArtifactRecords = alias(artifacts, "evidence_artifact_records");
+const evidenceVersions = alias(artifactVersions, "evidence_versions");
 
 function normalizeTimestamp(value: string | null): string | null {
   if (!value) return null;
@@ -52,6 +63,89 @@ function artifactKind(
   }
 }
 
+function parseChangedArtifacts(value: string): ChangedArtifact[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is ChangedArtifact => {
+      if (!item || typeof item !== "object") return false;
+      const record = item as Partial<ChangedArtifact>;
+      return (
+        typeof record.id === "string" &&
+        typeof record.name === "string" &&
+        typeof record.kind === "string" &&
+        typeof record.location === "string" &&
+        (record.externalUrl === null || typeof record.externalUrl === "string")
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function listChangedArtifacts(
+  runId: string,
+  storedValue: string,
+  changeUrl: string | null,
+  db: SpecGraphDb,
+): Promise<ChangedArtifact[]> {
+  const stored = parseChangedArtifacts(storedValue);
+  if (stored.length) return stored;
+
+  const rows = await db
+    .select({
+      artifactId: artifacts.id,
+      kind: artifacts.kind,
+      title: artifacts.title,
+      path: artifacts.path,
+      canonicalUrl: artifacts.canonicalUrl,
+    })
+    .from(findings)
+    .innerJoin(graphNodes, eq(findings.changedNodeId, graphNodes.id))
+    .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
+    .where(eq(findings.runId, runId));
+  const unique = new Map<string, ChangedArtifact>();
+  for (const row of rows) {
+    unique.set(row.artifactId, {
+      id: row.artifactId,
+      name: row.title,
+      kind: artifactKind(row.kind),
+      location: row.path,
+      externalUrl: changeUrl || row.canonicalUrl,
+    });
+  }
+  return [...unique.values()];
+}
+
+function referencedExcerpt(
+  content: string,
+  targetPath: string,
+  storedEvidence: string,
+  storedStartLine: number | null,
+): { excerpt: string; startLine: number } {
+  const lines = content.split("\n");
+  const filename = targetPath.split("/").at(-1) || targetPath;
+  let index = lines.findIndex((line) => line.includes(targetPath));
+  if (index < 0) index = lines.findIndex((line) => line.includes(filename));
+  if (index < 0 && storedStartLine) index = storedStartLine - 1;
+  if (index < 0) {
+    return { excerpt: storedEvidence, startLine: 1 };
+  }
+  return {
+    excerpt: lines.slice(index, index + 4).join("\n").trim() || storedEvidence,
+    startLine: index + 1,
+  };
+}
+
+function lineUrl(
+  kind: "code" | "test" | "markdown" | "openapi" | "confluence" | null,
+  url: string | null,
+  startLine: number,
+): string | null {
+  if (!url || kind === "confluence") return url;
+  return `${url.split("#L")[0]}#L${startLine}-L${startLine + 3}`;
+}
+
 async function listAffectedArtifacts(
   runId: string,
   db: SpecGraphDb,
@@ -61,6 +155,7 @@ async function listAffectedArtifacts(
       findingId: findings.id,
       findingTitle: findings.title,
       findingSummary: findings.summary,
+      changedNodeId: findings.changedNodeId,
       reviewStatus: findings.status,
       artifactKind: artifacts.kind,
       artifactTitle: artifacts.title,
@@ -69,10 +164,50 @@ async function listAffectedArtifacts(
       evidenceLocation: findingEvidence.location,
       evidenceExcerpt: findingEvidence.excerpt,
       evidenceUrl: findingEvidence.sourceUrl,
+      changedArtifactKind: changedArtifactRecords.kind,
+      changedArtifactPath: changedArtifactRecords.path,
+      relationshipType: relationships.type,
+      relationshipFromNodeId: relationships.fromNodeId,
+      relationshipEvidence: relationships.evidence,
+      relationshipEvidenceStartLine: relationships.evidenceStartLine,
+      relationshipEvidenceKind: evidenceArtifactRecords.kind,
+      relationshipEvidencePath: evidenceArtifactRecords.path,
+      relationshipEvidenceUrl: evidenceArtifactRecords.canonicalUrl,
+      relationshipEvidenceContent: evidenceVersions.extractedText,
     })
     .from(findings)
     .leftJoin(graphNodes, eq(findings.affectedNodeId, graphNodes.id))
     .leftJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
+    .leftJoin(changedGraphNodes, eq(findings.changedNodeId, changedGraphNodes.id))
+    .leftJoin(
+      changedArtifactRecords,
+      eq(changedGraphNodes.artifactId, changedArtifactRecords.id),
+    )
+    .leftJoin(
+      relationships,
+      or(
+        and(
+          eq(relationships.fromNodeId, findings.changedNodeId),
+          eq(relationships.toNodeId, findings.affectedNodeId),
+        ),
+        and(
+          eq(relationships.fromNodeId, findings.affectedNodeId),
+          eq(relationships.toNodeId, findings.changedNodeId),
+        ),
+      ),
+    )
+    .leftJoin(evidenceGraphNodes, eq(relationships.fromNodeId, evidenceGraphNodes.id))
+    .leftJoin(
+      evidenceArtifactRecords,
+      eq(evidenceGraphNodes.artifactId, evidenceArtifactRecords.id),
+    )
+    .leftJoin(
+      evidenceVersions,
+      and(
+        eq(evidenceVersions.artifactId, evidenceArtifactRecords.id),
+        eq(evidenceVersions.revision, evidenceArtifactRecords.currentRevision),
+      ),
+    )
     .leftJoin(findingEvidence, eq(findingEvidence.findingId, findings.id))
     .where(eq(findings.runId, runId))
     .orderBy(desc(findings.createdAt));
@@ -84,14 +219,60 @@ async function listAffectedArtifacts(
 
   for (const row of rows) {
     if (unique.has(row.findingId)) continue;
+    const reconstructEvidence = Boolean(
+      row.relationshipEvidencePath &&
+        row.evidenceLocation &&
+        !row.evidenceLocation.startsWith(`${row.relationshipEvidencePath}:`),
+    );
+    const targetPath =
+      row.relationshipFromNodeId === row.changedNodeId
+        ? row.artifactPath
+        : row.changedArtifactPath;
+    const reconstructed =
+      reconstructEvidence && row.relationshipEvidenceContent && targetPath
+        ? referencedExcerpt(
+            row.relationshipEvidenceContent,
+            targetPath,
+            row.relationshipEvidence || row.evidenceExcerpt || "",
+            row.relationshipEvidenceStartLine,
+          )
+        : null;
+    const reason =
+      row.relationshipType &&
+      row.relationshipFromNodeId &&
+      row.changedNodeId &&
+      row.changedArtifactPath &&
+      row.changedArtifactKind &&
+      row.artifactKind
+        ? relationshipReason(
+            row.relationshipType,
+            row.changedArtifactPath,
+            row.changedArtifactKind,
+            row.artifactKind,
+            row.relationshipFromNodeId === row.changedNodeId,
+          )
+        : row.findingSummary;
     unique.set(row.findingId, {
       id: row.findingId,
       name: row.artifactTitle || row.findingTitle,
       kind: artifactKind(row.artifactKind),
-      location: row.evidenceLocation || row.artifactPath || "Source location unavailable",
-      excerpt: row.evidenceExcerpt || "No source excerpt was recorded.",
-      reason: row.findingSummary,
-      externalUrl: row.evidenceUrl || row.artifactUrl,
+      location: row.artifactPath || "Source location unavailable",
+      evidenceLocation: reconstructed
+        ? `${row.relationshipEvidencePath}:${reconstructed.startLine}`
+        : row.evidenceLocation || "Evidence location unavailable",
+      excerpt:
+        reconstructed?.excerpt ||
+        row.evidenceExcerpt ||
+        "No source excerpt was recorded.",
+      reason,
+      externalUrl: row.artifactUrl,
+      evidenceUrl: reconstructed
+        ? lineUrl(
+            row.relationshipEvidenceKind,
+            row.relationshipEvidenceUrl,
+            reconstructed.startLine,
+          )
+        : row.evidenceUrl,
       reviewStatus: row.reviewStatus,
     });
   }
@@ -109,9 +290,11 @@ function toAffectedArtifact(
     name: item.name,
     kind: item.kind,
     location: item.location,
+    evidenceLocation: item.evidenceLocation,
     excerpt: item.excerpt,
     reason: item.reason,
     externalUrl: item.externalUrl,
+    evidenceUrl: item.evidenceUrl,
   };
 }
 
@@ -132,6 +315,7 @@ export async function listChanges(
       sourceUrl: changeEvents.sourceUrl,
       occurredAt: changeEvents.occurredAt,
       summary: changeEvents.summary,
+      changedArtifactsJson: changeEvents.changedArtifactsJson,
       evidenceSummary: changeEvents.evidenceSummary,
     })
     .from(analysisRuns)
@@ -143,6 +327,12 @@ export async function listChanges(
   const items = await Promise.all(
     rows.map(async (row): Promise<ChangeItem> => {
       const affected = await listAffectedArtifacts(row.runId, db);
+      const changedArtifacts = await listChangedArtifacts(
+        row.runId,
+        row.changedArtifactsJson,
+        row.sourceUrl,
+        db,
+      );
       const status =
         row.runStatus === "queued" || row.runStatus === "running"
           ? "processing"
@@ -161,6 +351,7 @@ export async function listChanges(
         affected: affected.length,
         summary: row.summary,
         evidence: row.evidenceSummary,
+        changedArtifacts,
         artifacts: affected.map(toAffectedArtifact),
       };
     }),

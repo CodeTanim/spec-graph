@@ -16,6 +16,8 @@ import {
   executeGitHubPushAnalysis,
   type GitHubPushAnalysisInput,
 } from "./analysis";
+import { changedArtifactSnapshot } from "./artifacts";
+import type { ChangedArtifact } from "../contracts/specgraph";
 
 const SUPPORTED_PULL_REQUEST_ACTIONS = new Set([
   "opened",
@@ -45,6 +47,7 @@ export type NormalizedGitHubChange = {
   afterRevision: string | null;
   actor: string | null;
   occurredAt: string;
+  changedArtifacts: ChangedArtifact[];
   pullRequestNumber?: number;
   push?: GitHubPushAnalysisInput;
 };
@@ -205,6 +208,7 @@ function normalizePush(
   const commitMessage = text(headCommit?.message)?.split("\n")[0] || null;
   const actor = text(sender?.login) || text(pusher?.name);
   const occurredAt = text(headCommit?.timestamp) || new Date().toISOString();
+  const sourceUrl = text(payload.compare);
   return {
     kind: "push",
     source,
@@ -212,11 +216,14 @@ function normalizePush(
     target: source.defaultBranch,
     summary: `${changedPaths.length} changed ${changedPaths.length === 1 ? "file" : "files"} in ${source.name}.`,
     sourceLabel: `${source.name}@${afterRevision.slice(0, 7)}`,
-    sourceUrl: text(payload.compare),
+    sourceUrl,
     beforeRevision,
     afterRevision,
     actor,
     occurredAt,
+    changedArtifacts: changedPaths.map((path) =>
+      changedArtifactSnapshot(path, sourceUrl),
+    ),
     push: {
       branch: source.defaultBranch,
       beforeRevision,
@@ -262,6 +269,7 @@ function normalizePullRequest(
     afterRevision: text(head?.sha),
     actor: text(user?.login),
     occurredAt: text(pull?.updated_at) || new Date().toISOString(),
+    changedArtifacts: [],
     pullRequestNumber: number,
   };
 }
@@ -452,6 +460,7 @@ export async function acceptGitHubWebhook(
       trigger: "github",
       title: normalized.title,
       summary: normalized.summary,
+      changedArtifactsJson: JSON.stringify(normalized.changedArtifacts),
       evidenceSummary,
       sourceLabel: normalized.sourceLabel,
       sourceUrl: normalized.sourceUrl,
