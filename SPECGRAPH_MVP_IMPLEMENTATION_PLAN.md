@@ -1,6 +1,6 @@
 # SpecGraph MVP Implementation Plan
 
-**Status:** Implementation — Package 6 live Confluence connection and code-to-Confluence impact verified; automatic Confluence change detection is next
+**Status:** Implementation — daily automatic source cadence implemented; production deployment and live Confluence-edit smoke test are next
 **Last updated:** August 23, 2026
 **Primary reference:** [SpecGraph Resume Project Assessment](./RESUME_PROJECT_ASSESSMENT.md)
 
@@ -60,7 +60,7 @@ The UI is already sufficient to support this flow. The immediate priority is pro
 - A guided documentation-source step that can connect one Confluence site and space or be skipped until later.
 - Read-only Confluence page and version ingestion.
 - Manual analysis of a branch, pull request, commit range, or supported file.
-- Automatic analysis from GitHub pushes, pull requests, and supported Confluence page changes.
+- Automatic analysis on a daily cadence from recorded GitHub pushes, pull requests, and polled Confluence page changes.
 - Repository ingestion for:
   - TypeScript and JavaScript source files.
   - TypeScript and JavaScript test files.
@@ -102,6 +102,7 @@ These defaults prevent the project from stalling. Change them only through the d
 | Artifact snapshots | Git commit SHA and provider revision links | GitHub already retains immutable revisions; add blob storage only when external documents require it. |
 | Analysis strategy | Deterministic graph first, semantic model second | Improves explainability, precision, and cost control. |
 | Run updates | Client polling | Simple and adequate for MVP-scale jobs. |
+| Automatic checks | Once per day; manual Analyze remains immediate | Keeps the noncommercial MVP simple and low-noise without delaying an explicit user request. |
 | Product action | Detect and explain only | Keeps the first release safe and measurable. |
 | Initial tenancy | Auth.js GitHub identity with one private workspace per user | Authentication is explicit, portable, and server-enforced rather than supplied by a hosting-specific header. |
 | Deployment direction | Vercel Hobby, Neon Postgres, Auth.js, and Vercel Workflow | This noncommercial MVP gets a reproducible Next.js runtime, durable jobs, managed secrets, and a free development database. |
@@ -396,7 +397,7 @@ Initial ranking inputs:
 | M3 — Deterministic graph | Initial implementation complete | M2 | Supported artifacts have queryable typed relationships |
 | M4 — Manual end-to-end analysis | Staging implementation complete; live smoke pending | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
 | M5 — Automatic GitHub feed | Complete — live push processed exactly once and produced persistent findings | M4 | Pushes and pull requests trigger the same pipeline |
-| M6 — Confluence documentation connection | In progress (local contracts complete; production gated) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
+| M6 — Confluence documentation connection | In progress (live connection and both directions implemented; live edit smoke pending) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
 | M7 — Semantic ranking and evidence | Not started | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
 | M8 — Review lifecycle and resilience | Not started | M5, M7 | Actions persist; failures retry safely |
 | M9 — Evaluation and production hardening | Not started | M8 | Quality, security, and reliability are measured |
@@ -599,11 +600,11 @@ Goal: let users connect external documentation without making source setup feel 
 - [x] Normalize Confluence pages through the same artifact and graph-node contracts used for repository documentation.
 - [ ] Store durable external page snapshots when immutable provider retrieval is insufficient.
 - [x] Create deterministic relationships when Confluence pages reference exact paired-repository paths.
-- [ ] Receive or poll for incremental page changes and deduplicate them.
-- [ ] Send Confluence changes through the same run and finding pipeline.
+- [x] Poll for incremental page versions on a daily cadence and deduplicate them with per-artifact analysis cursors.
+- [x] Send Confluence changes through the same run and finding pipeline.
 - [x] Display GitHub and Confluence as simple connected sources with truthful health states.
 - [x] Show a source choice in Analyze only when more than one connected source makes it necessary.
-- [x] Add Confluence authorization, sync, encrypted-token, association, and deduplication tests; change-event coverage remains pending.
+- [x] Add Confluence authorization, sync, encrypted-token, association, deduplication, and scheduled change-event tests.
 
 Exit criteria:
 
@@ -976,7 +977,7 @@ Package 4 is complete when the live smoke test shows both change directions in t
 
 ### Package 5 — Automatic GitHub feed
 
-**Status:** Complete — a live signed push on Vercel created one durable run with 37 persistent findings.
+**Status:** Complete — signed webhooks record changes immediately and the shared cadence processes them durably.
 
 - [x] Accept GitHub App webhooks at `/api/github/webhook`.
 - [x] Reject unsigned or incorrectly signed bodies before any database write.
@@ -984,6 +985,7 @@ Package 4 is complete when the live smoke test shows both change directions in t
 - [x] Use stable delivery-derived run and change IDs so retries cannot duplicate work.
 - [x] Normalize tracked-branch pushes and relevant pull-request updates.
 - [x] Ignore unsupported events, actions, repositories, and branches with a persisted reason.
+- [x] Hold automatic GitHub runs for the shared daily cadence while keeping manual Analyze immediate.
 - [x] Run automatic events through the shared graph traversal, finding writer, evidence, and run lifecycle.
 - [x] Re-index the tracked repository before analyzing a push.
 - [x] Poll Runs and Changes every five seconds so automatic work appears without a reload.
@@ -1029,6 +1031,7 @@ Add entries when a default above changes.
 | 2026-08-17 | Detach staging analysis with Workers `waitUntil`, but do not call it the production queue | It lets the current Sites staging app return queued runs and continue work after the response without pretending to be crash-safe | D1 remains the source of run truth; the replacement deployment must claim and retry jobs through a durable worker |
 | 2026-08-23 | Use Vercel Hobby, Neon Postgres, Auth.js, and Vercel Workflow for the noncommercial MVP | The stack fits standard Next.js, provides portable SQL identity and state, and removes request-lifetime coupling without requiring commercial infrastructure | The pre-release database starts clean; GitHub and Confluence callbacks must move to `spec-graph.vercel.app` before Sites can be retired |
 | 2026-08-23 | Make deterministic impact eligibility directional and documentation-centered | Symmetric import traversal produced noisy code-to-code findings that did not represent documentation drift | Code or test changes can flag linked documentation; documentation changes can flag linked code, tests, or other documentation; artifacts changed in the same event are excluded; findings never edit sources automatically |
+| 2026-08-23 | Run automatic checks once per day while keeping manual Analyze immediate | A daily cadence is simpler, reduces feed noise, and avoids running analysis on every edit without making the user wait when they explicitly request a check | GitHub webhooks persist queued changes and one daily Vercel workflow processes them while polling Confluence page versions |
 
 ---
 
@@ -1076,3 +1079,4 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Replaced symmetric import-neighbor findings with a documentation-centered eligibility policy, retained documentation-to-documentation impacts for future Confluence/Notion relationships, exposed full artifact locations in the feed, and added unit plus Postgres integration coverage for code, documentation, and mixed-change directions.
 - Added immutable changed-file snapshots to each event and separated affected-source details from relationship evidence, so the UI can name what changed and explain the reference from the correct originating file or page.
 - Verified live code-to-Confluence impact with commit `f7fc039`: the signed GitHub push created one durable run, it succeeded on its first attempt, and the deterministic graph flagged `SD/SpecGraph Integration Test` because its indexed relationship evidence explicitly references `app/page.tsx`. The stored affected-source and evidence URLs both use the correct `/wiki/spaces/SD/pages/164269/SpecGraph+Integration+Test` Confluence route.
+- Added a shared daily automatic cadence: GitHub webhooks now persist queued changes without analyzing on every edit, Confluence pages are polled by provider version, per-page cursors prevent duplicates across syncs and retries, and manual Analyze remains immediate.

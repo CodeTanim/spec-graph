@@ -9,6 +9,7 @@ import {
   relationships,
   sources,
 } from "../../db/schema";
+import { sha256Hex } from "../github/crypto";
 
 export type ChangedGraphNode = {
   id: string;
@@ -208,10 +209,10 @@ export async function persistDeterministicFindings(
     );
     const endLine = Math.max(startLine, startLine + 3);
     const changedPath = changedPathByNode.get(changedNodeId) || "the changed item";
-    const findingId = `finding_${crypto.randomUUID()}`;
-
-    await db.insert(findings).values({
-      id: findingId,
+    const deduplicationKey = `${changedNodeId}:${affectedNodeId}:${edge.type}`;
+    const stableSuffix = (await sha256Hex(`${runId}:${deduplicationKey}`)).slice(0, 32);
+    const inserted = await db.insert(findings).values({
+      id: `finding_${stableSuffix}`,
       runId,
       changedNodeId,
       affectedNodeId,
@@ -226,13 +227,26 @@ export async function persistDeterministicFindings(
       confidence: edge.confidence,
       origin: edge.origin,
       status: "open",
-      deduplicationKey: `${changedNodeId}:${affectedNodeId}:${edge.type}`,
+      deduplicationKey,
       createdAt: now,
       updatedAt: now,
-    });
+    }).onConflictDoNothing({
+      target: [findings.runId, findings.deduplicationKey],
+    }).returning({ id: findings.id });
+    const [existingFinding] = inserted.length
+      ? inserted
+      : await db
+          .select({ id: findings.id })
+          .from(findings)
+          .where(and(
+            eq(findings.runId, runId),
+            eq(findings.deduplicationKey, deduplicationKey),
+          ))
+          .limit(1);
+    if (!existingFinding) continue;
     await db.insert(findingEvidence).values({
-      id: `evidence_${crypto.randomUUID()}`,
-      findingId,
+      id: `evidence_${stableSuffix}`,
+      findingId: existingFinding.id,
       artifactVersionId: version?.id || null,
       location: `${evidenceRecord?.path || affected.path}:${startLine}`,
       startLine,
@@ -248,7 +262,7 @@ export async function persistDeterministicFindings(
       ),
       type: "relationship",
       createdAt: now,
-    });
+    }).onConflictDoNothing({ target: findingEvidence.id });
   }
 
   return persisted.size;

@@ -270,6 +270,17 @@ export const artifactVersions = pgTable(
   ],
 );
 
+export const artifactAnalysisCursors = pgTable(
+  "artifact_analysis_cursors",
+  {
+    artifactId: text("artifact_id")
+      .primaryKey()
+      .references(() => artifacts.id, { onDelete: "cascade" }),
+    revision: text("revision").notNull(),
+    ...timestamps,
+  },
+);
+
 export const graphNodes = pgTable(
   "graph_nodes",
   {
@@ -524,6 +535,9 @@ export const webhookDeliveries = pgTable(
   "webhook_deliveries",
   {
     id: text("id").primaryKey(),
+    analysisRunId: text("analysis_run_id").references(() => analysisRuns.id, {
+      onDelete: "set null",
+    }),
     sourceId: text("source_id").references(() => sources.id, {
       onDelete: "set null",
     }),

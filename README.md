@@ -12,7 +12,7 @@ changes, or start an analysis manually.
 - Next.js 16 and React 19
 - Auth.js with GitHub sign-in
 - Neon Postgres with Drizzle ORM
-- Vercel Workflow for durable source sync, webhook analysis, and manual runs
+- Vercel Workflow for durable daily source checks and manual runs
 - GitHub App and read-only Confluence OAuth connectors
 - Vitest, Testing Library, and PGlite for component and Postgres integration tests
 
@@ -31,6 +31,12 @@ Fill in `.env.local` before migrating. Use the pooled `DATABASE_URL` for the app
 and the direct `DATABASE_URL_UNPOOLED` for migrations. Generate `AUTH_SECRET`
 with a cryptographically secure random value. Provider private keys and secrets
 must stay in local or hosting environment variables; never commit them.
+
+Set `CRON_SECRET` to a random value in Vercel Production. Vercel uses it to
+authorize the daily cron request. That workflow checks queued GitHub changes
+and connected Confluence spaces once per day. Manual Analyze requests still
+start immediately. The automatic check runs at 13:00 UTC (morning in Eastern
+Time).
 
 When no GitHub client ID is configured outside production, local development
 uses a development-only identity. Production always requires GitHub sign-in.
@@ -62,7 +68,9 @@ push and pull-request webhook events.
 1. Auth.js resolves a GitHub identity and SpecGraph creates one tenant-scoped workspace.
 2. A source connection stores provider metadata, then queues a durable sync.
 3. Sync normalizes code, tests, repository docs, OpenAPI, or Confluence pages into artifacts and relationships.
-4. Manual requests and signed GitHub webhooks enter the same durable analysis pipeline.
+4. Signed GitHub webhooks record changes immediately; the daily workflow batches
+   automatic analysis and polls Confluence page versions once per day. Manual
+   requests still run immediately.
 5. Findings, evidence links, run state, and review actions persist in Postgres and appear in the same minimal feed.
 
 The current analyzer deliberately starts with deterministic imports, links,

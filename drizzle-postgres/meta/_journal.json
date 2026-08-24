@@ -15,6 +15,20 @@
       "when": 1787526032190,
       "tag": "0001_closed_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787537760895,
+      "tag": "0002_smooth_living_mummy",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787538020440,
+      "tag": "0003_optimal_layla_miller",
+      "breakpoints": true
     }
   ]
 }

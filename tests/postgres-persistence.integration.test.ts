@@ -7,16 +7,21 @@ import type { SpecGraphDb } from "../db";
 import * as schema from "../db/schema";
 import {
   analysisRuns,
+  artifactAnalysisCursors,
   artifactVersions,
   artifacts,
   changeEvents,
   findingEvidence,
   findings,
+  githubInstallations,
   graphNodes,
   relationships,
   sources,
+  webhookDeliveries,
 } from "../db/schema";
 import { persistDeterministicFindings } from "../lib/analysis/deterministic";
+import { analyzePendingConfluenceChanges } from "../lib/confluence/scheduled";
+import { acceptGitHubWebhook } from "../lib/github/webhook";
 import {
   beginRunAttempt,
   completeRunAttempt,
@@ -58,6 +63,190 @@ async function workspace() {
 }
 
 describe("Neon-compatible Postgres persistence", () => {
+  it("queues a signed-provider GitHub change until the cadence processes it", async () => {
+    const context = await workspace();
+    const now = new Date().toISOString();
+    await db.insert(githubInstallations).values({
+      id: "installation-1",
+      workspaceId: context.workspace.id,
+      externalInstallationId: "101",
+      accountLogin: "acme",
+      accountType: "Organization",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(sources).values({
+      id: "src_repo",
+      workspaceId: context.workspace.id,
+      githubInstallationId: "installation-1",
+      provider: "github",
+      externalId: "501",
+      name: "acme/platform-api",
+      detail: "main",
+      defaultBranch: "main",
+      status: "connected",
+      createdAt: now,
+      updatedAt: now,
+    });
+    const body = new TextEncoder().encode(JSON.stringify({
+      ref: "refs/heads/main",
+      before: "abc",
+      after: "def",
+      compare: "https://github.com/acme/platform-api/compare/abc...def",
+      installation: { id: 101 },
+      repository: { full_name: "acme/platform-api" },
+      sender: { login: "octocat" },
+      commits: [{ added: [], modified: ["app/page.tsx"], removed: [] }],
+      head_commit: {
+        message: "Update the product page",
+        timestamp: now,
+        added: [],
+        modified: ["app/page.tsx"],
+        removed: [],
+      },
+    }));
+
+    const first = await acceptGitHubWebhook("delivery-1", "push", body, db);
+    const duplicate = await acceptGitHubWebhook("delivery-1", "push", body, db);
+    const runs = await db.select().from(analysisRuns);
+    const deliveries = await db.select().from(webhookDeliveries);
+
+    expect(first.body).toMatchObject({ status: "received", duplicate: false });
+    expect(duplicate.body).toMatchObject({ status: "received", duplicate: true });
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ status: "queued", trigger: "github" });
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({
+      status: "received",
+      analysisRunId: runs[0].id,
+    });
+  });
+
+  it("turns each new Confluence page version into one scheduled run", async () => {
+    const context = await workspace();
+    const now = new Date().toISOString();
+    await db.insert(sources).values([
+      {
+        id: "src_repo",
+        workspaceId: context.workspace.id,
+        provider: "github",
+        externalId: "501",
+        name: "acme/platform-api",
+        detail: "main",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "src_docs",
+        workspaceId: context.workspace.id,
+        provider: "confluence",
+        externalId: "cloud-1:space:ENG",
+        name: "Engineering",
+        detail: "Acme / ENG",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(artifacts).values([
+      {
+        id: "art_code",
+        sourceId: "src_repo",
+        externalId: "app/page.tsx",
+        kind: "code",
+        path: "app/page.tsx",
+        title: "page.tsx",
+        canonicalUrl: "https://github.com/acme/platform-api/blob/abc/app/page.tsx",
+        currentRevision: "abc",
+        contentHash: "code-hash",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "art_page",
+        sourceId: "src_docs",
+        externalId: "page-1",
+        kind: "confluence",
+        path: "ENG/Architecture",
+        title: "Architecture",
+        canonicalUrl: "https://acme.atlassian.net/wiki/spaces/ENG/pages/1/Architecture",
+        currentRevision: "2",
+        contentHash: "page-v2",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(artifactVersions).values({
+      id: "ver_page_2",
+      artifactId: "art_page",
+      revision: "2",
+      contentHash: "page-v2",
+      extractedText: "Related code: app/page.tsx",
+      createdAt: now,
+    });
+    await db.insert(graphNodes).values([
+      {
+        id: "node_code",
+        artifactId: "art_code",
+        stableKey: "file:app/page.tsx",
+        kind: "file",
+        name: "page.tsx",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "node_page",
+        artifactId: "art_page",
+        stableKey: "page:page-1",
+        kind: "doc_section",
+        name: "Architecture",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(relationships).values({
+      id: "rel_page_code",
+      fromNodeId: "node_page",
+      toNodeId: "node_code",
+      type: "documents",
+      origin: "deterministic",
+      evidence: "Related code: app/page.tsx",
+      evidenceStartLine: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(artifactAnalysisCursors).values({
+      artifactId: "art_page",
+      revision: "1",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const first = await analyzePendingConfluenceChanges(
+      context.workspace.id,
+      "src_docs",
+      db,
+    );
+    const second = await analyzePendingConfluenceChanges(
+      context.workspace.id,
+      "src_docs",
+      db,
+    );
+
+    expect(first).toMatchObject({ changedPages: 1 });
+    expect(first.runId).toMatch(/^run_cnf_/);
+    expect(second).toEqual({ changedPages: 0, runId: null });
+    expect(await db.select().from(analysisRuns)).toHaveLength(1);
+    expect(await db.select().from(changeEvents)).toHaveLength(1);
+    expect(await db.select().from(findings)).toHaveLength(1);
+    expect(await db.select().from(findingEvidence)).toHaveLength(1);
+    expect(await db.select().from(artifactAnalysisCursors)).toEqual([
+      expect.objectContaining({ artifactId: "art_page", revision: "2" }),
+    ]);
+  });
+
   it("persists one workspace, deduplicates source pairs, and retries runs safely", async () => {
     const first = await workspace();
     const second = await workspace();

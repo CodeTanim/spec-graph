@@ -1,11 +1,6 @@
-import { eq } from "drizzle-orm";
-import { start } from "workflow/api";
-import { getDb } from "../../../../db";
-import { analysisRuns } from "../../../../db/schema";
 import { acceptGitHubWebhook, verifyGitHubWebhookSignature } from "../../../../lib/github/webhook";
 import { getGitHubWebhookSecret } from "../../../../lib/github/config";
 import { ApiError, apiErrorResponse } from "../../../../lib/server/http";
-import { githubWebhookWorkflow } from "../../../../workflows/github-webhook";
 
 const MAX_WEBHOOK_BYTES = 2_000_000;
 
@@ -33,13 +28,6 @@ export async function POST(request: Request) {
       throw new ApiError(401, "GITHUB_WEBHOOK_SIGNATURE_INVALID", "GitHub webhook signature is invalid.");
     }
     const accepted = await acceptGitHubWebhook(deliveryId, eventType, payload);
-    if (accepted.job) {
-      const workflowRun = await start(githubWebhookWorkflow, [accepted.job]);
-      await getDb()
-        .update(analysisRuns)
-        .set({ workflowRunId: workflowRun.runId })
-        .where(eq(analysisRuns.id, accepted.job.runId));
-    }
     return Response.json(accepted.body, { status: accepted.status });
   } catch (error) {
     return apiErrorResponse(error);

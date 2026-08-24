@@ -340,6 +340,82 @@ export async function processGitHubWebhookJob(
   }
 }
 
+export async function processQueuedGitHubRun(
+  runId: string,
+  db: SpecGraphDb = getDb(),
+): Promise<void> {
+  const [record] = await db
+    .select({
+      runId: analysisRuns.id,
+      target: analysisRuns.target,
+      deliveryId: webhookDeliveries.providerDeliveryId,
+      sourceId: sources.id,
+      workspaceId: sources.workspaceId,
+      sourceName: sources.name,
+      defaultBranch: sources.defaultBranch,
+      title: changeEvents.title,
+      summary: changeEvents.summary,
+      sourceLabel: changeEvents.sourceLabel,
+      sourceUrl: changeEvents.sourceUrl,
+      beforeRevision: changeEvents.beforeRevision,
+      afterRevision: changeEvents.afterRevision,
+      actor: changeEvents.actor,
+      occurredAt: changeEvents.occurredAt,
+      changedArtifactsJson: changeEvents.changedArtifactsJson,
+    })
+    .from(analysisRuns)
+    .innerJoin(changeEvents, eq(analysisRuns.changeEventId, changeEvents.id))
+    .innerJoin(sources, eq(analysisRuns.sourceId, sources.id))
+    .innerJoin(webhookDeliveries, eq(webhookDeliveries.analysisRunId, analysisRuns.id))
+    .where(
+      and(
+        eq(analysisRuns.id, runId),
+        eq(analysisRuns.trigger, "github"),
+        eq(webhookDeliveries.provider, "github"),
+      ),
+    )
+    .limit(1);
+  if (!record) {
+    throw new Error("The queued GitHub change could not be reconstructed.");
+  }
+  const changedArtifacts = JSON.parse(record.changedArtifactsJson) as ChangedArtifact[];
+  const pullRequest = record.target.startsWith("#");
+  if (!pullRequest && !record.afterRevision) {
+    throw new Error("The queued GitHub push has no target revision.");
+  }
+  const change: NormalizedGitHubChange = {
+    kind: pullRequest ? "pull_request" : "push",
+    source: {
+      id: record.sourceId,
+      workspaceId: record.workspaceId,
+      name: record.sourceName,
+      defaultBranch: record.defaultBranch || "main",
+    },
+    title: record.title,
+    target: record.target,
+    summary: record.summary,
+    sourceLabel: record.sourceLabel,
+    sourceUrl: record.sourceUrl,
+    beforeRevision: record.beforeRevision,
+    afterRevision: record.afterRevision,
+    actor: record.actor,
+    occurredAt: record.occurredAt,
+    changedArtifacts,
+    push: pullRequest
+      ? undefined
+      : {
+          branch: record.target,
+          beforeRevision: record.beforeRevision,
+          afterRevision: record.afterRevision!,
+          changedPaths: changedArtifacts.map((artifact) => artifact.location),
+        },
+  };
+  await processGitHubWebhookJob(
+    { deliveryId: record.deliveryId, runId: record.runId, change },
+    db,
+  );
+}
+
 export async function acceptGitHubWebhook(
   deliveryId: string,
   eventType: string,
@@ -489,6 +565,15 @@ export async function acceptGitHubWebhook(
       updatedAt: receivedAt,
     })
     .onConflictDoNothing({ target: analysisRuns.id });
+  await db
+    .update(webhookDeliveries)
+    .set({ analysisRunId: runId })
+    .where(
+      and(
+        eq(webhookDeliveries.provider, "github"),
+        eq(webhookDeliveries.providerDeliveryId, deliveryId),
+      ),
+    );
   return {
     status: 202,
     body: {
