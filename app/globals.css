@@ -392,22 +392,15 @@ button:disabled {
 }
 
 .source-pair {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 118px minmax(0, 1fr);
-  align-items: stretch;
-  gap: 0;
-}
-
-.source-pair-single {
-  grid-template-columns: minmax(280px, 1fr) 118px minmax(280px, 1fr);
-}
-
-.source-pair-single .source-node {
-  grid-column: 1;
+  display: flex;
+  width: min(600px, 100%);
+  flex-direction: column;
+  margin: 0 auto;
 }
 
 .source-peer-column {
   display: flex;
+  width: 100%;
   min-width: 0;
   flex-direction: column;
   gap: 12px;
@@ -415,7 +408,7 @@ button:disabled {
 
 .source-pair > .source-node,
 .source-pair > .source-link {
-  align-self: center;
+  width: 100%;
 }
 
 .source-node {
@@ -491,22 +484,24 @@ button:disabled {
 
 .source-link {
   display: flex;
+  min-height: 76px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 8px;
   color: var(--linked);
 }
 
 .source-link-track {
   display: flex;
-  width: 100%;
+  width: auto;
+  height: 52px;
   align-items: center;
+  flex-direction: column;
 }
 
 .source-link-track > span {
   flex: 1;
-  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
 }
 
 .source-link-track > b {
@@ -521,16 +516,6 @@ button:disabled {
   line-height: 1;
 }
 
-.source-link small {
-  color: var(--linked);
-  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-align: center;
-  text-transform: uppercase;
-}
-
 .source-cluster-actions {
   display: flex;
   justify-content: center;
@@ -538,7 +523,7 @@ button:disabled {
 }
 
 .source-cluster-single .source-cluster-actions {
-  width: calc((100% - 118px) / 2);
+  width: 100%;
 }
 
 .connected {
@@ -1083,33 +1068,12 @@ a.changed-artifact-row:hover strong {
     font-size: 11px;
   }
 
-  .source-pair,
-  .source-pair-single {
-    grid-template-columns: 1fr;
-    padding: 20px 0;
-  }
-
-  .source-pair-single .source-node {
-    grid-column: 1;
-  }
-
-  .source-cluster-single .source-cluster-actions {
-    width: 100%;
-  }
-
   .source-link {
-    min-height: 76px;
+    min-height: 68px;
   }
 
   .source-link-track {
-    width: auto;
     height: 42px;
-    flex-direction: column;
-  }
-
-  .source-link-track > span {
-    border-top: 0;
-    border-left: 2px solid currentColor;
   }
 
   .details-panel {

@@ -186,7 +186,8 @@ describe("SpecGraphApp", () => {
     expect(screen.getByText("Confluence space")).toBeInTheDocument();
     expect(screen.getByText("Engineering")).toBeInTheDocument();
     expect(screen.getByText("12 indexed pages")).toBeInTheDocument();
-    expect(screen.getByText("Tracking each other")).toBeInTheDocument();
+    expect(screen.queryByText("Tracking each other")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("platform-api and Engineering track each other")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ Add source" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Connect source" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "+ Add documentation" })).not.toBeInTheDocument();

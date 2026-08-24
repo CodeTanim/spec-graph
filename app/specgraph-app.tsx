@@ -782,7 +782,7 @@ export function SpecGraphApp({
             <section className="intro compact" aria-labelledby="sources-title">
               <p className="section-label">Sources</p>
               <h1 id="sources-title">Connected sources</h1>
-              <p>Connected sources track each other in both directions.</p>
+              <p>SpecGraph watches the sources you connect.</p>
             </section>
             <section
               className="source-graph"
@@ -804,10 +804,9 @@ export function SpecGraphApp({
                       <div className="source-link" aria-hidden="true">
                         <div className="source-link-track">
                           <span />
-                          <b>↔</b>
+                          <b>↕</b>
                           <span />
                         </div>
-                        <small>Tracking each other</small>
                       </div>
                         <div className="source-peer-column">
                           {group.documentation.map((documentation) => renderSourceNode(documentation))}
