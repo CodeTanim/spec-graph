@@ -58,6 +58,7 @@ push and pull-request webhook events.
 - `npm run dev` — start the Next.js development server
 - `npm run build` — compile the production app and durable workflows
 - `npm test` — run component and Postgres integration tests
+- `npm run test:evaluation` — run the reviewed deterministic relationship fixtures and quality assertions
 - `npm run lint` — run ESLint
 - `npm run db:generate` — generate a reviewed Postgres migration
 - `npm run db:migrate` — apply migrations using `.env.local`
@@ -73,12 +74,16 @@ push and pull-request webhook events.
    requests still run immediately.
 5. Findings, evidence links, run state, and review actions persist in Postgres and appear in the same minimal feed.
 
-The current analyzer deliberately starts with deterministic imports, links,
-paths, and structured OpenAPI references. OpenAPI JSON and YAML are parsed into
-operations and schemas; version diffs identify contract facts such as newly
-required fields, then only documentation naming the changed operation or schema
-is flagged. Semantic contradiction checking remains a later package, after the
-deterministic evaluation baseline is measured.
+The current analyzer deliberately starts with deterministic imports, exports,
+test naming, Markdown links and headings, exact paths, and structured OpenAPI
+references. Candidate traversal is capped at two verified relationship steps,
+ranks stronger evidence first, stops code-driven searches at the first
+documentation boundary, and suppresses unrelated or weaker duplicates.
+OpenAPI JSON and YAML are parsed into operations and schemas; version diffs
+identify contract facts such as newly required fields, then only documentation
+naming the changed operation or schema is flagged. Semantic contradiction
+checking remains a later package, after the deterministic baseline is expanded
+beyond the reviewed starter fixtures.
 
 ## Deployment
 

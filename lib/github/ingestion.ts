@@ -11,7 +11,7 @@ import {
 import { ApiError } from "../server/http";
 import {
   classifyGitHubArtifact,
-  extractDeterministicReferences,
+  parseArtifactGraph,
   type IndexedArtifactKind,
 } from "./artifacts";
 import { contentHash } from "./crypto";
@@ -61,15 +61,17 @@ async function executeInBatches(
 ): Promise<void> {
   for (let index = 0; index < statements.length; index += DB_BATCH_SIZE) {
     const batch = statements.slice(index, index + DB_BATCH_SIZE);
-    if (batch.length) await db.batch(batch as unknown as DbBatch);
+    if (!batch.length) continue;
+    if (typeof db.batch === "function") {
+      await db.batch(batch as unknown as DbBatch);
+      continue;
+    }
+    // PGlite and other Drizzle-compatible development drivers do not expose
+    // Neon HTTP batching. Executing the same bounded statements sequentially
+    // keeps the ingestion contract portable and makes incremental behavior
+    // testable without changing production's batched path.
+    for (const statement of batch) await statement;
   }
-}
-
-function graphKind(kind: IndexedArtifactKind) {
-  if (kind === "test") return "test" as const;
-  if (kind === "markdown") return "doc_section" as const;
-  if (kind === "openapi") return "schema" as const;
-  return "file" as const;
 }
 
 export async function syncGitHubSource(
@@ -185,6 +187,32 @@ export async function syncGitHubSource(
         }
       }
     }
+    const knownPaths = new Set(files.map((file) => file.path));
+    const openApiContracts = new Map<string, ParsedOpenApiContract[]>();
+    for (const file of files.filter((item) => item.kind === "openapi")) {
+      const contracts: ParsedOpenApiContract[] = [];
+      for (const content of [file.content, previousContentByPath.get(file.path)]) {
+        if (!content) continue;
+        try {
+          contracts.push(parseOpenApiContract(content));
+        } catch {
+          // Invalid contracts remain indexed as files, but cannot create structured edges.
+        }
+      }
+      openApiContracts.set(file.path, contracts);
+    }
+    const parsedByPath = new Map(
+      files.map((file) => [
+        file.path,
+        parseArtifactGraph(
+          file.path,
+          file.kind,
+          file.content,
+          knownPaths,
+          openApiContracts,
+        ),
+      ]),
+    );
     const existingNodes = await db
       .select({ node: graphNodes, path: artifacts.externalId })
       .from(graphNodes)
@@ -262,16 +290,17 @@ export async function syncGitHubSource(
       db,
       files.map((file) => {
         const existingNode = existingNodeByPath.get(file.path);
+        const rootNode = parsedByPath.get(file.path)!.nodes[0];
         return db
           .insert(graphNodes)
           .values({
           id: nodeIds.get(file.path)!,
           artifactId: artifactIds.get(file.path)!,
-          stableKey: `file:${file.path}`,
-          kind: graphKind(file.kind),
-          name: file.path,
-          startLine: 1,
-          endLine: file.content.split("\n").length,
+          stableKey: rootNode.stableKey,
+          kind: rootNode.kind,
+          name: rootNode.name,
+          startLine: rootNode.startLine,
+          endLine: rootNode.endLine,
           contentHash: file.hash,
           createdAt: existingNode?.createdAt || now,
           updatedAt: now,
@@ -279,10 +308,10 @@ export async function syncGitHubSource(
           .onConflictDoUpdate({
             target: [graphNodes.artifactId, graphNodes.stableKey],
             set: {
-              kind: graphKind(file.kind),
-              name: file.path,
-              startLine: 1,
-              endLine: file.content.split("\n").length,
+              kind: rootNode.kind,
+              name: rootNode.name,
+              startLine: rootNode.startLine,
+              endLine: rootNode.endLine,
               contentHash: file.hash,
               updatedAt: now,
             },
@@ -312,31 +341,11 @@ export async function syncGitHubSource(
           ),
         );
     }
-    const knownPaths = new Set(files.map((file) => file.path));
-    const openApiContracts = new Map<string, ParsedOpenApiContract[]>();
-    for (const file of files.filter((item) => item.kind === "openapi")) {
-      const contracts: ParsedOpenApiContract[] = [];
-      for (const content of [file.content, previousContentByPath.get(file.path)]) {
-        if (!content) continue;
-        try {
-          contracts.push(parseOpenApiContract(content));
-        } catch {
-          // Invalid contracts remain indexed as files, but cannot create structured edges.
-        }
-      }
-      openApiContracts.set(file.path, contracts);
-    }
     const relationshipInserts: DbBatchItem[] = [];
     for (const file of files) {
       const fromNodeId = nodeIds.get(file.path);
       if (!fromNodeId) continue;
-      for (const reference of extractDeterministicReferences(
-        file.path,
-        file.kind,
-        file.content,
-        knownPaths,
-        openApiContracts,
-      )) {
+      for (const reference of parsedByPath.get(file.path)!.references) {
         const toNodeId = nodeIds.get(reference.targetPath);
         if (!toNodeId) continue;
         relationshipInserts.push(
@@ -348,7 +357,7 @@ export async function syncGitHubSource(
             toNodeId,
             type: reference.type,
             origin: "deterministic",
-            confidence: 1,
+            confidence: reference.confidence,
             evidence: reference.evidence,
             evidenceStartLine: reference.evidenceStartLine,
             createdAt: now,

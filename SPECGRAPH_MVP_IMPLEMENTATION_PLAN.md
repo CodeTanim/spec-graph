@@ -394,7 +394,7 @@ Initial ranking inputs:
 | M1 — Persistence and identity | In progress | M0 | State survives reload and is tenant-scoped |
 | M2 — GitHub connection and ingestion | Complete | M1 | One real repository is connected and indexed |
 | H1 — Hosting migration | Vercel auth, repository sync, and GitHub webhook smoke passed; Confluence and remaining lifecycle smoke pending | M2 | The application runs outside Sites with portable auth, persistence, secrets, and callbacks |
-| M3 — Deterministic graph | Initial implementation complete | M2 | Supported artifacts have queryable typed relationships |
+| M3 — Deterministic graph | Relationship-quality baseline complete; incremental indexing remains | M2 | Supported artifacts have queryable typed relationships |
 | M4 — Manual end-to-end analysis | Staging implementation complete; live smoke pending | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
 | M5 — Automatic GitHub feed | Complete — live push processed exactly once and produced persistent findings | M4 | Pushes and pull requests trigger the same pipeline |
 | M6 — Confluence documentation connection | In progress (live connection and both directions implemented; live edit smoke pending) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
@@ -505,23 +505,23 @@ Exit criteria:
 
 Goal: produce useful, explainable graph edges without relying on an LLM.
 
-- [ ] Implement a common parser output contract.
-- [ ] Implement TypeScript/JavaScript file and import parsing.
-- [ ] Implement test-file classification and test-to-source linking.
-- [ ] Implement Markdown/MDX heading, link, and identifier parsing.
+- [x] Implement a common parser output contract.
+- [x] Implement TypeScript/JavaScript file, import, export, dynamic import, and path-alias parsing.
+- [x] Implement test-file classification and deterministic test-to-source linking.
+- [x] Implement Markdown/MDX heading, link, and identifier parsing.
 - [x] Implement OpenAPI operation, schema, and `$ref` parsing.
 - [x] Map parsed OpenAPI objects to stable relationship identifiers.
 - [x] Upsert deterministic OpenAPI relationships with evidence.
-- [ ] Remove stale relationships after artifact changes or deletion.
-- [ ] Implement bounded graph traversal.
-- [ ] Implement deterministic candidate scoring.
-- [ ] Add focused parser, graph, incremental-update, and ranking tests. OpenAPI parser and graph coverage is complete; incremental indexing and ranking coverage remain.
+- [x] Remove stale relationships after artifact changes or deletion.
+- [x] Implement bounded graph traversal.
+- [x] Implement deterministic candidate scoring.
+- [x] Add focused parser, graph, stale-edge, traversal, and ranking tests. True affected-region-only indexing remains separate optimization work.
 
 Exit criteria:
 
-- [ ] A fixture repository produces the expected nodes and edges deterministically.
+- [x] Reviewed fixtures produce the expected nodes, edges, and ranked candidates deterministically.
 - [x] A changed OpenAPI schema can locate only the documentation linked to its schema or referencing operations.
-- [ ] A changed Markdown statement can locate linked code, schema, or tests when explicit relationships exist.
+- [x] A changed Markdown statement can locate linked code, schema, tests, or peer documentation when explicit relationships exist.
 - [ ] Incremental indexing updates only affected graph regions.
 
 ### M4 — Manual End-to-End Analysis
@@ -994,6 +994,24 @@ Package 4 is complete when the live smoke test shows both change directions in t
 
 Package 5 is complete when the live GitHub App delivery is marked processed, exactly one automatic run appears, and its findings appear in the existing feed.
 
+### Package 6 — Deterministic relationship quality
+
+**Status:** Complete for the MVP baseline; broader language coverage and affected-region-only indexing remain deferred.
+
+- [x] Introduce one parser output contract for graph nodes and references.
+- [x] Recognize static, side-effect, dynamic, exported, relative, and root-alias TypeScript/JavaScript relationships.
+- [x] Link conventionally named tests to source files when no explicit import is present.
+- [x] Parse Markdown/MDX headings, local links, and exact repository paths with line-level evidence.
+- [x] Keep only the strongest deterministic explanation for a source-target pair.
+- [x] Delete stale relationships when a reference disappears or an artifact is removed.
+- [x] Traverse at most two relationship steps, cap the candidate set, and rank by evidence type, confidence, and distance.
+- [x] Stop code- and OpenAPI-driven traversal at the first documentation boundary to prevent documentation fan-out.
+- [x] Keep indirect code/test candidates out of documentation-first findings while preserving direct code/test and peer-documentation impacts.
+- [x] Add five reviewed golden directions: code-to-doc, indirect code-to-doc, doc-to-code/doc, OpenAPI-to-exact-doc, and unrelated change.
+- [x] Add a repeatable evaluation command and metric calculation for precision, recall, F1, and false-positive rate.
+
+Package 6 is complete when the reviewed starter set has exact expected outputs, unrelated artifacts are suppressed, stale edges disappear after resync, and the same ranking path drives persisted findings. Expand the labeled set to at least 25 cases before claiming production-quality metrics.
+
 ---
 
 ## 16. Open Decisions
@@ -1082,3 +1100,4 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Verified live code-to-Confluence impact with commit `f7fc039`: the signed GitHub push created one durable run, it succeeded on its first attempt, and the deterministic graph flagged `SD/SpecGraph Integration Test` because its indexed relationship evidence explicitly references `app/page.tsx`. The stored affected-source and evidence URLs both use the correct `/wiki/spaces/SD/pages/164269/SpecGraph+Integration+Test` Confluence route.
 - Added a shared daily automatic cadence: GitHub webhooks now persist queued changes without analyzing on every edit, Confluence pages are polled by provider version, per-page cursors prevent duplicates across syncs and retries, and manual Analyze remains immediate.
 - Added structured OpenAPI JSON/YAML parsing, operation and schema version diffs, `$ref` impact propagation, exact endpoint/schema documentation matching across repository and Confluence sources, enriched changed-operation feed entries, and deterministic coverage proving unrelated API documentation is excluded.
+- Completed the deterministic relationship-quality baseline: one parser contract now handles imports, exports, aliases, test naming, Markdown structure, exact paths, and OpenAPI references; ranked traversal is bounded to two steps and stops at the first documentation boundary for code-driven changes; stale edges are removed on resync; and five reviewed golden cases establish a repeatable precision/recall baseline before semantic analysis.

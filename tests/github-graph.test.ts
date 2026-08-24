@@ -3,6 +3,7 @@ import {
   classifyGitHubArtifact,
   extractDeterministicReferences,
   extractOpenApiEndpoints,
+  parseArtifactGraph,
 } from "../lib/github/artifacts";
 import { assertRepositoryWithinLimits } from "../lib/github/limits";
 import { parsePullRequestNumber } from "../lib/github/targets";
@@ -14,6 +15,7 @@ import {
   diffOpenApiContracts,
   parseOpenApiContract,
 } from "../lib/openapi/parser";
+import { rankDeterministicCandidates } from "../lib/analysis/candidates";
 
 describe("GitHub artifact indexing", () => {
   it("keeps the supported MVP surface small and predictable", () => {
@@ -69,6 +71,79 @@ describe("GitHub artifact indexing", () => {
         type: "links",
         evidence: "[Policy implementation](../src/refunds/policy.ts)",
         evidenceStartLine: 3,
+      }),
+    );
+  });
+
+  it("normalizes import, export, alias, and test naming relationships", () => {
+    const knownPaths = new Set([
+      "src/config.ts",
+      "src/refunds.ts",
+      "tests/refunds.spec.ts",
+    ]);
+    const codeReferences = extractDeterministicReferences(
+      "src/refunds.ts",
+      "code",
+      'import "./config";\nexport { settings } from "@/src/config.js";',
+      knownPaths,
+      new Map(),
+    );
+    expect(codeReferences).toEqual([
+      expect.objectContaining({
+        targetPath: "src/config.ts",
+        type: "imports",
+        confidence: 1,
+      }),
+    ]);
+
+    const testReferences = extractDeterministicReferences(
+      "tests/refunds.spec.ts",
+      "test",
+      'describe("refunds", () => {});',
+      knownPaths,
+      new Map(),
+    );
+    expect(testReferences).toContainEqual(
+      expect.objectContaining({
+        targetPath: "src/refunds.ts",
+        type: "tests",
+        confidence: 0.86,
+      }),
+    );
+  });
+
+  it("returns a common parser shape with stable Markdown sections", () => {
+    const parsed = parseArtifactGraph(
+      "docs/refunds.md",
+      "markdown",
+      "# Refunds\n\nIntro.\n\n## Policy\n\nSee [implementation](../src/refunds.ts).",
+      new Set(["docs/refunds.md", "src/refunds.ts"]),
+      new Map(),
+    );
+    expect(parsed.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stableKey: "file:docs/refunds.md",
+          kind: "doc_section",
+        }),
+        expect.objectContaining({
+          stableKey: "section:docs/refunds.md#refunds:1",
+          name: "Refunds",
+          startLine: 1,
+          endLine: 4,
+        }),
+        expect.objectContaining({
+          stableKey: "section:docs/refunds.md#policy:1",
+          name: "Policy",
+          startLine: 5,
+        }),
+      ]),
+    );
+    expect(parsed.references).toContainEqual(
+      expect.objectContaining({
+        targetPath: "src/refunds.ts",
+        type: "links",
+        evidenceStartLine: 7,
       }),
     );
   });
@@ -141,6 +216,77 @@ components:
         Array.from({ length: 121 }, () => ({ size: 1 })),
       ),
     ).toThrow("up to 120 supported files");
+  });
+});
+
+describe("deterministic candidate ranking", () => {
+  const nodes = [
+    { nodeId: "changed", artifactId: "art_changed", kind: "code" as const, path: "src/core.ts" },
+    { nodeId: "wrapper", artifactId: "art_wrapper", kind: "code" as const, path: "src/wrapper.ts" },
+    { nodeId: "guide", artifactId: "art_guide", kind: "markdown" as const, path: "docs/guide.md" },
+    { nodeId: "secondary", artifactId: "art_secondary", kind: "confluence" as const, path: "ENG/Guide" },
+    { nodeId: "unrelated", artifactId: "art_unrelated", kind: "markdown" as const, path: "docs/orders.md" },
+  ];
+  const edge = (
+    id: string,
+    fromNodeId: string,
+    toNodeId: string,
+    type: string,
+  ) => ({
+    id,
+    fromNodeId,
+    toNodeId,
+    type,
+    origin: "deterministic" as const,
+    confidence: 1,
+    evidence: `${fromNodeId} ${type} ${toNodeId}`,
+    evidenceStartLine: 1,
+  });
+
+  it("finds an explicit documentation impact through one code neighbor", () => {
+    const ranked = rankDeterministicCandidates(
+      [{ id: "changed", path: "src/core.ts" }],
+      nodes,
+      [
+        edge("imports", "wrapper", "changed", "imports"),
+        edge("guide", "guide", "wrapper", "links"),
+      ],
+    );
+    expect(ranked).toEqual([
+      expect.objectContaining({
+        changedNodeId: "changed",
+        affectedNodeId: "guide",
+        depth: 2,
+        viaNodeIds: ["wrapper"],
+        score: 0.7568,
+      }),
+    ]);
+  });
+
+  it("stops after the first documentation boundary and excludes unrelated files", () => {
+    const ranked = rankDeterministicCandidates(
+      [{ id: "changed", path: "src/core.ts" }],
+      nodes,
+      [
+        edge("guide", "guide", "changed", "links"),
+        edge("secondary", "secondary", "guide", "documents"),
+      ],
+    );
+    expect(ranked.map((candidate) => candidate.affectedNodeId)).toEqual(["guide"]);
+  });
+
+  it("allows documentation changes to reach code and other documentation", () => {
+    const ranked = rankDeterministicCandidates(
+      [{ id: "guide", path: "docs/guide.md" }],
+      nodes,
+      [
+        edge("guide-code", "guide", "changed", "links"),
+        edge("guide-doc", "secondary", "guide", "documents"),
+      ],
+    );
+    expect(new Set(ranked.map((candidate) => candidate.affectedNodeId))).toEqual(
+      new Set(["changed", "secondary"]),
+    );
   });
 });
 
