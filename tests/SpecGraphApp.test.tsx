@@ -188,8 +188,7 @@ describe("SpecGraphApp", () => {
     expect(screen.getByText("12 indexed pages")).toBeInTheDocument();
     expect(screen.getByText("Tracking each other")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ Add source" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Connect another source to platform-api" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Connect another source to Engineering" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Connect source" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "+ Add documentation" })).not.toBeInTheDocument();
     expect(screen.queryByText("Alex Kim")).not.toBeInTheDocument();
   });
@@ -210,22 +209,16 @@ describe("SpecGraphApp", () => {
     expect(screen.queryByRole("link", { name: /Google Docs/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Close source chooser" }));
-    await user.click(screen.getByRole("button", { name: "Connect another source to platform-api" }));
-    expect(screen.getByRole("dialog", { name: "Connect source" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /GitHub repository/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Confluence documentation/ })).toHaveAttribute(
-      "href",
-      "/api/confluence/connect?repository_source_id=source-github",
-    );
-
-    await user.click(screen.getByRole("button", { name: "Close source chooser" }));
-    await user.click(screen.getByRole("button", { name: "Connect another source to Engineering" }));
+    await user.click(screen.getByRole("button", { name: "Connect source" }));
     expect(screen.getByRole("dialog", { name: "Connect source" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /GitHub repository/ })).toHaveAttribute(
       "href",
       "/api/github/connect?documentation_source_id=source-confluence",
     );
-    expect(screen.queryByRole("link", { name: /Confluence documentation/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Confluence documentation/ })).toHaveAttribute(
+      "href",
+      "/api/confluence/connect?repository_source_id=source-github",
+    );
     expect(screen.getByText("Notion documentation")).toBeInTheDocument();
     expect(screen.getByText("Google Docs")).toBeInTheDocument();
   });

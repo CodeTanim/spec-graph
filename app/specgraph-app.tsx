@@ -24,6 +24,11 @@ type SpecGraphAppProps = {
   loadOnMount?: boolean;
 };
 
+type SourceConnectionContext = {
+  repository: SourceItem | null;
+  documentation: SourceItem | null;
+};
+
 function Arrow() {
   return <span aria-hidden="true">→</span>;
 }
@@ -129,7 +134,8 @@ export function SpecGraphApp({
   const [confluenceRepositorySourceId, setConfluenceRepositorySourceId] = useState("");
   const [confluenceSetupLoading, setConfluenceSetupLoading] = useState(false);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
-  const [sourceConnectionAnchor, setSourceConnectionAnchor] = useState<SourceItem | null>(null);
+  const [sourceConnectionContext, setSourceConnectionContext] =
+    useState<SourceConnectionContext | null>(null);
   const [githubSetupLoading, setGitHubSetupLoading] = useState(false);
   const [syncingSourceId, setSyncingSourceId] = useState("");
   const [sourcePendingRemoval, setSourcePendingRemoval] = useState<SourceItem | null>(null);
@@ -333,7 +339,7 @@ export function SpecGraphApp({
       setSelectedArtifact(null);
       setShowEvidence(false);
       setAddSourceOpen(false);
-      setSourceConnectionAnchor(null);
+      setSourceConnectionContext(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -532,14 +538,14 @@ export function SpecGraphApp({
     }
   }
 
-  function openAddSource(source: SourceItem | null = null) {
-    setSourceConnectionAnchor(source);
+  function openAddSource(context: SourceConnectionContext | null = null) {
+    setSourceConnectionContext(context);
     setAddSourceOpen(true);
   }
 
   function closeAddSource() {
     setAddSourceOpen(false);
-    setSourceConnectionAnchor(null);
+    setSourceConnectionContext(null);
   }
 
   function requestAnalysis() {
@@ -586,14 +592,6 @@ export function SpecGraphApp({
         </div>
 
         <div className="source-node-actions">
-          <button
-            type="button"
-            className="source-connect"
-            aria-label={`Connect another source to ${name}`}
-            onClick={() => openAddSource(source)}
-          >
-            + Connect source
-          </button>
           <span>
             <button
               type="button"
@@ -793,12 +791,15 @@ export function SpecGraphApp({
             >
               {sourceGroups.flatMap((group, groupIndex) => {
                 if (group.repository && group.documentation.length) {
-                  return group.documentation.map((documentation) => (
-                    <div
-                      className="source-pair"
-                      key={`${group.repository!.id}:${documentation.id}`}
-                      aria-label={`${repositoryName(group.repository!)} and ${documentation.name} track each other`}
-                    >
+                  const documentationNames = group.documentation
+                    .map((source) => source.name)
+                    .join(", ");
+                  return [(
+                    <div className="source-cluster" key={group.repository.id}>
+                      <div
+                        className="source-pair"
+                        aria-label={`${repositoryName(group.repository)} and ${documentationNames} track each other`}
+                      >
                       {renderSourceNode(group.repository!)}
                       <div className="source-link" aria-hidden="true">
                         <div className="source-link-track">
@@ -808,16 +809,47 @@ export function SpecGraphApp({
                         </div>
                         <small>Tracking each other</small>
                       </div>
-                      {renderSourceNode(documentation)}
+                        <div className="source-peer-column">
+                          {group.documentation.map((documentation) => renderSourceNode(documentation))}
+                        </div>
+                      </div>
+                      <div className="source-cluster-actions">
+                        <button
+                          type="button"
+                          className="source-connect"
+                          aria-label="Connect source"
+                          onClick={() => openAddSource({
+                            repository: group.repository,
+                            documentation: group.documentation[0] || null,
+                          })}
+                        >
+                          + Connect source
+                        </button>
+                      </div>
                     </div>
-                  ));
+                  )];
                 }
 
                 return [group.repository, ...group.documentation]
                   .filter((source): source is SourceItem => Boolean(source))
                   .map((source) => (
-                    <div className="source-pair source-pair-single" key={source.id || groupIndex}>
-                      {renderSourceNode(source)}
+                    <div className="source-cluster source-cluster-single" key={source.id || groupIndex}>
+                      <div className="source-pair source-pair-single">
+                        {renderSourceNode(source)}
+                      </div>
+                      <div className="source-cluster-actions">
+                        <button
+                          type="button"
+                          className="source-connect"
+                          aria-label="Connect source"
+                          onClick={() => openAddSource({
+                            repository: source.provider === "github" ? source : null,
+                            documentation: source.provider === "confluence" ? source : null,
+                          })}
+                        >
+                          + Connect source
+                        </button>
+                      </div>
                     </div>
                   ));
               })}
@@ -882,7 +914,7 @@ export function SpecGraphApp({
                 {confluenceSetupLoading ? "Loading Confluence spaces…" : "Loading GitHub repositories…"}
               </p>
             ) : (
-              <button type="button" className="text-action" onClick={() => openAddSource(null)}>
+              <button type="button" className="text-action" onClick={() => openAddSource()}>
                 + Add source
               </button>
             )}
@@ -901,38 +933,38 @@ export function SpecGraphApp({
           <section className="analyze-modal source-picker" role="dialog" aria-modal="true" aria-labelledby="add-source-title">
             <header>
               <h2 id="add-source-title">
-                {sourceConnectionAnchor ? "Connect source" : "Add source"}
+                {sourceConnectionContext ? "Connect source" : "Add source"}
               </h2>
               <button type="button" onClick={closeAddSource} aria-label="Close source chooser">×</button>
             </header>
             <p>
-              {sourceConnectionAnchor
-                ? `Choose another source to track with ${sourceConnectionAnchor.provider === "github" ? repositoryName(sourceConnectionAnchor) : sourceConnectionAnchor.name}.`
+              {sourceConnectionContext
+                ? "Choose another source to add to this connected group."
                 : "Choose what SpecGraph should watch."}
             </p>
             <div className="source-provider-options">
-              {sourceConnectionAnchor?.provider !== "github" && (
+              {(!sourceConnectionContext || sourceConnectionContext.documentation) && (
                 githubConfigured === false ? (
                   <span className="provider-option disabled"><strong>GitHub repository</strong><small>Needs one-time configuration</small></span>
                 ) : (
                   <a
                     className="provider-option"
-                    href={sourceConnectionAnchor?.provider === "confluence"
-                      ? `/api/github/connect?documentation_source_id=${encodeURIComponent(sourceConnectionAnchor.id)}`
+                    href={sourceConnectionContext?.documentation
+                      ? `/api/github/connect?documentation_source_id=${encodeURIComponent(sourceConnectionContext.documentation.id)}`
                       : "/api/github/connect"}
                   >
                     <strong>GitHub repository</strong><small>Code and repository documentation</small><Arrow />
                   </a>
                 )
               )}
-              {sourceConnectionAnchor?.provider !== "confluence" && (
+              {(!sourceConnectionContext || sourceConnectionContext.repository) && (
                 confluenceConfigured === false ? (
                   <span className="provider-option disabled"><strong>Confluence documentation</strong><small>Available after hosting and OAuth setup</small></span>
                 ) : (
                   <a
                     className="provider-option"
-                    href={sourceConnectionAnchor?.provider === "github"
-                      ? `/api/confluence/connect?repository_source_id=${encodeURIComponent(sourceConnectionAnchor.id)}`
+                    href={sourceConnectionContext?.repository
+                      ? `/api/confluence/connect?repository_source_id=${encodeURIComponent(sourceConnectionContext.repository.id)}`
                       : "/api/confluence/connect"}
                   >
                     <strong>Confluence documentation</strong><small>Site and space</small><Arrow />
