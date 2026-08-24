@@ -50,7 +50,8 @@ async function fakeGitHub(request) {
           spaceId: "space-1",
           body: { storage: { value: "<p>See src/refunds/policy.ts and docs/refunds.md for the 60 day window.</p>" } },
           version: { number: 3 },
-          _links: { webui: "/wiki/spaces/ENG/pages/1/Refund+policy" },
+          // Atlassian may omit the tenant's /wiki context path from webui links.
+          _links: { webui: "/spaces/ENG/pages/1/Refund+policy" },
         },
         {
           id: "page-2",
@@ -58,7 +59,7 @@ async function fakeGitHub(request) {
           spaceId: "space-1",
           body: { storage: { value: "<p>Current release notes.</p>" } },
           version: { number: 2 },
-          _links: { webui: "/wiki/spaces/ENG/pages/2/Release+notes" },
+          _links: { webui: "/spaces/ENG/pages/2/Release+notes" },
         },
       ],
     });

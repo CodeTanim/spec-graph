@@ -33,7 +33,16 @@ function plainText(storage: string): string {
 }
 
 function pageUrl(siteUrl: string, webPath: string | null, spaceKey: string, pageId: string) {
-  if (webPath) return new URL(webPath, siteUrl).toString();
+  if (webPath) {
+    try {
+      return new URL(webPath).toString();
+    } catch {
+      const normalizedPath = webPath.startsWith("/wiki/")
+        ? webPath
+        : `/wiki/${webPath.replace(/^\/+/, "")}`;
+      return new URL(normalizedPath, siteUrl).toString();
+    }
+  }
   return `${siteUrl.replace(/\/$/, "")}/wiki/spaces/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(pageId)}`;
 }
 
