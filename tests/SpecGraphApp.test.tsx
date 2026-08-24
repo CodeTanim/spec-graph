@@ -180,18 +180,21 @@ describe("SpecGraphApp", () => {
 
     expect(screen.getByRole("heading", { name: "Connected sources" })).toBeInTheDocument();
     expect(screen.getByText("platform-api")).toBeInTheDocument();
-    expect(screen.getByText("Source code — 16 indexed files")).toBeInTheDocument();
-    expect(
-      screen.getByText("Repository documentation — 8 indexed files"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Confluence — Engineering")).toBeInTheDocument();
+    expect(screen.getByText("16 indexed files of source code")).toBeInTheDocument();
+    expect(screen.getByText("8 indexed files of repository documentation")).toBeInTheDocument();
+    expect(screen.getByText("GitHub repository")).toBeInTheDocument();
+    expect(screen.getByText("Confluence space")).toBeInTheDocument();
+    expect(screen.getByText("Engineering")).toBeInTheDocument();
     expect(screen.getByText("12 indexed pages")).toBeInTheDocument();
+    expect(screen.getByText("Tracking each other")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ Add source" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "+ Add documentation" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect another source to platform-api" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect another source to Engineering" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ Add documentation" })).not.toBeInTheDocument();
     expect(screen.queryByText("Alex Kim")).not.toBeInTheDocument();
   });
 
-  it("keeps the generic source chooser minimal and scopes repository documentation", async () => {
+  it("keeps the source chooser neutral and connects from either provider", async () => {
     const user = userEvent.setup();
     renderApp();
     await user.click(screen.getByRole("button", { name: "Sources" }));
@@ -207,13 +210,22 @@ describe("SpecGraphApp", () => {
     expect(screen.queryByRole("link", { name: /Google Docs/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Close source chooser" }));
-    await user.click(screen.getByRole("button", { name: "+ Add documentation" }));
-    expect(screen.getByRole("dialog", { name: "Add documentation" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Connect another source to platform-api" }));
+    expect(screen.getByRole("dialog", { name: "Connect source" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /GitHub repository/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Confluence documentation/ })).toHaveAttribute(
       "href",
       "/api/confluence/connect?repository_source_id=source-github",
     );
+
+    await user.click(screen.getByRole("button", { name: "Close source chooser" }));
+    await user.click(screen.getByRole("button", { name: "Connect another source to Engineering" }));
+    expect(screen.getByRole("dialog", { name: "Connect source" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /GitHub repository/ })).toHaveAttribute(
+      "href",
+      "/api/github/connect?documentation_source_id=source-confluence",
+    );
+    expect(screen.queryByRole("link", { name: /Confluence documentation/ })).not.toBeInTheDocument();
     expect(screen.getByText("Notion documentation")).toBeInTheDocument();
     expect(screen.getByText("Google Docs")).toBeInTheDocument();
   });
