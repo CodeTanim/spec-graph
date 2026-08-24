@@ -1,6 +1,6 @@
 # SpecGraph MVP Implementation Plan
 
-**Status:** Implementation — Package 5 automatic GitHub feed complete; Package 6 Confluence activation is next
+**Status:** Implementation — Package 6 live Confluence connection and code-to-Confluence impact verified; automatic Confluence change detection is next
 **Last updated:** August 23, 2026
 **Primary reference:** [SpecGraph Resume Project Assessment](./RESUME_PROJECT_ASSESSMENT.md)
 
@@ -609,14 +609,14 @@ Exit criteria:
 
 - [ ] Add source is the only generic page-level connection action and both provider choices start the correct authorization flow.
 - [ ] Repository documentation is included automatically after GitHub connection.
-- [ ] A user can connect one Confluence space through the Sources experience.
+- [x] A user can connect one Confluence space through the Sources experience.
 - [ ] A user can add or replace related documentation from an already-connected repository row.
 - [ ] With multiple repositories connected, each external documentation source is visibly and durably mapped to exactly the intended repository.
 - [ ] Connecting Confluence first and GitHub second produces the same source group as GitHub-first setup.
 - [ ] Repeating either order does not duplicate sources, associations, artifacts, relationships, runs, or findings.
 - [ ] An attempted duplicate clearly identifies the existing tracked repository-documentation group.
 - [ ] A Confluence page edit can create findings against linked code, schemas, or tests.
-- [ ] A code change can identify an affected Confluence page.
+- [x] A code change can identify an affected Confluence page.
 - [ ] Every cross-source finding opens the correct GitHub revision or Confluence page/version.
 - [ ] Users who select Not now can use the GitHub-only workflow without warnings or fake source rows.
 
@@ -970,7 +970,7 @@ Package 3 is complete when users can connect external documentation without lear
 - [x] Persist failed run states and safe user-facing errors.
 - [x] Preserve run, finding, and evidence history when a source is removed.
 - [x] Replace staging `waitUntil` execution with durable Vercel Workflows and persisted workflow/run identifiers.
-- [ ] Run the complete flow against the connected live GitHub repository and a real Confluence space.
+- [x] Run the complete flow against the connected live GitHub repository and a real Confluence space.
 
 Package 4 is complete when the live smoke test shows both change directions in the same feed and the replacement runtime can retry claimed jobs without request-lifetime coupling.
 
@@ -1075,3 +1075,4 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Committed and pushed the complete migration as `f2a7b8f`; its Git-triggered Vercel production deployment completed successfully and received the stable alias. The signed push delivery was processed once, its durable workflow succeeded on the first attempt, and it produced 37 persistent findings.
 - Replaced symmetric import-neighbor findings with a documentation-centered eligibility policy, retained documentation-to-documentation impacts for future Confluence/Notion relationships, exposed full artifact locations in the feed, and added unit plus Postgres integration coverage for code, documentation, and mixed-change directions.
 - Added immutable changed-file snapshots to each event and separated affected-source details from relationship evidence, so the UI can name what changed and explain the reference from the correct originating file or page.
+- Verified live code-to-Confluence impact with commit `f7fc039`: the signed GitHub push created one durable run, it succeeded on its first attempt, and the deterministic graph flagged `SD/SpecGraph Integration Test` because its indexed relationship evidence explicitly references `app/page.tsx`. The stored affected-source and evidence URLs both use the correct `/wiki/spaces/SD/pages/164269/SpecGraph+Integration+Test` Confluence route.
