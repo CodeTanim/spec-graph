@@ -1,4 +1,9 @@
 import type { ArtifactKind, ChangedArtifact } from "../contracts/specgraph";
+import {
+  openApiTextMatches,
+  parseOpenApiContract,
+  type ParsedOpenApiContract,
+} from "../openapi/parser";
 
 const CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
 const DOC_EXTENSIONS = [".md", ".mdx"];
@@ -106,7 +111,7 @@ function resolveReference(
 
 export type DeterministicReference = {
   targetPath: string;
-  type: "imports" | "links" | "references" | "covers_endpoint";
+  type: string;
   evidence: string;
   evidenceStartLine: number;
 };
@@ -129,7 +134,7 @@ export function extractDeterministicReferences(
   sourceKind: IndexedArtifactKind,
   content: string,
   knownPaths: Set<string>,
-  openApiEndpoints: Map<string, string[]>,
+  openApiContracts: Map<string, ParsedOpenApiContract[]>,
 ): DeterministicReference[] {
   const references = new Map<string, DeterministicReference>();
   const add = (reference: DeterministicReference) => {
@@ -177,14 +182,13 @@ export function extractDeterministicReferences(
   }
 
   if (sourceKind !== "openapi") {
-    for (const [openApiPath, endpoints] of openApiEndpoints) {
-      const endpoint = endpoints.find((candidate) => content.includes(candidate));
-      if (endpoint) {
-        const index = content.indexOf(endpoint);
+    for (const [openApiPath, contracts] of openApiContracts) {
+      for (const match of openApiTextMatches(content, contracts)) {
         add({
           targetPath: openApiPath,
-          type: "covers_endpoint",
-          ...referenceEvidence(content, index),
+          type: `covers_openapi:${match.matchKey}`,
+          evidence: match.evidence,
+          evidenceStartLine: match.evidenceStartLine,
         });
       }
     }
@@ -194,12 +198,15 @@ export function extractDeterministicReferences(
 }
 
 export function extractOpenApiEndpoints(content: string): string[] {
-  const endpoints = new Set<string>();
-  for (const match of content.matchAll(/^\s{0,8}(\/[A-Za-z0-9_{}:./-]+)\s*:/gm)) {
-    endpoints.add(match[1]);
+  try {
+    return [
+      ...new Set(
+        parseOpenApiContract(content).entities.flatMap((entity) =>
+          entity.path ? [entity.path] : [],
+        ),
+      ),
+    ].slice(0, 200);
+  } catch {
+    return [];
   }
-  for (const match of content.matchAll(/["'](\/[A-Za-z0-9_{}:./-]+)["']\s*:/g)) {
-    endpoints.add(match[1]);
-  }
-  return [...endpoints].slice(0, 200);
 }

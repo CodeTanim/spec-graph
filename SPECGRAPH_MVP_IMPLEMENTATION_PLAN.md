@@ -509,18 +509,18 @@ Goal: produce useful, explainable graph edges without relying on an LLM.
 - [ ] Implement TypeScript/JavaScript file and import parsing.
 - [ ] Implement test-file classification and test-to-source linking.
 - [ ] Implement Markdown/MDX heading, link, and identifier parsing.
-- [ ] Implement OpenAPI operation, schema, and `$ref` parsing.
-- [ ] Map parsed objects to stable artifact or sub-artifact identifiers.
-- [ ] Upsert deterministic relationships with evidence.
+- [x] Implement OpenAPI operation, schema, and `$ref` parsing.
+- [x] Map parsed OpenAPI objects to stable relationship identifiers.
+- [x] Upsert deterministic OpenAPI relationships with evidence.
 - [ ] Remove stale relationships after artifact changes or deletion.
 - [ ] Implement bounded graph traversal.
 - [ ] Implement deterministic candidate scoring.
-- [ ] Add focused parser, graph, incremental-update, and ranking tests.
+- [ ] Add focused parser, graph, incremental-update, and ranking tests. OpenAPI parser and graph coverage is complete; incremental indexing and ranking coverage remain.
 
 Exit criteria:
 
 - [ ] A fixture repository produces the expected nodes and edges deterministically.
-- [ ] A changed OpenAPI schema can locate linked documentation and tests.
+- [x] A changed OpenAPI schema can locate only the documentation linked to its schema or referencing operations.
 - [ ] A changed Markdown statement can locate linked code, schema, or tests when explicit relationships exist.
 - [ ] Incremental indexing updates only affected graph regions.
 
@@ -1032,6 +1032,7 @@ Add entries when a default above changes.
 | 2026-08-23 | Use Vercel Hobby, Neon Postgres, Auth.js, and Vercel Workflow for the noncommercial MVP | The stack fits standard Next.js, provides portable SQL identity and state, and removes request-lifetime coupling without requiring commercial infrastructure | The pre-release database starts clean; GitHub and Confluence callbacks must move to `spec-graph.vercel.app` before Sites can be retired |
 | 2026-08-23 | Make deterministic impact eligibility directional and documentation-centered | Symmetric import traversal produced noisy code-to-code findings that did not represent documentation drift | Code or test changes can flag linked documentation; documentation changes can flag linked code, tests, or other documentation; artifacts changed in the same event are excluded; findings never edit sources automatically |
 | 2026-08-23 | Run automatic checks once per day while keeping manual Analyze immediate | A daily cadence is simpler, reduces feed noise, and avoids running analysis on every edit without making the user wait when they explicitly request a check | GitHub webhooks persist queued changes and one daily Vercel workflow processes them while polling Confluence page versions |
+| 2026-08-23 | Parse OpenAPI changes deterministically before semantic review | The contract already states exact operations, schemas, and required fields, so a model should not rediscover those facts | JSON and YAML versions produce structured facts; `$ref` usage carries schema changes to operations; only matching Markdown or Confluence documentation becomes an affected candidate |
 
 ---
 
@@ -1080,3 +1081,4 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Added immutable changed-file snapshots to each event and separated affected-source details from relationship evidence, so the UI can name what changed and explain the reference from the correct originating file or page.
 - Verified live code-to-Confluence impact with commit `f7fc039`: the signed GitHub push created one durable run, it succeeded on its first attempt, and the deterministic graph flagged `SD/SpecGraph Integration Test` because its indexed relationship evidence explicitly references `app/page.tsx`. The stored affected-source and evidence URLs both use the correct `/wiki/spaces/SD/pages/164269/SpecGraph+Integration+Test` Confluence route.
 - Added a shared daily automatic cadence: GitHub webhooks now persist queued changes without analyzing on every edit, Confluence pages are polled by provider version, per-page cursors prevent duplicates across syncs and retries, and manual Analyze remains immediate.
+- Added structured OpenAPI JSON/YAML parsing, operation and schema version diffs, `$ref` impact propagation, exact endpoint/schema documentation matching across repository and Confluence sources, enriched changed-operation feed entries, and deterministic coverage proving unrelated API documentation is excluded.

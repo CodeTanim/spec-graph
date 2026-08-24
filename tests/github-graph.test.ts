@@ -10,6 +10,10 @@ import {
   relationshipReason,
   shouldCreateImpactFinding,
 } from "../lib/analysis/deterministic";
+import {
+  diffOpenApiContracts,
+  parseOpenApiContract,
+} from "../lib/openapi/parser";
 
 describe("GitHub artifact indexing", () => {
   it("keeps the supported MVP surface small and predictable", () => {
@@ -28,15 +32,16 @@ describe("GitHub artifact indexing", () => {
       "docs/refunds.md",
       "api/openapi.yaml",
     ]);
-    const endpoints = new Map([
-      ["api/openapi.yaml", extractOpenApiEndpoints("paths:\n  /refunds:\n    post:")],
+    const openApi = "openapi: 3.0.0\npaths:\n  /refunds:\n    post:\n      responses: {}";
+    const contracts = new Map([
+      ["api/openapi.yaml", [parseOpenApiContract(openApi)]],
     ]);
     const testReferences = extractDeterministicReferences(
       "tests/refunds.test.ts",
       "test",
       'import { window } from "../src/refunds/policy";\nfetch("/refunds");',
       knownPaths,
-      endpoints,
+      contracts,
     );
     expect(testReferences).toEqual(
       expect.arrayContaining([
@@ -46,7 +51,7 @@ describe("GitHub artifact indexing", () => {
         }),
         expect.objectContaining({
           targetPath: "api/openapi.yaml",
-          type: "covers_endpoint",
+          type: "covers_openapi:path:/refunds",
         }),
       ]),
     );
@@ -56,7 +61,7 @@ describe("GitHub artifact indexing", () => {
       "markdown",
       "# Refunds\n\n[Policy implementation](../src/refunds/policy.ts)",
       knownPaths,
-      endpoints,
+      contracts,
     );
     expect(docReferences).toContainEqual(
       expect.objectContaining({
@@ -66,6 +71,63 @@ describe("GitHub artifact indexing", () => {
         evidenceStartLine: 3,
       }),
     );
+  });
+
+  it("extracts OpenAPI endpoints from JSON and YAML contracts", () => {
+    expect(
+      extractOpenApiEndpoints(
+        '{"openapi":"3.0.0","paths":{"/users":{"post":{"responses":{}}}}}',
+      ),
+    ).toEqual(["/users"]);
+    expect(
+      extractOpenApiEndpoints(
+        "openapi: 3.0.0\npaths:\n  /refunds:\n    post:\n      responses: {}",
+      ),
+    ).toEqual(["/refunds"]);
+  });
+
+  it("turns schema changes into exact facts and propagates them to using operations", () => {
+    const before = `openapi: 3.0.0
+paths:
+  /users:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses: {}
+components:
+  schemas:
+    User:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        email: { type: string }
+`;
+    const after = before.replace("required: [name]", "required: [name, email]");
+    const changes = diffOpenApiContracts(before, after);
+    expect(changes).toContainEqual(
+      expect.objectContaining({
+        stableKey: "schema:User",
+        summary: "User: email is now required.",
+        matchKeys: expect.arrayContaining([
+          "schema:User",
+          "operation:POST:/users",
+          "path:/users",
+        ]),
+      }),
+    );
+  });
+
+  it("ignores formatting-only OpenAPI edits", () => {
+    expect(
+      diffOpenApiContracts(
+        '{"openapi":"3.0.0","paths":{"/users":{"get":{"responses":{}}}}}',
+        "openapi: 3.0.0\npaths:\n  /users:\n    get:\n      responses: {}\n",
+      ),
+    ).toEqual([]);
   });
 
   it("accepts repositories the size of the SpecGraph demo while retaining a bounded cap", () => {
@@ -121,6 +183,13 @@ describe("directional impact policy", () => {
     expect(shouldCreateImpactFinding("markdown", "test")).toBe(true);
     expect(shouldCreateImpactFinding("confluence", "markdown")).toBe(true);
     expect(shouldCreateImpactFinding("markdown", "confluence")).toBe(true);
+  });
+
+  it("keeps OpenAPI changes focused on human-facing documentation", () => {
+    expect(shouldCreateImpactFinding("openapi", "confluence")).toBe(true);
+    expect(shouldCreateImpactFinding("openapi", "markdown")).toBe(true);
+    expect(shouldCreateImpactFinding("openapi", "code")).toBe(false);
+    expect(shouldCreateImpactFinding("openapi", "test")).toBe(false);
   });
 
   it("describes the relationship from the actual referring side", () => {

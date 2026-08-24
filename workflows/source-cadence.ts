@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, inArray, lt } from "drizzle-orm";
 import { getDb } from "../db";
 import { analysisRuns, sources } from "../db/schema";
 import { ConfluenceClient } from "../lib/confluence/client";
@@ -40,7 +40,8 @@ export async function listQueuedGitHubRunsStep(): Promise<string[]> {
         inArray(analysisRuns.status, ["queued", "failed"]),
         lt(analysisRuns.attempts, 3),
       ),
-    );
+    )
+    .orderBy(asc(analysisRuns.createdAt));
   return runs.map((run) => run.id);
 }
 

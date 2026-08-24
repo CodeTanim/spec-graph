@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, like, or } from "drizzle-orm";
 import { getDb, type SpecGraphDb } from "../../db";
 import {
   artifacts,
@@ -7,6 +7,11 @@ import {
   relationships,
   sourceAssociations,
 } from "../../db/schema";
+import {
+  openApiTextMatches,
+  parseOpenApiContract,
+  type ParsedOpenApiContract,
+} from "../openapi/parser";
 
 async function rebuildPair(
   repositorySourceId: string,
@@ -14,7 +19,13 @@ async function rebuildPair(
   db: SpecGraphDb,
 ) {
   const repositoryNodes = await db
-    .select({ nodeId: graphNodes.id, path: artifacts.path })
+    .select({
+      nodeId: graphNodes.id,
+      artifactId: artifacts.id,
+      kind: artifacts.kind,
+      path: artifacts.path,
+      currentRevision: artifacts.currentRevision,
+    })
     .from(graphNodes)
     .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
     .where(eq(artifacts.sourceId, repositorySourceId));
@@ -38,7 +49,10 @@ async function rebuildPair(
   const documentationNodeIds = documentationNodes.map((item) => item.nodeId);
   if (repositoryNodeIds.length && documentationNodeIds.length) {
     await db.delete(relationships).where(and(
-      eq(relationships.type, "documents"),
+      or(
+        eq(relationships.type, "documents"),
+        like(relationships.type, "covers_openapi:%"),
+      ),
       or(
         and(
           inArray(relationships.fromNodeId, documentationNodeIds),
@@ -52,35 +66,92 @@ async function rebuildPair(
     ));
   }
 
+  const openApiArtifacts = repositoryNodes.filter((item) => item.kind === "openapi");
+  const openApiVersions = openApiArtifacts.length
+    ? await db
+        .select()
+        .from(artifactVersions)
+        .where(inArray(
+          artifactVersions.artifactId,
+          openApiArtifacts.map((item) => item.artifactId),
+        ))
+        .orderBy(desc(artifactVersions.createdAt))
+    : [];
+  const contractsByPath = new Map<string, ParsedOpenApiContract[]>();
+  for (const artifact of openApiArtifacts) {
+    const contracts: ParsedOpenApiContract[] = [];
+    const versions = openApiVersions
+      .filter((version) => version.artifactId === artifact.artifactId)
+      .sort((left, right) => {
+        if (left.revision === artifact.currentRevision) return -1;
+        if (right.revision === artifact.currentRevision) return 1;
+        return right.createdAt.localeCompare(left.createdAt);
+      })
+      .slice(0, 2);
+    for (const version of versions) {
+      try {
+        contracts.push(parseOpenApiContract(version.extractedText));
+      } catch {
+        // Keep the source connected even when a contract cannot be parsed.
+      }
+    }
+    contractsByPath.set(artifact.path, contracts);
+  }
+
   const now = new Date().toISOString();
   for (const documentation of documentationNodes) {
     for (const repository of repositoryNodes) {
-      if (!documentation.text.includes(repository.path)) continue;
-      const evidenceLines = documentation.text.split("\n");
-      const evidenceIndex = evidenceLines.findIndex((line) =>
-        line.includes(repository.path),
-      );
-      await db.insert(relationships).values({
-        id: `rel_${crypto.randomUUID()}`,
-        fromNodeId: documentation.nodeId,
-        toNodeId: repository.nodeId,
-        type: "documents",
-        origin: "deterministic",
-        confidence: 1,
-        evidence:
-          evidenceLines[evidenceIndex]?.trim() ||
-          `Confluence page references ${repository.path}`,
-        evidenceStartLine: evidenceIndex >= 0 ? evidenceIndex + 1 : 1,
-        createdAt: now,
-        updatedAt: now,
-      }).onConflictDoNothing({
-        target: [
-          relationships.fromNodeId,
-          relationships.toNodeId,
-          relationships.type,
-          relationships.origin,
-        ],
-      });
+      const references = [] as Array<{
+        type: string;
+        evidence: string;
+        evidenceStartLine: number;
+      }>;
+      if (documentation.text.includes(repository.path)) {
+        const evidenceLines = documentation.text.split("\n");
+        const evidenceIndex = evidenceLines.findIndex((line) =>
+          line.includes(repository.path),
+        );
+        references.push({
+          type: "documents",
+          evidence:
+            evidenceLines[evidenceIndex]?.trim() ||
+            `Confluence page references ${repository.path}`,
+          evidenceStartLine: evidenceIndex >= 0 ? evidenceIndex + 1 : 1,
+        });
+      }
+      if (repository.kind === "openapi") {
+        for (const match of openApiTextMatches(
+          documentation.text,
+          contractsByPath.get(repository.path) || [],
+        )) {
+          references.push({
+            type: `covers_openapi:${match.matchKey}`,
+            evidence: match.evidence,
+            evidenceStartLine: match.evidenceStartLine,
+          });
+        }
+      }
+      for (const reference of references) {
+        await db.insert(relationships).values({
+          id: `rel_${crypto.randomUUID()}`,
+          fromNodeId: documentation.nodeId,
+          toNodeId: repository.nodeId,
+          type: reference.type,
+          origin: "deterministic",
+          confidence: 1,
+          evidence: reference.evidence,
+          evidenceStartLine: reference.evidenceStartLine,
+          createdAt: now,
+          updatedAt: now,
+        }).onConflictDoNothing({
+          target: [
+            relationships.fromNodeId,
+            relationships.toNodeId,
+            relationships.type,
+            relationships.origin,
+          ],
+        });
+      }
     }
   }
 }

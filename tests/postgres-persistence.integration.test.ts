@@ -22,12 +22,14 @@ import {
 import { persistDeterministicFindings } from "../lib/analysis/deterministic";
 import { analyzePendingConfluenceChanges } from "../lib/confluence/scheduled";
 import { acceptGitHubWebhook } from "../lib/github/webhook";
+import { resolveGitHubChangedNodes } from "../lib/openapi/changes";
 import {
   beginRunAttempt,
   completeRunAttempt,
   failRunAttempt,
 } from "../lib/analysis/run-lifecycle";
 import { associateSources } from "../lib/providers/source-associations";
+import { rebuildCrossSourceRelationships } from "../lib/providers/cross-source-relationships";
 import { ensureWorkspaceForUser } from "../lib/server/workspace-provisioning";
 import {
   createManualRun,
@@ -244,6 +246,220 @@ describe("Neon-compatible Postgres persistence", () => {
     expect(await db.select().from(findingEvidence)).toHaveLength(1);
     expect(await db.select().from(artifactAnalysisCursors)).toEqual([
       expect.objectContaining({ artifactId: "art_page", revision: "2" }),
+    ]);
+  });
+
+  it("uses structured OpenAPI diffs to flag only documentation for the changed contract", async () => {
+    const context = await workspace();
+    const now = new Date().toISOString();
+    const before = `openapi: 3.0.0
+paths:
+  /users:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses: {}
+  /orders:
+    get:
+      responses: {}
+components:
+  schemas:
+    User:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        email: { type: string }
+`;
+    const after = before.replace("required: [name]", "required: [name, email]");
+    await db.insert(sources).values([
+      {
+        id: "src_openapi",
+        workspaceId: context.workspace.id,
+        provider: "github",
+        externalId: "contract-repo",
+        name: "acme/contracts",
+        detail: "main",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "src_openapi_docs",
+        workspaceId: context.workspace.id,
+        provider: "confluence",
+        externalId: "cloud-1:space:API",
+        name: "API documentation",
+        detail: "Acme / API",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(artifacts).values([
+      {
+        id: "art_contract",
+        sourceId: "src_openapi",
+        externalId: "api/openapi.yaml",
+        kind: "openapi",
+        path: "api/openapi.yaml",
+        title: "openapi.yaml",
+        canonicalUrl: "https://github.com/acme/contracts/blob/after/api/openapi.yaml",
+        currentRevision: "after",
+        contentHash: "after-hash",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "art_users_guide",
+        sourceId: "src_openapi_docs",
+        externalId: "users-guide",
+        kind: "confluence",
+        path: "API/Users",
+        title: "Users API guide",
+        canonicalUrl: "https://acme.atlassian.net/wiki/spaces/API/pages/1/Users",
+        currentRevision: "1",
+        contentHash: "users-hash",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "art_orders_guide",
+        sourceId: "src_openapi_docs",
+        externalId: "orders-guide",
+        kind: "confluence",
+        path: "API/Orders",
+        title: "Orders API guide",
+        canonicalUrl: "https://acme.atlassian.net/wiki/spaces/API/pages/2/Orders",
+        currentRevision: "1",
+        contentHash: "orders-hash",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(artifactVersions).values([
+      {
+        id: "ver_contract_before",
+        artifactId: "art_contract",
+        revision: "before",
+        contentHash: "before-hash",
+        extractedText: before,
+        createdAt: new Date(Date.now() - 1_000).toISOString(),
+      },
+      {
+        id: "ver_contract_after",
+        artifactId: "art_contract",
+        revision: "after",
+        contentHash: "after-hash",
+        extractedText: after,
+        createdAt: now,
+      },
+      {
+        id: "ver_users_guide",
+        artifactId: "art_users_guide",
+        revision: "1",
+        contentHash: "users-hash",
+        extractedText: "Create users with POST /users and provide a name.",
+        createdAt: now,
+      },
+      {
+        id: "ver_orders_guide",
+        artifactId: "art_orders_guide",
+        revision: "1",
+        contentHash: "orders-hash",
+        extractedText: "List orders with GET /orders.",
+        createdAt: now,
+      },
+    ]);
+    await db.insert(graphNodes).values([
+      {
+        id: "node_contract",
+        artifactId: "art_contract",
+        stableKey: "file:api/openapi.yaml",
+        kind: "schema",
+        name: "api/openapi.yaml",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "node_users_guide",
+        artifactId: "art_users_guide",
+        stableKey: "page:users-guide",
+        kind: "doc_section",
+        name: "Users API guide",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "node_orders_guide",
+        artifactId: "art_orders_guide",
+        stableKey: "page:orders-guide",
+        kind: "doc_section",
+        name: "Orders API guide",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await associateSources(
+      context.workspace.id,
+      "src_openapi",
+      "src_openapi_docs",
+      db,
+    );
+    await rebuildCrossSourceRelationships(
+      context.workspace.id,
+      "src_openapi",
+      db,
+    );
+    expect(
+      (await db.select({ type: relationships.type }).from(relationships)).map(
+        (relationship) => relationship.type,
+      ),
+    ).toEqual(expect.arrayContaining([
+      "covers_openapi:operation:POST:/users",
+      "covers_openapi:operation:GET:/orders",
+    ]));
+    await db.insert(analysisRuns).values({
+      id: "run_openapi",
+      workspaceId: context.workspace.id,
+      sourceId: "src_openapi",
+      trigger: "github",
+      title: "Require user email",
+      target: "main",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const resolved = await resolveGitHubChangedNodes(
+      "src_openapi",
+      ["api/openapi.yaml"],
+      "before",
+      "after",
+      db,
+    );
+    expect(resolved.changedNodes).toEqual([
+      expect.objectContaining({
+        id: "node_contract",
+        changeSummary: "User: email is now required.",
+        changeKeys: expect.arrayContaining(["path:/users"]),
+      }),
+    ]);
+    expect(
+      await persistDeterministicFindings(
+        context.workspace.id,
+        "run_openapi",
+        resolved.changedNodes,
+        db,
+      ),
+    ).toBe(1);
+    expect(await db.select().from(findings)).toEqual([
+      expect.objectContaining({
+        affectedNodeId: "node_users_guide",
+        summary: expect.stringContaining("User: email is now required."),
+      }),
     ]);
   });
 

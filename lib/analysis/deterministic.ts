@@ -14,6 +14,8 @@ import { sha256Hex } from "../github/crypto";
 export type ChangedGraphNode = {
   id: string;
   path: string;
+  changeSummary?: string;
+  changeKeys?: string[];
 };
 
 type IndexedArtifactKind =
@@ -31,6 +33,9 @@ export function shouldCreateImpactFinding(
   changedKind: IndexedArtifactKind,
   affectedKind: IndexedArtifactKind,
 ): boolean {
+  if (changedKind === "openapi") {
+    return affectedKind === "markdown" || affectedKind === "confluence";
+  }
   return isDocumentation(changedKind) || isDocumentation(affectedKind);
 }
 
@@ -63,8 +68,10 @@ export function relationshipReason(
 ): string {
   const changedNoun = artifactNoun(changedKind);
   const affectedNoun = artifactNoun(affectedKind);
-  if (type === "covers_endpoint") {
-    return `This ${affectedNoun} shares an API endpoint with the changed ${changedNoun} ${changedPath}.`;
+  if (type.startsWith("covers_openapi:") || type === "covers_endpoint") {
+    return changedKind === "openapi"
+      ? `This ${affectedNoun} references the changed API contract in ${changedPath}.`
+      : `This ${affectedNoun} shares an API contract reference with the changed ${changedNoun} ${changedPath}.`;
   }
   if (changedIsFrom) {
     const verb = type === "links" ? "links to" : "references";
@@ -84,6 +91,16 @@ export async function persistDeterministicFindings(
 
   const changedNodeIds = changedNodes.map((node) => node.id);
   const changedPathByNode = new Map(changedNodes.map((node) => [node.id, node.path]));
+  const changedSummaryByNode = new Map(
+    changedNodes.flatMap((node) =>
+      node.changeSummary ? [[node.id, node.changeSummary] as const] : [],
+    ),
+  );
+  const changedKeysByNode = new Map(
+    changedNodes.flatMap((node) =>
+      node.changeKeys?.length ? [[node.id, new Set(node.changeKeys)] as const] : [],
+    ),
+  );
   const changedRecords = await db
     .select({
       nodeId: graphNodes.id,
@@ -178,10 +195,19 @@ export async function persistDeterministicFindings(
   for (const { edge, changedNodeId, affectedNodeId } of candidates) {
     const affected = affectedByNode.get(affectedNodeId);
     const changedKind = changedKindByNode.get(changedNodeId);
+    const openApiMatchKey = edge.type.startsWith("covers_openapi:")
+      ? edge.type.slice("covers_openapi:".length)
+      : null;
+    const changedKeys = changedKeysByNode.get(changedNodeId);
     if (
       !affected ||
       !changedKind ||
       !shouldCreateImpactFinding(changedKind, affected.kind) ||
+      (changedKind === "openapi" &&
+        openApiMatchKey &&
+        changedKeys &&
+        !changedKeys.has("document") &&
+        !changedKeys.has(openApiMatchKey)) ||
       persisted.has(affectedNodeId)
     ) {
       continue;
@@ -209,6 +235,14 @@ export async function persistDeterministicFindings(
     );
     const endLine = Math.max(startLine, startLine + 3);
     const changedPath = changedPathByNode.get(changedNodeId) || "the changed item";
+    const relationshipSummary = relationshipReason(
+      edge.type,
+      changedPath,
+      changedKind,
+      affected.kind,
+      edge.fromNodeId === changedNodeId,
+    );
+    const changeSummary = changedSummaryByNode.get(changedNodeId);
     const deduplicationKey = `${changedNodeId}:${affectedNodeId}:${edge.type}`;
     const stableSuffix = (await sha256Hex(`${runId}:${deduplicationKey}`)).slice(0, 32);
     const inserted = await db.insert(findings).values({
@@ -217,13 +251,9 @@ export async function persistDeterministicFindings(
       changedNodeId,
       affectedNodeId,
       title: affected.title,
-      summary: relationshipReason(
-        edge.type,
-        changedPath,
-        changedKind,
-        affected.kind,
-        edge.fromNodeId === changedNodeId,
-      ),
+      summary: changeSummary
+        ? `${changeSummary} ${relationshipSummary}`
+        : relationshipSummary,
       confidence: edge.confidence,
       origin: edge.origin,
       status: "open",

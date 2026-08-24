@@ -1,11 +1,9 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, type SpecGraphDb } from "../../db";
 import {
   analysisRuns,
-  artifacts,
   changeEvents,
   githubInstallations,
-  graphNodes,
   sources,
 } from "../../db/schema";
 import { persistDeterministicFindings } from "../analysis/deterministic";
@@ -19,6 +17,10 @@ import type { GitHubSourceProvider } from "../providers/source-provider";
 import { rebuildCrossSourceRelationships } from "../providers/cross-source-relationships";
 import { ApiError } from "../server/http";
 import { createManualRun, getRun } from "../server/specgraph-repository";
+import {
+  enrichChangedArtifacts,
+  resolveGitHubChangedNodes,
+} from "../openapi/changes";
 import { changedArtifactSnapshot } from "./artifacts";
 import { syncGitHubSource } from "./ingestion";
 import { parsePullRequestNumber } from "./targets";
@@ -121,19 +123,32 @@ export async function executeGitHubPullRequestAnalysis(
       })
       .where(eq(analysisRuns.id, runId));
 
-    const changedNodes = files.length
-      ? await db
-          .select({ id: graphNodes.id, path: artifacts.path })
-          .from(graphNodes)
-          .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
-          .where(
-            and(
-              eq(artifacts.sourceId, selectedSource.id),
-              inArray(artifacts.path, [...changedPaths]),
-            ),
-          )
-      : [];
-    await persistDeterministicFindings(workspaceId, runId, changedNodes, db);
+    await syncGitHubSource(workspaceId, selectedSource.id, client, db);
+    await rebuildCrossSourceRelationships(workspaceId, selectedSource.id, db);
+    const resolvedChanges = await resolveGitHubChangedNodes(
+      selectedSource.id,
+      [...changedPaths],
+      pull.baseSha,
+      pull.headSha,
+      db,
+    );
+    if (resolvedChanges.openApiArtifacts.size) {
+      await db
+        .update(changeEvents)
+        .set({
+          changedArtifactsJson: enrichChangedArtifacts(
+            changeValues.changedArtifactsJson,
+            resolvedChanges.openApiArtifacts,
+          ),
+        })
+        .where(eq(changeEvents.id, changeId));
+    }
+    await persistDeterministicFindings(
+      workspaceId,
+      runId,
+      resolvedChanges.changedNodes,
+      db,
+    );
     await completeRunAttempt(runId, attemptId, db);
   } catch (error) {
     await failRunAttempt(
@@ -188,26 +203,50 @@ export async function executeGitHubPushAnalysis(
       throw new ApiError(409, "GITHUB_SOURCE_REQUIRED", "Choose a connected GitHub source.");
     }
 
-    await syncGitHubSource(workspaceId, selectedSource.id, client, db);
+    await syncGitHubSource(
+      workspaceId,
+      selectedSource.id,
+      client,
+      db,
+      input.afterRevision,
+    );
     await rebuildCrossSourceRelationships(workspaceId, selectedSource.id, db);
     const now = new Date().toISOString();
     await db
       .update(analysisRuns)
       .set({ progress: 55, updatedAt: now })
       .where(eq(analysisRuns.id, runId));
-    const changedNodes = input.changedPaths.length
-      ? await db
-          .select({ id: graphNodes.id, path: artifacts.path })
-          .from(graphNodes)
-          .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
-          .where(
-            and(
-              eq(artifacts.sourceId, selectedSource.id),
-              inArray(artifacts.path, input.changedPaths),
+    const resolvedChanges = await resolveGitHubChangedNodes(
+      selectedSource.id,
+      input.changedPaths,
+      input.beforeRevision,
+      input.afterRevision,
+      db,
+    );
+    if (resolvedChanges.openApiArtifacts.size) {
+      const [event] = await db
+        .select({ changedArtifactsJson: changeEvents.changedArtifactsJson })
+        .from(changeEvents)
+        .where(eq(changeEvents.id, selectedSource.changeEventId))
+        .limit(1);
+      if (event) {
+        await db
+          .update(changeEvents)
+          .set({
+            changedArtifactsJson: enrichChangedArtifacts(
+              event.changedArtifactsJson,
+              resolvedChanges.openApiArtifacts,
             ),
-          )
-      : [];
-    await persistDeterministicFindings(workspaceId, runId, changedNodes, db);
+          })
+          .where(eq(changeEvents.id, selectedSource.changeEventId));
+      }
+    }
+    await persistDeterministicFindings(
+      workspaceId,
+      runId,
+      resolvedChanges.changedNodes,
+      db,
+    );
     await completeRunAttempt(runId, attemptId, db);
   } catch (error) {
     await failRunAttempt(

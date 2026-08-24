@@ -12,12 +12,12 @@ import { ApiError } from "../server/http";
 import {
   classifyGitHubArtifact,
   extractDeterministicReferences,
-  extractOpenApiEndpoints,
   type IndexedArtifactKind,
 } from "./artifacts";
 import { contentHash } from "./crypto";
 import { assertRepositoryWithinLimits } from "./limits";
 import type { GitHubSourceProvider } from "../providers/source-provider";
+import { parseOpenApiContract, type ParsedOpenApiContract } from "../openapi/parser";
 
 const MAX_FILE_BYTES = 160_000;
 const FETCH_CONCURRENCY = 12;
@@ -77,6 +77,7 @@ export async function syncGitHubSource(
   sourceId: string,
   client: GitHubSourceProvider,
   db: SpecGraphDb = getDb(),
+  revisionOverride?: string,
 ): Promise<{ artifactCount: number; revision: string }> {
   const [record] = await db
     .select({
@@ -103,7 +104,7 @@ export async function syncGitHubSource(
     .where(eq(sources.id, sourceId));
 
   try {
-    const revision = await client.branchRevision(
+    const revision = revisionOverride || await client.branchRevision(
       record.installationExternalId,
       record.source.name,
       branch,
@@ -160,6 +161,30 @@ export async function syncGitHubSource(
       .select()
       .from(artifacts)
       .where(eq(artifacts.sourceId, sourceId));
+    const previousContentByPath = new Map<string, string>();
+    const existingById = new Map(existingArtifacts.map((item) => [item.id, item]));
+    const existingArtifactIds = existingArtifacts.map((item) => item.id);
+    for (let index = 0; index < existingArtifactIds.length; index += DB_IN_LIST_SIZE) {
+      const versions = await db
+        .select({
+          artifactId: artifactVersions.artifactId,
+          revision: artifactVersions.revision,
+          content: artifactVersions.extractedText,
+        })
+        .from(artifactVersions)
+        .where(
+          inArray(
+            artifactVersions.artifactId,
+            existingArtifactIds.slice(index, index + DB_IN_LIST_SIZE),
+          ),
+        );
+      for (const version of versions) {
+        const artifact = existingById.get(version.artifactId);
+        if (artifact?.currentRevision === version.revision) {
+          previousContentByPath.set(artifact.externalId, version.content);
+        }
+      }
+    }
     const existingNodes = await db
       .select({ node: graphNodes, path: artifacts.externalId })
       .from(graphNodes)
@@ -288,11 +313,19 @@ export async function syncGitHubSource(
         );
     }
     const knownPaths = new Set(files.map((file) => file.path));
-    const openApiEndpoints = new Map(
-      files
-        .filter((file) => file.kind === "openapi")
-        .map((file) => [file.path, extractOpenApiEndpoints(file.content)]),
-    );
+    const openApiContracts = new Map<string, ParsedOpenApiContract[]>();
+    for (const file of files.filter((item) => item.kind === "openapi")) {
+      const contracts: ParsedOpenApiContract[] = [];
+      for (const content of [file.content, previousContentByPath.get(file.path)]) {
+        if (!content) continue;
+        try {
+          contracts.push(parseOpenApiContract(content));
+        } catch {
+          // Invalid contracts remain indexed as files, but cannot create structured edges.
+        }
+      }
+      openApiContracts.set(file.path, contracts);
+    }
     const relationshipInserts: DbBatchItem[] = [];
     for (const file of files) {
       const fromNodeId = nodeIds.get(file.path);
@@ -302,7 +335,7 @@ export async function syncGitHubSource(
         file.kind,
         file.content,
         knownPaths,
-        openApiEndpoints,
+        openApiContracts,
       )) {
         const toNodeId = nodeIds.get(reference.targetPath);
         if (!toNodeId) continue;

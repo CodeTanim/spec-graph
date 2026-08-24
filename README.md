@@ -74,8 +74,11 @@ push and pull-request webhook events.
 5. Findings, evidence links, run state, and review actions persist in Postgres and appear in the same minimal feed.
 
 The current analyzer deliberately starts with deterministic imports, links,
-paths, and OpenAPI references. Semantic ranking remains a later package, after
-the deterministic evaluation baseline is measured.
+paths, and structured OpenAPI references. OpenAPI JSON and YAML are parsed into
+operations and schemas; version diffs identify contract facts such as newly
+required fields, then only documentation naming the changed operation or schema
+is flagged. Semantic contradiction checking remains a later package, after the
+deterministic evaluation baseline is measured.
 
 ## Deployment
 
