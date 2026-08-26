@@ -9,7 +9,7 @@ import { ApiError } from "../server/http";
 import { getSource } from "../server/specgraph-repository";
 import { getGitHubConnectionSession, consumeGitHubConnectionSession } from "./connection";
 import type { GitHubSourceProvider } from "../providers/source-provider";
-import { associateSources } from "../providers/source-associations";
+import { ensureSourceGroup } from "../providers/source-groups";
 
 export async function connectGitHubSource(
   workspaceId: string,
@@ -130,17 +130,17 @@ export async function connectGitHubSource(
   if (!source) {
     throw new ApiError(500, "SOURCE_SETUP_FAILED", "The repository could not be saved.");
   }
+  const membership = await ensureSourceGroup(
+    workspaceId,
+    source.id,
+    session.sourceGroupId,
+    db,
+  );
   await consumeGitHubConnectionSession(session.id, db);
-  let associationAlreadyTracked = false;
-  const documentationSourceId = input.documentationSourceId || session.documentationSourceId;
-  if (documentationSourceId) {
-    associationAlreadyTracked = (
-      await associateSources(workspaceId, source.id, documentationSourceId, db)
-    ).alreadyTracked;
-  }
   return {
     source: await getSource(workspaceId, source.id, db),
     alreadyTracked,
-    associationAlreadyTracked,
+    alreadyInGroup: membership.alreadyInGroup,
+    sourceGroupId: membership.groupId,
   };
 }

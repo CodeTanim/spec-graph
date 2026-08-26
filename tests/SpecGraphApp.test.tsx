@@ -187,7 +187,11 @@ describe("SpecGraphApp", () => {
     expect(screen.getByText("Engineering")).toBeInTheDocument();
     expect(screen.getByText("12 indexed pages")).toBeInTheDocument();
     expect(screen.queryByText("Tracking each other")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("platform-api and Engineering track each other")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(
+        "Connected source group containing platform-api, Engineering",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ Add source" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Connect source" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "+ Add documentation" })).not.toBeInTheDocument();
@@ -214,14 +218,71 @@ describe("SpecGraphApp", () => {
     expect(screen.getByRole("dialog", { name: "Connect source" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /GitHub repository/ })).toHaveAttribute(
       "href",
-      "/api/github/connect?documentation_source_id=source-confluence",
+      "/api/github/connect?group_id=group-platform",
     );
     expect(screen.getByRole("link", { name: /Confluence documentation/ })).toHaveAttribute(
       "href",
-      "/api/confluence/connect?repository_source_id=source-github",
+      "/api/confluence/connect?group_id=group-platform",
     );
     expect(screen.getByText("Notion documentation")).toBeInTheDocument();
     expect(screen.getByText("Google Docs")).toBeInTheDocument();
+  });
+
+  it("treats two documentation sources as equal members of one group", async () => {
+    const documentation = dashboardFixture.sources.items.find(
+      (source) => source.provider === "confluence",
+    )!;
+    const secondDocumentation = {
+      ...documentation,
+      id: "source-confluence-product",
+      name: "Product requirements",
+      detail: "Acme / PRODUCT",
+    };
+    const api = createFakeApi({
+      ...dashboardFixture,
+      sources: {
+        items: [documentation, secondDocumentation],
+        groups: [{
+          id: "group-documentation",
+          sources: [documentation, secondDocumentation],
+        }],
+      },
+    });
+    render(
+      <SpecGraphApp
+        api={api}
+        initialData={{
+          ...dashboardFixture,
+          sources: {
+            items: [documentation, secondDocumentation],
+            groups: [{
+              id: "group-documentation",
+              sources: [documentation, secondDocumentation],
+            }],
+          },
+        }}
+        loadOnMount={false}
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+    expect(
+      screen.getByLabelText(
+        "Connected source group containing Engineering, Product requirements",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Connect source" })).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Connect source" }));
+    expect(screen.getByRole("link", { name: /GitHub repository/ })).toHaveAttribute(
+      "href",
+      "/api/github/connect?group_id=group-documentation",
+    );
+    expect(screen.getByRole("link", { name: /Confluence documentation/ })).toHaveAttribute(
+      "href",
+      "/api/confluence/connect?group_id=group-documentation",
+    );
   });
 
   it("confirms before removing a connected repository", async () => {

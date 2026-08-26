@@ -3,20 +3,30 @@ import { getDb, type SpecGraphDb } from "../../db";
 import { confluenceConnections, providerConnectionSessions } from "../../db/schema";
 import type { ConfluenceSpaceCandidate } from "../contracts/specgraph";
 import { randomToken, sha256Hex } from "../github/crypto";
+import {
+  sourceGroupIdForSource,
+  sourceIdsForGroup,
+} from "../providers/source-groups";
 import { ApiError } from "../server/http";
 import { encryptConnectorSecret } from "./crypto";
 import type { ConfluenceAccessibleResource, ConfluenceOAuthToken } from "./types";
 
 const SESSION_MINUTES = 15;
 
-type ConfluenceSessionContext = { repositorySourceId: string | null };
+type ConfluenceSessionContext = {
+  sourceGroupId?: string | null;
+  repositorySourceId?: string | null;
+};
 
 export async function createConfluenceConnectionSession(
   workspaceId: string,
   userId: string,
-  repositorySourceId: string | null,
+  sourceGroupId: string | null,
   db: SpecGraphDb = getDb(),
 ): Promise<{ state: string; expiresAt: string }> {
+  if (sourceGroupId) {
+    await sourceIdsForGroup(workspaceId, sourceGroupId, db);
+  }
   const state = randomToken();
   const now = new Date();
   const expiresAt = new Date(now.valueOf() + SESSION_MINUTES * 60_000).toISOString();
@@ -26,7 +36,7 @@ export async function createConfluenceConnectionSession(
     userId,
     provider: "confluence",
     stateHash: await sha256Hex(state),
-    contextJson: JSON.stringify({ repositorySourceId }),
+    contextJson: JSON.stringify({ sourceGroupId }),
     status: "initiated",
     expiresAt,
     createdAt: now.toISOString(),
@@ -134,7 +144,7 @@ export async function getConfluenceConnectionSession(
   id: string;
   items: ConfluenceSpaceCandidate[];
   expiresAt: string;
-  repositorySourceId: string | null;
+  sourceGroupId: string | null;
 }> {
   const session = await sessionForState(state, workspaceId, userId, db);
   if (
@@ -144,14 +154,22 @@ export async function getConfluenceConnectionSession(
     throw new ApiError(409, "CONFLUENCE_SESSION_NOT_READY", "Confluence authorization is incomplete.");
   }
   try {
-    const context = session.contextJson
+    const context: ConfluenceSessionContext = session.contextJson
       ? JSON.parse(session.contextJson) as ConfluenceSessionContext
-      : { repositorySourceId: null };
+      : {};
+    let sourceGroupId = context.sourceGroupId || null;
+    if (!sourceGroupId && context.repositorySourceId) {
+      sourceGroupId = await sourceGroupIdForSource(
+        workspaceId,
+        context.repositorySourceId,
+        db,
+      );
+    }
     return {
       id: session.id,
       items: JSON.parse(session.candidatesJson) as ConfluenceSpaceCandidate[],
       expiresAt: session.expiresAt,
-      repositorySourceId: context.repositorySourceId || null,
+      sourceGroupId,
     };
   } catch {
     throw new ApiError(500, "CONFLUENCE_SESSION_INVALID", "Confluence connection data is invalid.");

@@ -7,11 +7,11 @@ export async function GET(request: Request) {
   try {
     const { workspace, user } = await getRequestWorkspace(request);
     const config = getConfluenceConfig();
-    const repositorySourceId = new URL(request.url).searchParams.get("repository_source_id");
+    const sourceGroupId = new URL(request.url).searchParams.get("group_id");
     const session = await createConfluenceConnectionSession(
       workspace.id,
       user.databaseId,
-      repositorySourceId,
+      sourceGroupId,
     );
     const destination = new URL("https://auth.atlassian.com/authorize");
     destination.searchParams.set("audience", "api.atlassian.com");

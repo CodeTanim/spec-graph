@@ -5,13 +5,17 @@ import {
   artifactVersions,
   graphNodes,
   relationships,
-  sourceAssociations,
+  sources,
 } from "../../db/schema";
 import {
   openApiTextMatches,
   parseOpenApiContract,
   type ParsedOpenApiContract,
 } from "../openapi/parser";
+import {
+  sourceGroupIdForSource,
+  sourceIdsForGroup,
+} from "./source-groups";
 
 async function rebuildPair(
   repositorySourceId: string,
@@ -161,18 +165,28 @@ export async function rebuildCrossSourceRelationships(
   sourceId: string,
   db: SpecGraphDb = getDb(),
 ) {
-  const associations = await db.select().from(sourceAssociations).where(and(
-    eq(sourceAssociations.workspaceId, workspaceId),
-    or(
-      eq(sourceAssociations.repositorySourceId, sourceId),
-      eq(sourceAssociations.documentationSourceId, sourceId),
-    ),
-  ));
-  for (const association of associations) {
-    await rebuildPair(
-      association.repositorySourceId,
-      association.documentationSourceId,
-      db,
+  const groupId = await sourceGroupIdForSource(workspaceId, sourceId, db);
+  if (!groupId) return;
+
+  const memberIds = await sourceIdsForGroup(workspaceId, groupId, db);
+  if (memberIds.length < 2) return;
+  const members = await db
+    .select({ id: sources.id, provider: sources.provider })
+    .from(sources)
+    .where(
+      and(
+        eq(sources.workspaceId, workspaceId),
+        inArray(sources.id, memberIds),
+      ),
     );
+  const repositories = members.filter((member) => member.provider === "github");
+  const documentationSources = members.filter(
+    (member) => member.provider === "confluence",
+  );
+
+  for (const repository of repositories) {
+    for (const documentation of documentationSources) {
+      await rebuildPair(repository.id, documentation.id, db);
+    }
   }
 }

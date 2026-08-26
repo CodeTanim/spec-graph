@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     return Response.json({
       items: session.items,
       expiresAt: session.expiresAt,
-      repositorySourceId: session.repositorySourceId,
+      sourceGroupId: session.sourceGroupId,
     });
   } catch (error) {
     return apiErrorResponse(error);

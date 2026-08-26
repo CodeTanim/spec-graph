@@ -94,8 +94,8 @@ export type SourceItem = {
 };
 
 export type SourceGroup = {
-  repository: SourceItem | null;
-  documentation: SourceItem[];
+  id: string;
+  sources: SourceItem[];
 };
 
 export type SourceListResponse = {
@@ -127,7 +127,7 @@ export type GitHubRepositoryCandidate = {
 export type GitHubConnectionSessionResponse = {
   items: GitHubRepositoryCandidate[];
   expiresAt: string;
-  documentationSourceId: string | null;
+  sourceGroupId: string | null;
 };
 
 export type GitHubStatusResponse = {
@@ -138,13 +138,13 @@ export type ConnectGitHubSourceInput = {
   sessionState: string;
   repositoryId: string;
   branch: string;
-  documentationSourceId?: string;
 };
 
 export type ConnectGitHubSourceResponse = {
   source: SourceItem;
   alreadyTracked: boolean;
-  associationAlreadyTracked: boolean;
+  alreadyInGroup: boolean;
+  sourceGroupId: string;
 };
 
 export type ConfluenceStatusResponse = {
@@ -163,30 +163,28 @@ export type ConfluenceSpaceCandidate = {
 export type ConfluenceConnectionSessionResponse = {
   items: ConfluenceSpaceCandidate[];
   expiresAt: string;
-  repositorySourceId: string | null;
+  sourceGroupId: string | null;
 };
 
 export type ConnectConfluenceSourceInput = {
   sessionState: string;
   spaceId: string;
-  repositorySourceId?: string;
 };
 
 export type ConnectConfluenceSourceResponse = {
   source: SourceItem;
   alreadyTracked: boolean;
-  associationAlreadyTracked: boolean;
-  repositoryName: string | null;
+  alreadyInGroup: boolean;
+  sourceGroupId: string;
 };
 
-export type AssociateSourcesInput = {
-  repositorySourceId: string;
-  documentationSourceId: string;
+export type ConnectSourceGroupInput = {
+  sourceIds: string[];
 };
 
-export type AssociateSourcesResponse = {
+export type ConnectSourceGroupResponse = {
+  groupId: string;
   alreadyTracked: boolean;
-  repositoryName: string;
 };
 
 export type SyncSourceResponse = {

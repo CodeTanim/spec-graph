@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb, type SpecGraphDb } from "../../db";
 import { confluenceConnections, sources } from "../../db/schema";
 import type { ConnectConfluenceSourceInput, ConnectConfluenceSourceResponse } from "../contracts/specgraph";
-import { associateSources } from "../providers/source-associations";
+import { ensureSourceGroup } from "../providers/source-groups";
 import { ApiError } from "../server/http";
 import { getSource } from "../server/specgraph-repository";
 import { consumeConfluenceConnectionSession, getConfluenceConnectionSession } from "./connection";
@@ -63,19 +63,17 @@ export async function connectConfluenceSource(
   )).limit(1);
   if (!source) throw new ApiError(500, "SOURCE_SETUP_FAILED", "The Confluence space could not be saved.");
 
-  const repositorySourceId = session.repositorySourceId || input.repositorySourceId || null;
-  let associationAlreadyTracked = false;
-  let repositoryName: string | null = null;
-  if (repositorySourceId) {
-    const association = await associateSources(workspaceId, repositorySourceId, source.id, db);
-    associationAlreadyTracked = association.alreadyTracked;
-    repositoryName = association.repositoryName;
-  }
+  const membership = await ensureSourceGroup(
+    workspaceId,
+    source.id,
+    session.sourceGroupId,
+    db,
+  );
   await consumeConfluenceConnectionSession(session.id, db);
   return {
     source: await getSource(workspaceId, source.id, db),
     alreadyTracked,
-    associationAlreadyTracked,
-    repositoryName,
+    alreadyInGroup: membership.alreadyInGroup,
+    sourceGroupId: membership.groupId,
   };
 }

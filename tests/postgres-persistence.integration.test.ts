@@ -15,12 +15,17 @@ import {
   findings,
   githubInstallations,
   graphNodes,
+  providerConnectionSessions,
   relationships,
+  sourceGroupMembers,
+  sourceGroups,
   sources,
   webhookDeliveries,
 } from "../db/schema";
 import { persistDeterministicFindings } from "../lib/analysis/deterministic";
 import { analyzePendingConfluenceChanges } from "../lib/confluence/scheduled";
+import { createConfluenceConnectionSession } from "../lib/confluence/connection";
+import { createGitHubConnectionSession } from "../lib/github/connection";
 import { acceptGitHubWebhook } from "../lib/github/webhook";
 import { resolveGitHubChangedNodes } from "../lib/openapi/changes";
 import {
@@ -28,7 +33,7 @@ import {
   completeRunAttempt,
   failRunAttempt,
 } from "../lib/analysis/run-lifecycle";
-import { associateSources } from "../lib/providers/source-associations";
+import { connectSources, ensureSourceGroup } from "../lib/providers/source-groups";
 import { rebuildCrossSourceRelationships } from "../lib/providers/cross-source-relationships";
 import { ensureWorkspaceForUser } from "../lib/server/workspace-provisioning";
 import {
@@ -152,6 +157,11 @@ describe("Neon-compatible Postgres persistence", () => {
         updatedAt: now,
       },
     ]);
+    await connectSources(
+      context.workspace.id,
+      ["src_repo", "src_docs"],
+      db,
+    );
     await db.insert(artifacts).values([
       {
         id: "art_code",
@@ -403,10 +413,9 @@ components:
         updatedAt: now,
       },
     ]);
-    await associateSources(
+    await connectSources(
       context.workspace.id,
-      "src_openapi",
-      "src_openapi_docs",
+      ["src_openapi", "src_openapi_docs"],
       db,
     );
     await rebuildCrossSourceRelationships(
@@ -463,7 +472,7 @@ components:
     ]);
   });
 
-  it("persists one workspace, deduplicates source pairs, and retries runs safely", async () => {
+  it("persists one workspace, deduplicates source groups, and retries runs safely", async () => {
     const first = await workspace();
     const second = await workspace();
     expect(second.workspace.id).toBe(first.workspace.id);
@@ -496,18 +505,16 @@ components:
     ]);
 
     expect(
-      await associateSources(
+      await connectSources(
         first.workspace.id,
-        "src_repo",
-        "src_docs",
+        ["src_repo", "src_docs"],
         db,
       ),
     ).toMatchObject({ alreadyTracked: false });
     expect(
-      await associateSources(
+      await connectSources(
         first.workspace.id,
-        "src_repo",
-        "src_docs",
+        ["src_docs", "src_repo"],
         db,
       ),
     ).toMatchObject({ alreadyTracked: true });
@@ -545,6 +552,317 @@ components:
       id: created.run.id,
       status: "succeeded",
     });
+  });
+
+  it("groups sources as equal peers regardless of provider or connection order", async () => {
+    const primary = await workspace();
+    const secondary = await ensureWorkspaceForUser(
+      {
+        id: "github-user-other",
+        email: "other@example.com",
+        displayName: "Other Engineer",
+        fullName: "Other Engineer",
+      },
+      db,
+    );
+    const now = new Date().toISOString();
+    await db.insert(sources).values([
+      {
+        id: "src_doc_a",
+        workspaceId: primary.workspace.id,
+        provider: "confluence",
+        externalId: "cloud-1:space:A",
+        name: "Product requirements",
+        detail: "Acme / A",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "src_doc_b",
+        workspaceId: primary.workspace.id,
+        provider: "confluence",
+        externalId: "cloud-1:space:B",
+        name: "Engineering decisions",
+        detail: "Acme / B",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "src_repo_peer",
+        workspaceId: primary.workspace.id,
+        provider: "github",
+        externalId: "repo-peer",
+        name: "acme/product",
+        detail: "main",
+        defaultBranch: "main",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "src_other_workspace",
+        workspaceId: secondary.workspace.id,
+        provider: "confluence",
+        externalId: "cloud-2:space:OTHER",
+        name: "Other workspace docs",
+        detail: "Other / DOCS",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    const singleton = await ensureSourceGroup(
+      primary.workspace.id,
+      "src_doc_a",
+      null,
+      db,
+    );
+    expect(await db.select().from(sourceGroups)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: singleton.groupId })]),
+    );
+
+    const docsFirst = await connectSources(
+      primary.workspace.id,
+      ["src_doc_a", "src_doc_b"],
+      db,
+    );
+    const withRepository = await connectSources(
+      primary.workspace.id,
+      ["src_doc_b", "src_repo_peer"],
+      db,
+    );
+    expect(withRepository.groupId).toBe(docsFirst.groupId);
+    expect(
+      new Set(
+        (
+          await db
+            .select({ sourceId: sourceGroupMembers.sourceId })
+            .from(sourceGroupMembers)
+            .where(eq(sourceGroupMembers.groupId, docsFirst.groupId))
+        ).map((membership) => membership.sourceId),
+      ),
+    ).toEqual(new Set(["src_doc_a", "src_doc_b", "src_repo_peer"]));
+    await expect(
+      connectSources(
+        primary.workspace.id,
+        ["src_repo_peer", "src_doc_a"],
+        db,
+      ),
+    ).resolves.toMatchObject({ alreadyTracked: true });
+    await expect(
+      connectSources(
+        primary.workspace.id,
+        ["src_doc_a", "src_other_workspace"],
+        db,
+      ),
+    ).rejects.toMatchObject({ code: "SOURCE_NOT_FOUND" });
+  });
+
+  it("carries a workspace-validated group through either provider session", async () => {
+    const primary = await workspace();
+    const secondary = await ensureWorkspaceForUser(
+      {
+        id: "github-user-session-other",
+        email: "session-other@example.com",
+        displayName: "Session Other",
+        fullName: "Session Other",
+      },
+      db,
+    );
+    const now = new Date().toISOString();
+    await db.insert(sources).values({
+      id: "src_session_group",
+      workspaceId: primary.workspace.id,
+      provider: "confluence",
+      externalId: "session-group-docs",
+      name: "Session group docs",
+      detail: "Acme / SESSION",
+      status: "connected",
+      createdAt: now,
+      updatedAt: now,
+    });
+    const membership = await ensureSourceGroup(
+      primary.workspace.id,
+      "src_session_group",
+      null,
+      db,
+    );
+
+    await createGitHubConnectionSession(
+      primary.workspace.id,
+      primary.user.databaseId,
+      membership.groupId,
+      db,
+    );
+    await createConfluenceConnectionSession(
+      primary.workspace.id,
+      primary.user.databaseId,
+      membership.groupId,
+      db,
+    );
+    const sessions = await db
+      .select({
+        provider: providerConnectionSessions.provider,
+        contextJson: providerConnectionSessions.contextJson,
+      })
+      .from(providerConnectionSessions);
+    expect(sessions).toEqual(expect.arrayContaining([
+      {
+        provider: "github",
+        contextJson: JSON.stringify({ sourceGroupId: membership.groupId }),
+      },
+      {
+        provider: "confluence",
+        contextJson: JSON.stringify({ sourceGroupId: membership.groupId }),
+      },
+    ]));
+    await expect(
+      createGitHubConnectionSession(
+        secondary.workspace.id,
+        secondary.user.databaseId,
+        membership.groupId,
+        db,
+      ),
+    ).rejects.toMatchObject({ code: "SOURCE_GROUP_NOT_FOUND" });
+  });
+
+  it("uses group membership as scope without treating membership as evidence", async () => {
+    const context = await workspace();
+    const now = new Date().toISOString();
+    await db.insert(sources).values([
+      {
+        id: "src_scope_code",
+        workspaceId: context.workspace.id,
+        provider: "github",
+        externalId: "scope-code",
+        name: "acme/scoped",
+        detail: "main",
+        defaultBranch: "main",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "src_scope_peer",
+        workspaceId: context.workspace.id,
+        provider: "confluence",
+        externalId: "scope-peer",
+        name: "Scoped documentation",
+        detail: "Acme / SCOPED",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "src_scope_outside",
+        workspaceId: context.workspace.id,
+        provider: "confluence",
+        externalId: "scope-outside",
+        name: "Unrelated documentation",
+        detail: "Acme / OTHER",
+        status: "connected",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await connectSources(
+      context.workspace.id,
+      ["src_scope_code", "src_scope_peer"],
+      db,
+    );
+    await ensureSourceGroup(
+      context.workspace.id,
+      "src_scope_outside",
+      null,
+      db,
+    );
+    await db.insert(artifacts).values([
+      {
+        id: "art_scope_code",
+        sourceId: "src_scope_code",
+        externalId: "src/scoped.ts",
+        kind: "code",
+        path: "src/scoped.ts",
+        title: "scoped.ts",
+        currentRevision: "after",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "art_scope_peer",
+        sourceId: "src_scope_peer",
+        externalId: "peer-page",
+        kind: "confluence",
+        path: "SCOPED/Overview",
+        title: "Scoped overview",
+        currentRevision: "1",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "art_scope_outside",
+        sourceId: "src_scope_outside",
+        externalId: "outside-page",
+        kind: "confluence",
+        path: "OTHER/Overview",
+        title: "Unrelated overview",
+        currentRevision: "1",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(graphNodes).values([
+      {
+        id: "node_scope_code",
+        artifactId: "art_scope_code",
+        stableKey: "file:src/scoped.ts",
+        kind: "file",
+        name: "src/scoped.ts",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "node_scope_peer",
+        artifactId: "art_scope_peer",
+        stableKey: "page:peer",
+        kind: "doc_section",
+        name: "Scoped overview",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "node_scope_outside",
+        artifactId: "art_scope_outside",
+        stableKey: "page:outside",
+        kind: "doc_section",
+        name: "Unrelated overview",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(relationships).values({
+      id: "rel_cross_group",
+      fromNodeId: "node_scope_code",
+      toNodeId: "node_scope_outside",
+      type: "documents",
+      origin: "deterministic",
+      confidence: 1,
+      evidence: "A stale edge that crosses source groups",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(
+      await persistDeterministicFindings(
+        context.workspace.id,
+        "run_scope_only",
+        [{ id: "node_scope_code", path: "src/scoped.ts" }],
+        db,
+      ),
+    ).toBe(0);
   });
 
   it("persists evidence links and review actions", async () => {

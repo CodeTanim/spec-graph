@@ -10,14 +10,13 @@ export async function POST(request: Request) {
     const body = await readJsonObject(request);
     const sessionState = typeof body.sessionState === "string" ? body.sessionState : "";
     const spaceId = typeof body.spaceId === "string" ? body.spaceId : "";
-    const repositorySourceId = typeof body.repositorySourceId === "string" ? body.repositorySourceId : undefined;
     if (!sessionState || !spaceId) {
       throw new ApiError(400, "CONFLUENCE_SOURCE_INVALID", "Choose a Confluence space.");
     }
     const result = await connectConfluenceSource(
       workspace.id,
       user.databaseId,
-      { sessionState, spaceId, repositorySourceId },
+      { sessionState, spaceId },
     );
     await start(sourceSyncWorkflow, [workspace.id, result.source.id]);
     return Response.json(result, { status: 201 });

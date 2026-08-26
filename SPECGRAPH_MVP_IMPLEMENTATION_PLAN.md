@@ -109,25 +109,29 @@ These defaults prevent the project from stalling. Change them only through the d
 
 ### Minimal source-connection experience
 
-The product should expose source setup progressively rather than presenting an integration dashboard. GitHub-first is the recommended path, but source connection must work in either order.
+The product should expose source setup progressively rather than presenting an integration dashboard. No provider owns the relationship, and source connection must work in any order.
 
 1. **Add a source:** the single page-level **Add source** action opens a small dialog with **GitHub repository** and **Confluence documentation**.
 2. **Authorize and choose:** selecting GitHub begins GitHub authorization and repository/branch selection; selecting Confluence begins Confluence authorization and site/space/page selection.
-3. **Complete the relationship:** a repository row exposes **Add documentation**; an unattached documentation row exposes **Connect repository**. These contextual actions reuse the same dialog with the relevant provider preselected. Repository documentation is included automatically.
+3. **Complete the relationship:** every connected group exposes exactly one **Connect source** action. It reopens the same provider chooser with the group selected; repository documentation is still included automatically with its GitHub source.
 4. **Check connections:** show a simple preparing, connected, or needs-attention state.
 5. **Use one feed:** changes from GitHub and Confluence enter the same Changes experience.
 
-The Sources hierarchy must make ownership explicit rather than displaying providers as unrelated rows:
+The Sources view displays equal peers vertically, joined by a restrained green connection:
 
 ```text
-StreetFighter-AI · main
-├── Repository documentation — 1 indexed file
-└── Confluence — Engineering / StreetFighter
+GitHub — StreetFighter-AI · main
+             ↕
+Confluence — Engineering / StreetFighter
+             ↕
+Notion — Product requirements
 ```
 
-Before external documentation is connected, the final child is an **Add documentation** action. It belongs to that repository row so the resulting Confluence site/space is durably associated with the intended codebase. A workspace with multiple repositories must never leave the external documentation mapping implicit.
+The group-level **Connect source** action appears once beneath the final member. A workspace with multiple products must never leave group membership implicit.
 
-Documentation-first setup creates an unattached documentation source until the user chooses its repository. Before creating either a provider source or a repository-documentation association, SpecGraph must compare canonical provider identities. Reconnecting the same Confluence scope, GitHub repository, or exact repository-documentation pair is an idempotent no-op. The UI should say **Already tracked with StreetFighter-AI** and reveal the existing group instead of creating duplicate artifacts, relationships, runs, or findings.
+Every newly connected provider source begins in a singleton group. Connecting it to another singleton or existing group produces the same final membership regardless of order. Before creating a source or membership, SpecGraph compares canonical provider identities. Reconnecting the same provider scope or adding a source already present in the selected group is an idempotent no-op, and the UI explains that it is already connected there.
+
+Group membership means “search for evidence among these sources.” It is not itself proof that their files or pages affect each other.
 
 The page-level action must never say Connect GitHub once the provider dialog exists. The Add source dialog shows only usable MVP provider choices, explains each in one short line, and closes when authorization begins. It is a chooser, not an integrations dashboard.
 
@@ -249,6 +253,8 @@ The feed should be derived from analysis runs and findings. Do not introduce a s
 | `users` | Stable authenticated users | `id`, `providerUserId`, `email`, `displayName` |
 | `workspace_members` | User-to-workspace authorization | `workspaceId`, `userId`, `role` |
 | `sources` | Connected provider repositories or document spaces | `id`, `workspaceId`, `provider`, `externalId`, `name`, `defaultBranch`, `status`, `lastSyncedAt` |
+| `source_groups` | Provider-neutral sets of sources that should be checked together | `id`, `workspaceId`, timestamps |
+| `source_group_members` | One source's membership in exactly one connected group | `workspaceId`, `groupId`, `sourceId`, `createdAt` |
 | `artifacts` | Provider-backed files or pages and their provenance | `id`, `sourceId`, `externalId`, `kind`, `path`, `title`, `canonicalUrl`, `currentRevision`, `contentHash` |
 | `artifact_versions` | Revision metadata and extracted content needed for comparison | `id`, `artifactId`, `revision`, `contentHash`, `extractedText`, `createdAt` |
 | `graph_nodes` | Typed addressable units inside artifacts | `id`, `artifactId`, `stableKey`, `kind`, `name`, `startLine`, `endLine`, `contentHash` |
@@ -267,6 +273,8 @@ The feed should be derived from analysis runs and findings. Do not introduce a s
 
 - [ ] Every product table is scoped directly or indirectly to a workspace.
 - [ ] Provider source IDs are unique within a workspace.
+- [x] Every connected source belongs to exactly one workspace-safe source group.
+- [x] Group membership limits analysis scope but never counts as artifact-level relationship evidence.
 - [ ] Artifact external IDs are unique within a source.
 - [ ] Artifact versions are unique by artifact and revision.
 - [ ] Graph node stable keys are unique within an artifact.
@@ -483,7 +491,7 @@ The existing Sites deployment remains available as rollback until GitHub authent
 - [x] Select Vercel Hobby, Neon Postgres, Auth.js GitHub sign-in, Vercel Workflow, and Vercel secret management as one compatible system.
 - [x] Keep product repositories and provider adapters independent from the hosting runtime through small auth, database, job, and environment boundaries.
 - [x] Start the pre-release Neon environment from an empty schema; the former D1 data is disposable staging data and is not migrated.
-- [x] Run all migrations from an empty replacement database and verify workspace idempotency, source-pair deduplication, evidence links, review persistence, and run retries against Postgres.
+- [x] Run all migrations from an empty replacement database and verify workspace idempotency, source-group deduplication, evidence links, review persistence, and run retries against Postgres.
 - [x] Configure GitHub App credentials and update its homepage, OAuth callback, and webhook URL for the replacement domain.
 - [ ] Configure Confluence OAuth callbacks against the replacement domain before production Confluence authorization begins.
 - [x] Provide durable source-sync, manual-analysis, and GitHub-webhook workflows that do not depend on an HTTP request remaining alive.
@@ -581,41 +589,41 @@ Goal: let users connect external documentation without making source setup feel 
 - [x] Open an accessible provider dialog containing GitHub repository and Confluence documentation choices.
 - [x] Route GitHub selection into GitHub authorization and repository/branch selection.
 - [x] Route Confluence selection into Confluence authorization and site/space selection; live callback activation remains gated on credentials.
-- [x] Reuse the same provider dialog for Add documentation and Connect repository, pre-scoped to the relevant missing source type.
+- [x] Reuse the same provider dialog for every group-level Connect source action without assuming a missing provider type.
 - [ ] Add the onboarding question: Where are your docs?
 - [x] Explain that documentation inside GitHub is already included.
 - [ ] Offer Connect Confluence and Not now as the only additional choices.
-- [x] Show Add documentation within every connected repository row, including after onboarding has been skipped or completed.
-- [x] Persist an explicit repository-to-documentation-source association; never infer the target repository from connection order.
-- [x] Group attached Confluence site/space information beneath its repository instead of showing it as an unrelated top-level source.
-- [x] Support documentation-first setup by showing an unattached Confluence source with a Connect repository action.
+- [x] Show exactly one Connect source action for every connected group.
+- [x] Persist provider-neutral source groups and memberships; never infer relationships from provider or connection order.
+- [x] Display GitHub and Confluence vertically as equal peers joined by the same visual connection.
+- [x] Support code-first, documentation-first, and documentation-to-documentation grouping.
 - [x] Canonicalize GitHub repository and Confluence site/space/page identities before writes.
-- [x] Enforce uniqueness for provider sources and the `(workspace, repository source, documentation source)` association in Postgres.
-- [ ] Make repeated connection callbacks and association requests idempotent under retries and concurrent submissions.
-- [x] When the exact pair already exists, show Already tracked with the existing repository name.
+- [x] Enforce canonical provider-source uniqueness and one group membership per source in Postgres.
+- [ ] Make repeated connection callbacks and group-membership requests idempotent under retries and concurrent submissions.
+- [x] When a source is already in the selected group, report that it is already connected there.
 - [x] Implement read-only Confluence authorization and state validation locally; activate production callbacks after H1.
 - [x] Let the user select one accessible site and space.
 - [x] Persist Confluence source metadata without exposing credentials to the browser.
 - [x] Ingest page IDs, versions, titles, text, explicit links, and canonical URLs.
 - [x] Normalize Confluence pages through the same artifact and graph-node contracts used for repository documentation.
 - [ ] Store durable external page snapshots when immutable provider retrieval is insufficient.
-- [x] Create deterministic relationships when Confluence pages reference exact paired-repository paths.
+- [x] Create deterministic relationships when Confluence pages reference exact paths in a GitHub source from the same group.
 - [x] Poll for incremental page versions on a daily cadence and deduplicate them with per-artifact analysis cursors.
 - [x] Send Confluence changes through the same run and finding pipeline.
 - [x] Display GitHub and Confluence as simple connected sources with truthful health states.
 - [x] Show a source choice in Analyze only when more than one connected source makes it necessary.
-- [x] Add Confluence authorization, sync, encrypted-token, association, deduplication, and scheduled change-event tests.
+- [x] Add Confluence authorization, sync, encrypted-token, group-membership, deduplication, and scheduled change-event tests.
 
 Exit criteria:
 
 - [ ] Add source is the only generic page-level connection action and both provider choices start the correct authorization flow.
 - [ ] Repository documentation is included automatically after GitHub connection.
 - [x] A user can connect one Confluence space through the Sources experience.
-- [ ] A user can add or replace related documentation from an already-connected repository row.
-- [ ] With multiple repositories connected, each external documentation source is visibly and durably mapped to exactly the intended repository.
-- [ ] Connecting Confluence first and GitHub second produces the same source group as GitHub-first setup.
-- [ ] Repeating either order does not duplicate sources, associations, artifacts, relationships, runs, or findings.
-- [ ] An attempted duplicate clearly identifies the existing tracked repository-documentation group.
+- [x] A user can add another provider source from an already-connected group.
+- [x] Each source is visibly and durably assigned to exactly one provider-neutral group.
+- [x] Connecting Confluence first and GitHub second produces the same normalized membership as GitHub-first setup.
+- [x] Repeating either order does not duplicate sources or group memberships.
+- [x] An attempted duplicate clearly identifies that the source is already in the selected group.
 - [ ] A Confluence page edit can create findings against linked code, schemas, or tests.
 - [x] A code change can identify an affected Confluence page.
 - [ ] Every cross-source finding opens the correct GitHub revision or Confluence page/version.
@@ -944,17 +952,17 @@ Hosting gate: provider-neutral Package 3 contracts and local tests may begin bef
 - [x] Offer GitHub repository and Confluence documentation as the two clear, actionable choices.
 - [ ] Add the minimal Where are your docs? onboarding step.
 - [x] Include GitHub-hosted documentation automatically.
-- [x] Keep an Add documentation action available on every connected repository after initial setup.
-- [x] Support the inverse flow: connect documentation first, then attach a repository.
+- [x] Keep one Connect source action available on every connected group after initial setup.
+- [x] Support any connection order and allow documentation sources to be grouped with other documentation sources.
 - [x] Implement one-site/one-space read-only Confluence connection locally; production activation awaits H1.
-- [x] Persist and display the explicit repository-to-Confluence association as a nested Sources hierarchy.
-- [x] Detect canonical source and pair duplicates and return the existing group with an Already tracked message.
+- [x] Persist and display provider-neutral group membership with each source shown as an equal vertical peer.
+- [x] Detect canonical source and membership duplicates and return the existing group with an Already connected message.
 - [x] Ingest pages and page versions through the shared artifact contract.
 - [x] Create deterministic cross-source relationships and source links for exact path references.
 - [x] Prove one code-to-Confluence and one Confluence-to-code finding in the built-worker integration fixture.
-- [ ] Finish repeated-callback, both-order, and concurrent source-write coverage; repeated pair creation and source resync are covered.
+- [ ] Finish repeated-callback and concurrent source-write coverage; both connection orders, repeated group creation, and source resync are covered.
 
-Current Package 3 handoff: the provider-neutral schema, encrypted Confluence OAuth/token lifecycle, source chooser, nested grouping, documentation-first route, initial page sync, and canonical pair deduplication are implemented and validated locally. Production callback registration and a live Confluence smoke test remain blocked on H1. Automatic Confluence change events and bidirectional findings remain subsequent analysis-pipeline work.
+Current Package 3 handoff: the provider-neutral source-group schema, encrypted Confluence OAuth/token lifecycle, source chooser, order-independent grouping, initial page sync, and canonical membership deduplication are implemented and validated locally. The former repository/documentation pair table remains for one rollback window but is no longer a product read or write path.
 
 Package 3 is complete when users can connect external documentation without learning a second analysis workflow and both sources produce findings in the same feed.
 
@@ -1041,16 +1049,17 @@ Add entries when a default above changes.
 | 2026-08-15 | Freeze visual expansion until the walking skeleton passes | The existing UI already communicates the core workflow | Engineering time stays focused on real product behavior |
 | 2026-08-15 | Make Confluence a core MVP capability | External documentation is central to the product promise | Onboarding stays progressive; GitHub docs are automatic and Confluence is offered as the external source |
 | 2026-08-16 | Make source setup order-independent and deduplicated | Users may naturally start from code or documentation, and retries must not create parallel tracking groups | Provider sources use canonical identities; repository-documentation pairs are unique and duplicate attempts reveal the existing group |
-| 2026-08-16 | Use one Add source provider chooser | Users think in sources, not provider-specific setup buttons | The page-level action is provider-neutral; contextual repository/documentation actions reuse the same chooser with a preselected source type |
+| 2026-08-16 | Use one Add source provider chooser | Users think in sources, not provider-specific setup buttons | The page-level action is provider-neutral; every connected group reuses the same chooser without hiding provider types |
 | 2026-08-16 | Move the final deployment away from OpenAI Sites | The project should have an independently controlled, reproducible production environment | Sites remains temporary until a replacement stack passes callbacks, persistence, auth, jobs, and end-to-end smoke tests |
 | 2026-08-16 | Show Notion in the source chooser before its connector is built | Users should see the intended documentation-source direction without encountering a fake connection flow | Notion is labeled Connection coming next and remains non-interactive until a real OAuth and ingestion package exists |
 | 2026-08-16 | Show Google Docs in the source chooser before its connector is built | Teams also keep product documentation in Google Docs and should see that source direction in setup | Google Docs is labeled Connection coming next and remains non-interactive until Google OAuth, document selection, ingestion, and refresh are implemented |
-| 2026-08-17 | Use one provider-neutral deterministic finding writer | GitHub and external documentation must produce the same evidence model and feed behavior | Changed graph nodes traverse workspace-scoped relationships; provider adapters only normalize the changed source |
+| 2026-08-17 | Use one provider-neutral deterministic finding writer | GitHub and external documentation must produce the same evidence model and feed behavior | Changed graph nodes traverse group-scoped relationships; provider adapters only normalize the changed source |
 | 2026-08-17 | Detach staging analysis with Workers `waitUntil`, but do not call it the production queue | It lets the current Sites staging app return queued runs and continue work after the response without pretending to be crash-safe | D1 remains the source of run truth; the replacement deployment must claim and retry jobs through a durable worker |
 | 2026-08-23 | Use Vercel Hobby, Neon Postgres, Auth.js, and Vercel Workflow for the noncommercial MVP | The stack fits standard Next.js, provides portable SQL identity and state, and removes request-lifetime coupling without requiring commercial infrastructure | The pre-release database starts clean; GitHub and Confluence callbacks must move to `spec-graph.vercel.app` before Sites can be retired |
 | 2026-08-23 | Make deterministic impact eligibility directional and documentation-centered | Symmetric import traversal produced noisy code-to-code findings that did not represent documentation drift | Code or test changes can flag linked documentation; documentation changes can flag linked code, tests, or other documentation; artifacts changed in the same event are excluded; findings never edit sources automatically |
 | 2026-08-23 | Run automatic checks once per day while keeping manual Analyze immediate | A daily cadence is simpler, reduces feed noise, and avoids running analysis on every edit without making the user wait when they explicitly request a check | GitHub webhooks persist queued changes and one daily Vercel workflow processes them while polling Confluence page versions |
 | 2026-08-23 | Parse OpenAPI changes deterministically before semantic review | The contract already states exact operations, schemas, and required fields, so a model should not rediscover those facts | JSON and YAML versions produce structured facts; `$ref` usage carries schema changes to operations; only matching Markdown or Confluence documentation becomes an affected candidate |
+| 2026-08-25 | Model connected sources as provider-neutral groups | GitHub, Confluence, and future documentation providers are equal peers; connection order must not define ownership | Every source receives one group membership, group-level Connect source supports any provider, and membership scopes relationship discovery without becoming evidence |
 
 ---
 
@@ -1089,7 +1098,7 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 
 - Linked `CodeTanim/spec-graph` to Vercel, provisioned the free Neon integration, generated and applied a clean Postgres migration, and deployed the stable replacement at `https://spec-graph.vercel.app`.
 - Replaced vinext runtime usage, D1 access, Sites identity headers, and Worker `waitUntil` calls with standard Next.js, Neon/Drizzle, Auth.js GitHub sign-in, and three durable Vercel Workflows.
-- Added Postgres integration coverage for workspace idempotency, source-pair duplication checks, persisted evidence/review actions, and bounded run retries; component tests, lint, local build, remote build, sign-in rendering, and unauthenticated API rejection pass.
+- Added Postgres integration coverage for workspace idempotency, source-group duplication checks, persisted evidence/review actions, and bounded run retries; component tests, lint, local build, remote build, sign-in rendering, and unauthenticated API rejection pass.
 - Upgraded Next.js to the patched 16.3.2 line and constrained vulnerable nested Workflow dependencies; `npm audit --omit=dev` reports zero production vulnerabilities.
 - Kept the Sites deployment as rollback. Remaining H1 work is configuring Confluence on the stable domain, completing the manual/removal smoke checks, and only then removing Sites-only files and retiring the old deployment.
 - Verified the stable Vercel GitHub sign-in, repository installation, Neon-backed initial sync, and live signed push webhook. Commit `ffb91c0` produced one processed delivery and one successful durable run on its first attempt; the new standalone Markdown artifact was indexed once and correctly produced no finding because it had no graph relationship.
@@ -1101,3 +1110,10 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Added a shared daily automatic cadence: GitHub webhooks now persist queued changes without analyzing on every edit, Confluence pages are polled by provider version, per-page cursors prevent duplicates across syncs and retries, and manual Analyze remains immediate.
 - Added structured OpenAPI JSON/YAML parsing, operation and schema version diffs, `$ref` impact propagation, exact endpoint/schema documentation matching across repository and Confluence sources, enriched changed-operation feed entries, and deterministic coverage proving unrelated API documentation is excluded.
 - Completed the deterministic relationship-quality baseline: one parser contract now handles imports, exports, aliases, test naming, Markdown structure, exact paths, and OpenAPI references; ranked traversal is bounded to two steps and stops at the first documentation boundary for code-driven changes; stale edges are removed on resync; and five reviewed golden cases establish a repeatable precision/recall baseline before semantic analysis.
+
+### 2026-08-25
+
+- Replaced repository-owned documentation pairs with provider-neutral source groups and one membership per source while retaining the legacy pair table for one rollback window.
+- Made both GitHub and Confluence OAuth flows carry the same group ID, kept all provider choices available within a group, and rendered equal vertical source peers with one Connect source action.
+- Scoped candidate analysis and cross-source relationship rebuilding to the changed source's group; group membership itself never creates a finding.
+- Added connected-component migration coverage, order-independent and documentation-to-documentation membership tests, and a nontechnical README with the live Vercel link.

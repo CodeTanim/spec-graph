@@ -1,4 +1,5 @@
 import {
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -192,9 +193,60 @@ export const sources = pgTable(
       table.externalId,
     ),
     index("idx_sources_workspace_status").on(table.workspaceId, table.status),
+    uniqueIndex("idx_sources_workspace_id").on(table.workspaceId, table.id),
   ],
 );
 
+export const sourceGroups = pgTable(
+  "source_groups",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("idx_source_groups_workspace_id").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("idx_source_groups_workspace").on(table.workspaceId),
+  ],
+);
+
+export const sourceGroupMembers = pgTable(
+  "source_group_members",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    groupId: text("group_id").notNull(),
+    sourceId: text("source_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.groupId, table.sourceId] }),
+    uniqueIndex("idx_source_group_members_source").on(table.sourceId),
+    index("idx_source_group_members_workspace_group").on(
+      table.workspaceId,
+      table.groupId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.groupId],
+      foreignColumns: [sourceGroups.workspaceId, sourceGroups.id],
+      name: "source_group_members_workspace_group_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.sourceId],
+      foreignColumns: [sources.workspaceId, sources.id],
+      name: "source_group_members_workspace_source_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+// Retained for one rollout so an older deployment can still be rolled back after
+// the provider-neutral group backfill. Product code no longer reads or writes it.
 export const sourceAssociations = pgTable(
   "source_associations",
   {

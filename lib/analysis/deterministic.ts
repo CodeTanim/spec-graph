@@ -10,6 +10,7 @@ import {
   sources,
 } from "../../db/schema";
 import { sha256Hex } from "../github/crypto";
+import { sourceIdsConnectedTo } from "../providers/source-groups";
 import {
   rankDeterministicCandidates,
   type AnalysisArtifactKind,
@@ -82,10 +83,11 @@ export async function persistDeterministicFindings(
       node.changeSummary ? [[node.id, node.changeSummary] as const] : [],
     ),
   );
-  const workspaceRecords = await db
+  const allWorkspaceRecords = await db
     .select({
       nodeId: graphNodes.id,
       artifactId: artifacts.id,
+      sourceId: artifacts.sourceId,
       kind: artifacts.kind,
       title: artifacts.title,
       path: artifacts.path,
@@ -100,6 +102,19 @@ export async function persistDeterministicFindings(
     .where(
       eq(sources.workspaceId, workspaceId),
     );
+  const changedRecordsAcrossWorkspace = allWorkspaceRecords.filter((record) =>
+    changedNodeIds.includes(record.nodeId),
+  );
+  const allowedSourceIds = new Set(
+    await sourceIdsConnectedTo(
+      workspaceId,
+      changedRecordsAcrossWorkspace.map((record) => record.sourceId),
+      db,
+    ),
+  );
+  const workspaceRecords = allWorkspaceRecords.filter((record) =>
+    allowedSourceIds.has(record.sourceId),
+  );
   const workspaceNodeIds = new Set(workspaceRecords.map((record) => record.nodeId));
   const changedRecords = workspaceRecords.filter((record) =>
     changedNodeIds.includes(record.nodeId),

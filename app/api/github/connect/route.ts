@@ -6,12 +6,12 @@ import { apiErrorResponse } from "../../../../lib/server/http";
 export async function GET(request: Request) {
   try {
     const { workspace, user } = await getRequestWorkspace(request);
-    const documentationSourceId = new URL(request.url).searchParams.get("documentation_source_id");
+    const sourceGroupId = new URL(request.url).searchParams.get("group_id");
     const config = getGitHubOAuthConfig();
     const session = await createGitHubConnectionSession(
       workspace.id,
       user.databaseId,
-      documentationSourceId,
+      sourceGroupId,
     );
     const destination = new URL("https://github.com/login/oauth/authorize");
     destination.searchParams.set("client_id", config.clientId);

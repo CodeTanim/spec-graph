@@ -391,23 +391,15 @@ button:disabled {
   border-bottom: 0;
 }
 
-.source-pair {
+.source-members {
   display: flex;
   width: min(600px, 100%);
   flex-direction: column;
   margin: 0 auto;
 }
 
-.source-peer-column {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.source-pair > .source-node,
-.source-pair > .source-link {
+.source-members > .source-node,
+.source-members > .source-link {
   width: 100%;
 }
 

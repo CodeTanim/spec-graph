@@ -3,15 +3,13 @@ import { rebuildCrossSourceRelationships } from "../../../lib/providers/cross-so
 import { getRequestWorkspace } from "../../../lib/server/current-workspace";
 import { ApiError, apiErrorResponse, readJsonObject } from "../../../lib/server/http";
 
-// Compatibility adapter for clients from the repository/documentation-pair
-// rollout. New clients use /api/source-groups with provider-neutral source IDs.
 export async function POST(request: Request) {
   try {
     const { workspace } = await getRequestWorkspace(request);
     const body = await readJsonObject(request);
-    const sourceIds = [body.repositorySourceId, body.documentationSourceId].filter(
-      (value): value is string => typeof value === "string" && Boolean(value),
-    );
+    const sourceIds = Array.isArray(body.sourceIds)
+      ? body.sourceIds.filter((value): value is string => typeof value === "string")
+      : [];
     if (sourceIds.length < 2) {
       throw new ApiError(
         400,

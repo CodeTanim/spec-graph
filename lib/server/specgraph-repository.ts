@@ -11,7 +11,8 @@ import {
   findings,
   graphNodes,
   relationships,
-  sourceAssociations,
+  sourceGroupMembers,
+  sourceGroups,
   sources,
 } from "../../db/schema";
 import type {
@@ -31,6 +32,10 @@ import type {
   StartRunResponse,
 } from "../contracts/specgraph";
 import { relationshipReason } from "../analysis/deterministic";
+import {
+  ensureSourceGroup,
+  removeEmptySourceGroups,
+} from "../providers/source-groups";
 import { ApiError } from "./http";
 
 const changedGraphNodes = alias(graphNodes, "changed_graph_nodes");
@@ -611,28 +616,52 @@ export async function listSources(
         };
       }),
     );
-  const associations = await db
-    .select()
-    .from(sourceAssociations)
-    .where(eq(sourceAssociations.workspaceId, workspaceId));
+  let memberships = await db
+    .select({
+      groupId: sourceGroupMembers.groupId,
+      sourceId: sourceGroupMembers.sourceId,
+      groupCreatedAt: sourceGroups.createdAt,
+      memberCreatedAt: sourceGroupMembers.createdAt,
+    })
+    .from(sourceGroupMembers)
+    .innerJoin(sourceGroups, eq(sourceGroupMembers.groupId, sourceGroups.id))
+    .where(eq(sourceGroupMembers.workspaceId, workspaceId))
+    .orderBy(desc(sourceGroups.createdAt), sourceGroupMembers.createdAt);
+
+  const groupedSourceIds = new Set(memberships.map((item) => item.sourceId));
+  const orphanedSources = items.filter((item) => !groupedSourceIds.has(item.id));
+  if (orphanedSources.length) {
+    await Promise.all(
+      orphanedSources.map((source) =>
+        ensureSourceGroup(workspaceId, source.id, null, db),
+      ),
+    );
+    memberships = await db
+      .select({
+        groupId: sourceGroupMembers.groupId,
+        sourceId: sourceGroupMembers.sourceId,
+        groupCreatedAt: sourceGroups.createdAt,
+        memberCreatedAt: sourceGroupMembers.createdAt,
+      })
+      .from(sourceGroupMembers)
+      .innerJoin(sourceGroups, eq(sourceGroupMembers.groupId, sourceGroups.id))
+      .where(eq(sourceGroupMembers.workspaceId, workspaceId))
+      .orderBy(desc(sourceGroups.createdAt), sourceGroupMembers.createdAt);
+  }
+
   const byId = new Map(items.map((item) => [item.id, item]));
-  const attachedDocumentation = new Set(associations.map((item) => item.documentationSourceId));
-  const groups: SourceGroup[] = items
-    .filter((item) => item.provider === "github")
-    .map((repository) => ({
-      repository,
-      documentation: associations
-        .filter((item) => item.repositorySourceId === repository.id)
-        .flatMap((item) => {
-          const documentation = byId.get(item.documentationSourceId);
-          return documentation ? [documentation] : [];
-        }),
-    }));
-  groups.push(
-    ...items
-      .filter((item) => item.provider === "confluence" && !attachedDocumentation.has(item.id))
-      .map((documentation) => ({ repository: null, documentation: [documentation] })),
-  );
+  const groupsById = new Map<string, SourceGroup>();
+  for (const membership of memberships) {
+    const source = byId.get(membership.sourceId);
+    if (!source) continue;
+    const group = groupsById.get(membership.groupId) || {
+      id: membership.groupId,
+      sources: [],
+    };
+    group.sources.push(source);
+    groupsById.set(membership.groupId, group);
+  }
+  const groups = [...groupsById.values()];
   return { items, groups };
 }
 
@@ -665,6 +694,7 @@ export async function removeSource(
   await db
     .delete(sources)
     .where(and(eq(sources.id, sourceId), eq(sources.workspaceId, workspaceId)));
+  await removeEmptySourceGroups(workspaceId, db);
 
   return { removedSourceId: source.id };
 }
