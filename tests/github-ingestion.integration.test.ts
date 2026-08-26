@@ -6,6 +6,7 @@ import type { SpecGraphDb } from "../db";
 import * as schema from "../db/schema";
 import {
   artifacts,
+  graphNodes,
   githubInstallations,
   relationships,
   sources,
@@ -66,7 +67,7 @@ describe("GitHub graph ingestion", () => {
 
     let revision = "rev-1";
     const contentBySha = new Map([
-      ["code-1", "export const refundWindow = 30;"],
+      ["code-1", "export class RefundService {}\nexport const refundWindow = 30;"],
       ["doc-1", "# Refunds\n\n[Implementation](../src/refunds.ts)"],
       ["code-2", "export const refundWindow = 45;"],
       ["doc-2", "# Refunds\n\nThis guide no longer names an implementation file."],
@@ -108,7 +109,18 @@ describe("GitHub graph ingestion", () => {
       provider,
       db,
     );
-    expect(await db.select().from(relationships)).toHaveLength(1);
+    expect(
+      (await db.select().from(relationships)).filter(
+        (relationship) => relationship.type === "links",
+      ),
+    ).toHaveLength(1);
+    expect(await db.select().from(graphNodes)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        stableKey: "entity:identifier:refundservice",
+        kind: "symbol",
+        name: "RefundService",
+      }),
+    ]));
 
     revision = "rev-2";
     await syncGitHubSource(
@@ -117,7 +129,16 @@ describe("GitHub graph ingestion", () => {
       provider,
       db,
     );
-    expect(await db.select().from(relationships)).toHaveLength(0);
+    expect(
+      (await db.select().from(relationships)).filter(
+        (relationship) => relationship.type === "links",
+      ),
+    ).toHaveLength(0);
+    expect(
+      (await db.select().from(graphNodes)).some(
+        (node) => node.stableKey === "entity:identifier:refundservice",
+      ),
+    ).toBe(false);
     expect(await db.select().from(artifacts)).toHaveLength(2);
   });
 });

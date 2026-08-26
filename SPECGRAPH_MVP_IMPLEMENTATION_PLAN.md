@@ -258,12 +258,13 @@ The feed should be derived from analysis runs and findings. Do not introduce a s
 | `artifacts` | Provider-backed files or pages and their provenance | `id`, `sourceId`, `externalId`, `kind`, `path`, `title`, `canonicalUrl`, `currentRevision`, `contentHash` |
 | `artifact_versions` | Revision metadata and extracted content needed for comparison | `id`, `artifactId`, `revision`, `contentHash`, `extractedText`, `createdAt` |
 | `graph_nodes` | Typed addressable units inside artifacts | `id`, `artifactId`, `stableKey`, `kind`, `name`, `startLine`, `endLine`, `contentHash` |
-| `relationships` | Directed typed graph edges between nodes | `fromNodeId`, `toNodeId`, `type`, `origin`, `confidence`, `evidence` |
+| `relationships` | Directed typed graph edges between nodes | `fromNodeId`, `toNodeId`, `type`, `origin`, `provenance`, `analyzerVersion`, `confidence`, `evidence` |
 | `change_events` | Normalized push, pull request, or manual change input | `id`, `sourceId`, `trigger`, `beforeRevision`, `afterRevision`, `actor`, `occurredAt` |
 | `analysis_runs` | Durable unit of background work | `id`, `workspaceId`, `sourceId`, `changeEventId`, `target`, `status`, `progress`, `attempts`, `errorCode`, timestamps |
 | `run_attempts` | Retry and stage-level execution history | `id`, `runId`, `attempt`, `stage`, `status`, `errorCode`, `startedAt`, `finishedAt` |
-| `findings` | A changed node's potential impact on another node | `id`, `runId`, `changedNodeId`, `affectedNodeId`, `summary`, `confidence`, `origin`, `status`, `deduplicationKey` |
+| `findings` | A changed node's potential impact on another node | `id`, `runId`, `changedNodeId`, `affectedNodeId`, `summary`, `confidence`, `origin`, `provenance`, `analyzerVersion`, `status`, `deduplicationKey` |
 | `finding_evidence` | One or more verifiable excerpts supporting a finding | `id`, `findingId`, `artifactVersionId`, `startLine`, `endLine`, `excerpt`, `sourceUrl`, `type` |
+| `semantic_analysis_attempts` | Analyzer audit and cost telemetry, including safe fallbacks | `runId`, `changedNodeId`, `analyzerVersion`, `model`, `status`, candidate/decision counts, `latencyMs`, token usage, estimated cost, `failureReason` |
 | `finding_actions` | Review history and audit trail | `id`, `findingId`, `userId`, `action`, `note`, `createdAt` |
 | `webhook_deliveries` | Signature verification and idempotency record | `providerDeliveryId`, `eventType`, `payloadHash`, `status`, `receivedAt`, `processedAt` |
 | `evaluation_cases` | Labeled expected impacts | `id`, `repository`, `beforeRevision`, `afterRevision`, `expectedArtifactIds` |
@@ -348,13 +349,13 @@ All write routes must authenticate the user, resolve their workspace server-side
 
 ### Deterministic relationship extraction
 
-- [ ] TypeScript/JavaScript imports and exports.
-- [ ] Direct symbol references where safely resolvable.
-- [ ] Test-to-source relationships from imports and naming conventions.
-- [ ] Markdown links and referenced file paths.
-- [ ] OpenAPI path, operation, request, response, and schema references.
-- [ ] Identical endpoint names, schema names, constants, and documented identifiers.
-- [ ] Explicit code comments or documentation references to another artifact.
+- [x] TypeScript/JavaScript imports and exports.
+- [x] Exact documented identifiers mapped to persisted code symbol nodes.
+- [x] Test-to-source relationships from imports and naming conventions.
+- [x] Markdown links and referenced file paths.
+- [x] OpenAPI path, operation, request, response, and schema references.
+- [x] Identical endpoint names, schema names, constants, and documented identifiers.
+- [x] Explicit documentation references to another artifact.
 
 Every deterministic edge stores its type and the exact evidence used to create it.
 
@@ -381,14 +382,14 @@ Initial ranking inputs:
 
 ### Semantic analysis guardrails
 
-- [ ] Use a strict structured-output schema.
-- [ ] Provide changed text, candidate text, relationship context, and revision metadata.
-- [ ] Require an impact decision, concise explanation, and exact supporting excerpts.
-- [ ] Verify every returned excerpt against source text before persistence.
-- [ ] Reject unsupported evidence instead of displaying it.
-- [ ] Mark model-derived relationships separately from deterministic relationships.
-- [ ] Fall back to deterministic results when the model is unavailable.
-- [ ] Record model, prompt/analyzer version, latency, token usage, and estimated cost.
+- [x] Use a strict structured-output schema.
+- [x] Provide bounded changed text, candidate text, relationship context, and revision metadata.
+- [x] Require an impact decision, concise explanation, and exact supporting excerpts.
+- [x] Verify every returned excerpt against source text before persistence.
+- [x] Reject unsupported evidence instead of displaying it.
+- [x] Mark model-derived relationships separately from deterministic relationships.
+- [x] Fall back to deterministic results when the model is unavailable.
+- [x] Record model, prompt/analyzer version, latency, token usage, estimated cost, and failure reason.
 
 ---
 
@@ -406,7 +407,7 @@ Initial ranking inputs:
 | M4 — Manual end-to-end analysis | Staging implementation complete; live smoke pending | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
 | M5 — Automatic GitHub feed | Complete — live push processed exactly once and produced persistent findings | M4 | Pushes and pull requests trigger the same pipeline |
 | M6 — Confluence documentation connection | In progress (live connection and both directions implemented; live edit smoke pending) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
-| M7 — Semantic ranking and evidence | Not started | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
+| M7 — Semantic ranking and evidence | Foundation complete; live model adapter and comparative evaluation pending | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
 | M8 — Review lifecycle and resilience | Not started | M5, M7 | Actions persist; failures retry safely |
 | M9 — Evaluation and production hardening | Not started | M8 | Quality, security, and reliability are measured |
 | M10 — Portfolio and resume readiness | Not started | M6, M9 | Recruiters can inspect the complete cross-source product |
@@ -633,22 +634,22 @@ Exit criteria:
 
 Goal: find meaningful relationships that explicit parsing cannot capture without sacrificing trust.
 
-- [ ] Freeze the structured semantic-analysis input and output schemas.
-- [ ] Introduce bounded semantic candidate generation.
-- [ ] Add the model call behind an analyzer interface.
-- [ ] Version prompts and analyzer configuration.
-- [ ] Distinguish deterministic, semantic, and hybrid findings.
-- [ ] Verify returned evidence against exact source revisions.
-- [ ] Reject or downgrade unsupported model output.
-- [ ] Combine graph distance, edge origin, and semantic score into final ranking.
-- [ ] Establish confidence thresholds for display and suppression.
-- [ ] Record latency, usage, estimated cost, and failure reason.
-- [ ] Add deterministic fallback behavior.
-- [ ] Add adversarial fixtures for hallucinated evidence and irrelevant matches.
+- [x] Freeze the structured semantic-analysis input and output schemas.
+- [x] Introduce bounded semantic candidate generation.
+- [x] Add the model call behind an analyzer interface; a live provider remains intentionally unconfigured.
+- [x] Version prompts and analyzer configuration.
+- [x] Distinguish deterministic, semantic, and hybrid findings.
+- [x] Verify returned evidence against exact source revisions.
+- [x] Reject or downgrade unsupported model output.
+- [x] Combine graph distance, edge origin, lexical overlap, and semantic score into final ranking.
+- [x] Establish confidence thresholds for display and suppression.
+- [x] Record latency, usage, estimated cost, and failure reason.
+- [x] Add deterministic fallback behavior.
+- [x] Add adversarial fixtures for hallucinated evidence and irrelevant matches.
 
 Exit criteria:
 
-- [ ] No displayed semantic finding lacks verified source evidence.
+- [x] No displayed semantic finding lacks verified source evidence; persistence only accepts byte-exact excerpts from the supplied revisions.
 - [ ] Semantic analysis improves recall on the labeled set without unacceptable precision loss.
 - [ ] A model outage still returns deterministic findings and a truthful run status.
 
@@ -1020,6 +1021,28 @@ Package 5 is complete when the live GitHub App delivery is marked processed, exa
 
 Package 6 is complete when the reviewed starter set has exact expected outputs, unrelated artifacts are suppressed, stale edges disappear after resync, and the same ranking path drives persisted findings. Expand the labeled set to at least 25 cases before claiming production-quality metrics.
 
+### Package 7 — Multi-signal relationships and semantic safety
+
+**Status:** Analysis and persistence foundation complete; live model selection and comparative evaluation remain deferred.
+
+- [x] Persist addressable code symbols and OpenAPI endpoints, including file-to-entity containment edges.
+- [x] Match exact documented identifiers and operations to their defining code or contract nodes.
+- [x] Create conservative documentation-to-documentation relationships for strong shared entities across source providers.
+- [x] Record provenance and analyzer version on relationships and findings.
+- [x] Combine independent relationship signals without turning source-group membership into evidence.
+- [x] Expose a compact evidence type and confidence label only inside expanded finding details.
+- [x] Bound semantic candidates and source text before any provider call.
+- [x] Freeze and validate the semantic input/output contract.
+- [x] Verify model excerpts byte-for-byte against the supplied artifact revisions before persistence.
+- [x] Combine model confidence, lexical overlap, graph distance, and edge origin into final semantic confidence.
+- [x] Persist semantic/hybrid findings and analyzer telemetry through a provider-neutral adapter.
+- [x] Preserve deterministic operation when no semantic adapter is configured or a provider fails.
+- [x] Cover exact entities, peer documentation, multi-signal ranking, hallucinated evidence, fallback, telemetry, and stale symbol removal.
+- [ ] Select and configure a live structured-output model only after expanding the labeled evaluation set.
+- [ ] Compare deterministic-only and hybrid precision/recall before enabling semantic findings in the deployed app.
+
+Package 7 is ready for provider evaluation when every accepted semantic finding has exact source evidence, provider failures cannot fail deterministic runs, and token/cost telemetry is captured. It is complete only after the hybrid analyzer improves recall without crossing the agreed precision threshold.
+
 ---
 
 ## 16. Open Decisions
@@ -1060,6 +1083,7 @@ Add entries when a default above changes.
 | 2026-08-23 | Run automatic checks once per day while keeping manual Analyze immediate | A daily cadence is simpler, reduces feed noise, and avoids running analysis on every edit without making the user wait when they explicitly request a check | GitHub webhooks persist queued changes and one daily Vercel workflow processes them while polling Confluence page versions |
 | 2026-08-23 | Parse OpenAPI changes deterministically before semantic review | The contract already states exact operations, schemas, and required fields, so a model should not rediscover those facts | JSON and YAML versions produce structured facts; `$ref` usage carries schema changes to operations; only matching Markdown or Confluence documentation becomes an affected candidate |
 | 2026-08-25 | Model connected sources as provider-neutral groups | GitHub, Confluence, and future documentation providers are equal peers; connection order must not define ownership | Every source receives one group membership, group-level Connect source supports any provider, and membership scopes relationship discovery without becoming evidence |
+| 2026-08-25 | Keep semantic analysis behind a provider-neutral, evidence-verifying adapter | The MVP should not pay for or display model guesses until quality can be measured against deterministic results | Production remains deterministic-only; any future model receives bounded candidates, must return exact excerpts, and records usage/cost/failure telemetry |
 
 ---
 
@@ -1117,3 +1141,6 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Made both GitHub and Confluence OAuth flows carry the same group ID, kept all provider choices available within a group, and rendered equal vertical source peers with one Connect source action.
 - Scoped candidate analysis and cross-source relationship rebuilding to the changed source's group; group membership itself never creates a finding.
 - Added connected-component migration coverage, order-independent and documentation-to-documentation membership tests, and a nontechnical README with the live Vercel link.
+- Added persisted symbol and endpoint nodes, structural containment, exact identifier and API relationships, and conservative cross-provider documentation links for strong shared entities.
+- Added multi-signal confidence ranking plus persisted provenance/analyzer versions, shown as one compact explanation inside expanded finding evidence.
+- Completed the provider-neutral semantic safety layer: bounded candidate retrieval, frozen structured I/O, combined confidence, byte-exact evidence verification, semantic/hybrid persistence, usage/cost/failure telemetry, deterministic fallback, and adversarial tests. A paid model remains unconfigured pending comparative evaluation.

@@ -19,6 +19,21 @@ export type ArtifactKind =
   | "Code"
   | "File";
 
+export type RelationshipOrigin = "deterministic" | "semantic" | "hybrid";
+export type RelationshipProvenance =
+  | "USER_DEFINED"
+  | "EXPLICIT_LINK"
+  | "EXACT_PATH"
+  | "IMPORT"
+  | "TEST_NAMING"
+  | "OPENAPI_ENTITY"
+  | "EXACT_IDENTIFIER"
+  | "SHARED_ENTITY"
+  | "SEMANTIC"
+  | "CO_CHANGE"
+  | "STRUCTURAL"
+  | "LEGACY";
+
 export type ChangedArtifact = {
   id: string;
   name: string;
@@ -35,6 +50,9 @@ export type AffectedArtifact = {
   evidenceLocation: string;
   excerpt: string;
   reason: string;
+  confidence: number;
+  origin: RelationshipOrigin;
+  provenance: RelationshipProvenance;
   externalUrl: string | null;
   evidenceUrl: string | null;
 };

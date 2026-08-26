@@ -137,4 +137,37 @@ describe("deterministic golden evaluation", () => {
       falsePositiveRate: 0,
     });
   });
+
+  it("combines independent signals between the same artifacts without duplicating candidates", () => {
+    const nodes: CandidateNode[] = [
+      { nodeId: "code", artifactId: "a-code", kind: "code", path: "src/refunds.ts" },
+      { nodeId: "guide", artifactId: "a-guide", kind: "confluence", path: "OPS/Refunds" },
+    ];
+    const weakSignal = (
+      id: string,
+      type: string,
+      provenance: CandidateEdge["provenance"],
+    ): CandidateEdge => ({
+      ...edge(id, "guide", "code", type),
+      confidence: 0.85,
+      provenance,
+    });
+
+    const ranked = rankDeterministicCandidates(
+      [{ id: "code", path: "src/refunds.ts" }],
+      nodes,
+      [
+        weakSignal("identifier", "mentions_entity:identifier:refundservice", "EXACT_IDENTIFIER"),
+        weakSignal("path", "shares_entity:identifier:refundservice", "EXACT_PATH"),
+      ],
+    );
+
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0]?.affectedNodeId).toBe("guide");
+    expect(ranked[0]?.score).toBeGreaterThanOrEqual(0.7);
+    expect(ranked[0]?.supportingSignals.map((signal) => signal.provenance)).toEqual([
+      "EXACT_IDENTIFIER",
+      "EXACT_PATH",
+    ]);
+  });
 });

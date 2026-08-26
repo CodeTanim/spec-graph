@@ -43,6 +43,8 @@ both the API change and the related page.
 - Confluence spaces
 - Equal, provider-neutral groups of connected sources
 - Code-to-documentation, documentation-to-code, and documentation-to-documentation impact checks when a verified relationship exists
+- Exact identifier and API-operation matching across code and documentation
+- Confidence-ranked results that can combine independent links, paths, imports, and entity matches
 - Daily automatic checks and immediate manual checks
 - Evidence links for every suggestion
 - Persisted review actions and run history
@@ -123,9 +125,14 @@ push and pull-request webhook events.
 
 Group membership limits where SpecGraph looks; it is not itself evidence. The
 current analyzer uses imports, exports, test names, Markdown links and headings,
-exact paths, and structured OpenAPI operations and schemas. Traversal is capped
-at two verified relationship steps and suppresses unrelated or weaker
-duplicates. Semantic contradiction checking is a later package.
+exact paths, exact code identifiers, shared documentation entities, and
+structured OpenAPI operations and schemas. Traversal is capped at two verified
+relationship steps and suppresses unrelated or weaker duplicates.
+
+The semantic layer now has a bounded, versioned interface, combined confidence
+ranking, exact-excerpt verification, safe fallback, and usage/cost telemetry.
+No paid model is configured yet, so the live app continues to show deterministic
+results only until a model and evaluation budget are deliberately selected.
 
 ### Deployment
 

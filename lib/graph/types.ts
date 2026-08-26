@@ -6,7 +6,7 @@ export type IndexedArtifactKind =
 
 export type ParsedGraphNode = {
   stableKey: string;
-  kind: "file" | "schema" | "doc_section" | "test";
+  kind: "file" | "symbol" | "endpoint" | "schema" | "doc_section" | "test";
   name: string;
   startLine: number;
   endLine: number;
@@ -15,6 +15,12 @@ export type ParsedGraphNode = {
 export type DeterministicReference = {
   targetPath: string;
   type: string;
+  provenance:
+    | "IMPORT"
+    | "TEST_NAMING"
+    | "EXPLICIT_LINK"
+    | "EXACT_PATH"
+    | "OPENAPI_ENTITY";
   evidence: string;
   evidenceStartLine: number;
   confidence: number;

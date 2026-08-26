@@ -2,6 +2,7 @@ import {
   openApiTextMatches,
   type ParsedOpenApiContract,
 } from "../openapi/parser";
+import { extractArtifactEntities } from "./entities";
 import type {
   DeterministicReference,
   IndexedArtifactKind,
@@ -178,6 +179,16 @@ export function parseArtifactGraph(
     },
   ];
   if (sourceKind === "markdown") nodes.push(...markdownNodes(sourcePath, content));
+  for (const entity of extractArtifactEntities(sourceKind, content)) {
+    if (entity.role !== "defines") continue;
+    nodes.push({
+      stableKey: entity.stableKey,
+      kind: entity.kind === "endpoint" ? "endpoint" : "symbol",
+      name: entity.label,
+      startLine: entity.line,
+      endLine: entity.line,
+    });
+  }
 
   if (sourceKind === "code" || sourceKind === "test" || sourcePath.endsWith(".mdx")) {
     const modulePatterns = [
@@ -191,6 +202,7 @@ export function parseArtifactGraph(
         addReference(references, sourcePath, {
           targetPath,
           type: sourceKind === "test" ? "references" : "imports",
+          provenance: "IMPORT",
           confidence: 1,
           ...referenceEvidence(content, match.index ?? 0),
         });
@@ -204,6 +216,7 @@ export function parseArtifactGraph(
       addReference(references, sourcePath, {
         targetPath: candidate,
         type: "tests",
+        provenance: "TEST_NAMING",
         confidence: 0.86,
         evidence: `The test filename maps to ${candidate}.`,
         evidenceStartLine: 1,
@@ -219,6 +232,7 @@ export function parseArtifactGraph(
       addReference(references, sourcePath, {
         targetPath,
         type: "links",
+        provenance: "EXPLICIT_LINK",
         confidence: 1,
         ...referenceEvidence(content, match.index ?? 0),
       });
@@ -232,6 +246,7 @@ export function parseArtifactGraph(
     addReference(references, sourcePath, {
       targetPath,
       type: "references",
+      provenance: "EXACT_PATH",
       confidence: 0.96,
       ...referenceEvidence(content, index),
     });
@@ -243,6 +258,7 @@ export function parseArtifactGraph(
         addReference(references, sourcePath, {
           targetPath: openApiPath,
           type: `covers_openapi:${match.matchKey}`,
+          provenance: "OPENAPI_ENTITY",
           confidence: 1,
           evidence: match.evidence,
           evidenceStartLine: match.evidenceStartLine,

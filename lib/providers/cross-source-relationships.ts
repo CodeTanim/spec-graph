@@ -13,6 +13,10 @@ import {
   type ParsedOpenApiContract,
 } from "../openapi/parser";
 import {
+  discoverEntityRelationships,
+  type EntityArtifact,
+} from "../graph/entity-relationships";
+import {
   sourceGroupIdForSource,
   sourceIdsForGroup,
 } from "./source-groups";
@@ -29,13 +33,18 @@ async function rebuildPair(
       kind: artifacts.kind,
       path: artifacts.path,
       currentRevision: artifacts.currentRevision,
+      stableKey: graphNodes.stableKey,
     })
     .from(graphNodes)
     .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
     .where(eq(artifacts.sourceId, repositorySourceId));
-  const documentationNodes = await db
+  const repositoryRootNodes = repositoryNodes.filter(
+    (item) => item.stableKey === `file:${item.path}`,
+  );
+  const documentationNodeRecords = await db
     .select({
       nodeId: graphNodes.id,
+      stableKey: graphNodes.stableKey,
       text: artifactVersions.extractedText,
     })
     .from(graphNodes)
@@ -48,8 +57,11 @@ async function rebuildPair(
       ),
     )
     .where(eq(artifacts.sourceId, documentationSourceId));
+  const documentationNodes = documentationNodeRecords.filter((item) =>
+    item.stableKey.startsWith("page:"),
+  );
 
-  const repositoryNodeIds = repositoryNodes.map((item) => item.nodeId);
+  const repositoryNodeIds = repositoryRootNodes.map((item) => item.nodeId);
   const documentationNodeIds = documentationNodes.map((item) => item.nodeId);
   if (repositoryNodeIds.length && documentationNodeIds.length) {
     await db.delete(relationships).where(and(
@@ -70,7 +82,7 @@ async function rebuildPair(
     ));
   }
 
-  const openApiArtifacts = repositoryNodes.filter((item) => item.kind === "openapi");
+  const openApiArtifacts = repositoryRootNodes.filter((item) => item.kind === "openapi");
   const openApiVersions = openApiArtifacts.length
     ? await db
         .select()
@@ -104,7 +116,7 @@ async function rebuildPair(
 
   const now = new Date().toISOString();
   for (const documentation of documentationNodes) {
-    for (const repository of repositoryNodes) {
+    for (const repository of repositoryRootNodes) {
       const references = [] as Array<{
         type: string;
         evidence: string;
@@ -142,6 +154,8 @@ async function rebuildPair(
           toNodeId: repository.nodeId,
           type: reference.type,
           origin: "deterministic",
+          provenance: reference.type === "documents" ? "EXACT_PATH" : "OPENAPI_ENTITY",
+          analyzerVersion: "deterministic-v2",
           confidence: 1,
           evidence: reference.evidence,
           evidenceStartLine: reference.evidenceStartLine,
@@ -160,6 +174,94 @@ async function rebuildPair(
   }
 }
 
+async function rebuildEntityRelationships(
+  memberIds: string[],
+  db: SpecGraphDb,
+) {
+  const rows = await db
+    .select({
+      artifactId: artifacts.id,
+      externalId: artifacts.externalId,
+      sourceId: artifacts.sourceId,
+      kind: artifacts.kind,
+      path: artifacts.path,
+      nodeId: graphNodes.id,
+      stableKey: graphNodes.stableKey,
+      text: artifactVersions.extractedText,
+    })
+    .from(artifacts)
+    .innerJoin(graphNodes, eq(graphNodes.artifactId, artifacts.id))
+    .innerJoin(
+      artifactVersions,
+      and(
+        eq(artifactVersions.artifactId, artifacts.id),
+        eq(artifactVersions.revision, artifacts.currentRevision),
+      ),
+    )
+    .where(inArray(artifacts.sourceId, memberIds));
+
+  const byArtifact = new Map<string, EntityArtifact & { nodes: typeof rows }>();
+  for (const row of rows) {
+    let artifact = byArtifact.get(row.artifactId);
+    if (!artifact) {
+      artifact = {
+        artifactId: row.artifactId,
+        sourceId: row.sourceId,
+        kind: row.kind,
+        path: row.path,
+        rootNodeId: "",
+        text: row.text,
+        entityNodeIds: new Map(),
+        nodes: [],
+      };
+      byArtifact.set(row.artifactId, artifact);
+    }
+    artifact.nodes.push(row);
+    if (
+      row.stableKey === `file:${row.path}` ||
+      row.stableKey === `page:${row.externalId}`
+    ) {
+      artifact.rootNodeId = row.nodeId;
+    }
+    if (row.stableKey.startsWith("entity:")) {
+      artifact.entityNodeIds?.set(row.stableKey.slice("entity:".length), row.nodeId);
+    }
+  }
+
+  const indexedArtifacts = [...byArtifact.values()].filter(
+    (artifact) => artifact.rootNodeId,
+  );
+  const nodeIds = [...new Set(rows.map((row) => row.nodeId))];
+  if (nodeIds.length) {
+    await db.delete(relationships).where(and(
+      or(
+        like(relationships.type, "mentions_entity:%"),
+        like(relationships.type, "shares_entity:%"),
+      ),
+      inArray(relationships.fromNodeId, nodeIds),
+      inArray(relationships.toNodeId, nodeIds),
+    ));
+  }
+
+  const now = new Date().toISOString();
+  for (const relationship of discoverEntityRelationships(indexedArtifacts)) {
+    await db.insert(relationships).values({
+      id: `rel_${crypto.randomUUID()}`,
+      ...relationship,
+      analyzerVersion: "entity-v1",
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoNothing({
+      target: [
+        relationships.fromNodeId,
+        relationships.toNodeId,
+        relationships.type,
+        relationships.origin,
+      ],
+    });
+  }
+}
+
 export async function rebuildCrossSourceRelationships(
   workspaceId: string,
   sourceId: string,
@@ -169,7 +271,7 @@ export async function rebuildCrossSourceRelationships(
   if (!groupId) return;
 
   const memberIds = await sourceIdsForGroup(workspaceId, groupId, db);
-  if (memberIds.length < 2) return;
+  if (!memberIds.length) return;
   const members = await db
     .select({ id: sources.id, provider: sources.provider })
     .from(sources)
@@ -189,4 +291,5 @@ export async function rebuildCrossSourceRelationships(
       await rebuildPair(repository.id, documentation.id, db);
     }
   }
+  await rebuildEntityRelationships(memberIds, db);
 }

@@ -373,6 +373,27 @@ export const relationships = pgTable(
     origin: text("origin", { enum: ["deterministic", "semantic", "hybrid"] })
       .notNull()
       .default("deterministic"),
+    provenance: text("provenance", {
+      enum: [
+        "USER_DEFINED",
+        "EXPLICIT_LINK",
+        "EXACT_PATH",
+        "IMPORT",
+        "TEST_NAMING",
+        "OPENAPI_ENTITY",
+        "EXACT_IDENTIFIER",
+        "SHARED_ENTITY",
+        "SEMANTIC",
+        "CO_CHANGE",
+        "STRUCTURAL",
+        "LEGACY",
+      ],
+    })
+      .notNull()
+      .default("LEGACY"),
+    analyzerVersion: text("analyzer_version")
+      .notNull()
+      .default("deterministic-v1"),
     confidence: real("confidence").notNull().default(1),
     evidence: text("evidence").notNull().default(""),
     evidenceStartLine: integer("evidence_start_line"),
@@ -499,6 +520,39 @@ export const runAttempts = pgTable(
   ],
 );
 
+export const semanticAnalysisAttempts = pgTable(
+  "semantic_analysis_attempts",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => analysisRuns.id, { onDelete: "cascade" }),
+    changedNodeId: text("changed_node_id").references(() => graphNodes.id, {
+      onDelete: "set null",
+    }),
+    analyzerVersion: text("analyzer_version").notNull(),
+    analyzerName: text("analyzer_name"),
+    model: text("model"),
+    status: text("status", { enum: ["succeeded", "fallback"] }).notNull(),
+    inputCandidateCount: integer("input_candidate_count").notNull(),
+    outputDecisionCount: integer("output_decision_count").notNull(),
+    acceptedDecisionCount: integer("accepted_decision_count").notNull(),
+    rejectedDecisionCount: integer("rejected_decision_count").notNull(),
+    latencyMs: integer("latency_ms").notNull(),
+    promptTokens: integer("prompt_tokens"),
+    completionTokens: integer("completion_tokens"),
+    estimatedCostMicros: integer("estimated_cost_micros"),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("idx_semantic_attempts_run_created").on(table.runId, table.createdAt),
+    index("idx_semantic_attempts_changed_node").on(table.changedNodeId),
+  ],
+);
+
 export const findings = pgTable(
   "findings",
   {
@@ -518,6 +572,27 @@ export const findings = pgTable(
     origin: text("origin", { enum: ["deterministic", "semantic", "hybrid"] })
       .notNull()
       .default("deterministic"),
+    provenance: text("provenance", {
+      enum: [
+        "USER_DEFINED",
+        "EXPLICIT_LINK",
+        "EXACT_PATH",
+        "IMPORT",
+        "TEST_NAMING",
+        "OPENAPI_ENTITY",
+        "EXACT_IDENTIFIER",
+        "SHARED_ENTITY",
+        "SEMANTIC",
+        "CO_CHANGE",
+        "STRUCTURAL",
+        "LEGACY",
+      ],
+    })
+      .notNull()
+      .default("LEGACY"),
+    analyzerVersion: text("analyzer_version")
+      .notNull()
+      .default("deterministic-v1"),
     status: text("status", { enum: ["open", "resolved", "dismissed"] })
       .notNull()
       .default("open"),

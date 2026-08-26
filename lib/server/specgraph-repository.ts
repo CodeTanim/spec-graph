@@ -160,6 +160,9 @@ async function listAffectedArtifacts(
       findingId: findings.id,
       findingTitle: findings.title,
       findingSummary: findings.summary,
+      findingConfidence: findings.confidence,
+      findingOrigin: findings.origin,
+      findingProvenance: findings.provenance,
       changedNodeId: findings.changedNodeId,
       reviewStatus: findings.status,
       artifactKind: artifacts.kind,
@@ -270,6 +273,9 @@ async function listAffectedArtifacts(
         row.evidenceExcerpt ||
         "No source excerpt was recorded.",
       reason,
+      confidence: row.findingConfidence,
+      origin: row.findingOrigin,
+      provenance: row.findingProvenance,
       externalUrl: row.artifactUrl,
       evidenceUrl: reconstructed
         ? lineUrl(
@@ -298,6 +304,9 @@ function toAffectedArtifact(
     evidenceLocation: item.evidenceLocation,
     excerpt: item.excerpt,
     reason: item.reason,
+    confidence: item.confidence,
+    origin: item.origin,
+    provenance: item.provenance,
     externalUrl: item.externalUrl,
     evidenceUrl: item.evidenceUrl,
   };

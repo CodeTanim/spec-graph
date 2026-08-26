@@ -18,10 +18,26 @@ export type CandidateEdge = {
   toNodeId: string;
   type: string;
   origin: "deterministic" | "semantic" | "hybrid";
+  provenance?: RelationshipProvenance;
+  analyzerVersion?: string;
   confidence: number;
   evidence: string;
   evidenceStartLine: number | null;
 };
+
+export type RelationshipProvenance =
+  | "USER_DEFINED"
+  | "EXPLICIT_LINK"
+  | "EXACT_PATH"
+  | "IMPORT"
+  | "TEST_NAMING"
+  | "OPENAPI_ENTITY"
+  | "EXACT_IDENTIFIER"
+  | "SHARED_ENTITY"
+  | "SEMANTIC"
+  | "CO_CHANGE"
+  | "STRUCTURAL"
+  | "LEGACY";
 
 export type CandidateChange = {
   id: string;
@@ -33,6 +49,7 @@ export type RankedCandidate = {
   changedNodeId: string;
   affectedNodeId: string;
   edge: CandidateEdge;
+  supportingSignals: CandidateEdge[];
   path: CandidateEdge[];
   viaNodeIds: string[];
   depth: number;
@@ -46,11 +63,28 @@ const EDGE_WEIGHTS: Record<string, number> = {
   references: 0.95,
   tests: 0.86,
   imports: 0.88,
+  contains: 1,
 };
 
 function edgeWeight(type: string): number {
   if (type.startsWith("covers_openapi:") || type === "covers_endpoint") return 1;
+  if (type.startsWith("mentions_entity:")) return 0.98;
+  if (type.startsWith("shares_entity:")) return 0.9;
+  if (type === "semantic_impact") return 0.85;
   return EDGE_WEIGHTS[type] ?? 0.8;
+}
+
+function edgeStrength(edge: CandidateEdge): number {
+  return edgeWeight(edge.type) * Math.max(0, Math.min(1, edge.confidence));
+}
+
+function relationshipStrength(edges: CandidateEdge[]): number {
+  const strongest = Math.max(...edges.map(edgeStrength));
+  const distinctSignals = new Set(
+    edges.map((edge) => `${edge.provenance || edge.origin}:${edge.type}`),
+  ).size;
+  const independentSupportBonus = Math.min(0.08, Math.max(0, distinctSignals - 1) * 0.03);
+  return Math.min(1, strongest + independentSupportBonus);
 }
 
 function isDocumentation(kind: AnalysisArtifactKind): boolean {
@@ -112,10 +146,27 @@ export function rankDeterministicCandidates(
   const nodeById = new Map(nodes.map((node) => [node.nodeId, node]));
   const changedNodeIds = new Set(changes.map((change) => change.id));
   const adjacency = new Map<string, CandidateEdge[]>();
+  const supportingEdgesByRepresentative = new Map<string, CandidateEdge[]>();
+  const groupedEdges = new Map<string, CandidateEdge[]>();
   for (const edge of edges) {
     if (!nodeById.has(edge.fromNodeId) || !nodeById.has(edge.toNodeId)) continue;
-    adjacency.set(edge.fromNodeId, [...(adjacency.get(edge.fromNodeId) || []), edge]);
-    adjacency.set(edge.toNodeId, [...(adjacency.get(edge.toNodeId) || []), edge]);
+    const pair = [edge.fromNodeId, edge.toNodeId].sort().join("\u0000");
+    groupedEdges.set(pair, [...(groupedEdges.get(pair) || []), edge]);
+  }
+  for (const group of groupedEdges.values()) {
+    const sorted = [...group].sort((left, right) =>
+      edgeStrength(right) - edgeStrength(left) || left.id.localeCompare(right.id),
+    );
+    const representative = sorted[0]!;
+    supportingEdgesByRepresentative.set(representative.id, sorted);
+    adjacency.set(representative.fromNodeId, [
+      ...(adjacency.get(representative.fromNodeId) || []),
+      representative,
+    ]);
+    adjacency.set(representative.toNodeId, [
+      ...(adjacency.get(representative.toNodeId) || []),
+      representative,
+    ]);
   }
 
   const ranked = new Map<string, RankedCandidate>();
@@ -154,10 +205,10 @@ export function rankDeterministicCandidates(
         const depth = current.path.length + 1;
         const path = [...current.path, edge];
         const nodePath = [...current.nodePath, nextNodeId];
+        const supportingSignals = supportingEdgesByRepresentative.get(edge.id) || [edge];
         const score =
           current.score *
-          edgeWeight(edge.type) *
-          Math.max(0, Math.min(1, edge.confidence)) *
+          relationshipStrength(supportingSignals) *
           (depth === 1 ? 1 : 0.86);
         const eligible =
           !changedNodeIds.has(nextNodeId) &&
@@ -175,11 +226,18 @@ export function rankDeterministicCandidates(
             changedNodeId: change.id,
             affectedNodeId: nextNodeId,
             edge: preferredEvidenceEdge(nextNodeId, path),
+            supportingSignals: path.flatMap(
+              (pathEdge) => supportingEdgesByRepresentative.get(pathEdge.id) || [pathEdge],
+            ),
             path,
             viaNodeIds: nodePath.slice(1, -1),
             depth,
             score: Number(score.toFixed(4)),
-            origin: combinedOrigin(path),
+            origin: combinedOrigin(
+              path.flatMap(
+                (pathEdge) => supportingEdgesByRepresentative.get(pathEdge.id) || [pathEdge],
+              ),
+            ),
           };
           const key = `${change.id}:${nextNode.artifactId}`;
           const existing = ranked.get(key);

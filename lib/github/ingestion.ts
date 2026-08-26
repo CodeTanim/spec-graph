@@ -219,16 +219,27 @@ export async function syncGitHubSource(
       .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
       .where(eq(artifacts.sourceId, sourceId));
     const existingByPath = new Map(existingArtifacts.map((item) => [item.externalId, item]));
-    const existingNodeByPath = new Map(existingNodes.map((item) => [item.path, item.node]));
+    const existingNodeByKey = new Map(
+      existingNodes.map((item) => [
+        `${item.path}\u0000${item.node.stableKey}`,
+        item.node,
+      ]),
+    );
     const artifactIds = new Map<string, string>();
-    const nodeIds = new Map<string, string>();
+    const nodeIds = new Map<string, Map<string, string>>();
 
     for (const file of files) {
       const existing = existingByPath.get(file.path);
       const artifactId = existing?.id || `art_${crypto.randomUUID()}`;
-      const existingNode = existingNodeByPath.get(file.path);
       artifactIds.set(file.path, artifactId);
-      nodeIds.set(file.path, existingNode?.id || `node_${crypto.randomUUID()}`);
+      const ids = new Map<string, string>();
+      for (const node of parsedByPath.get(file.path)!.nodes) {
+        const existingNode = existingNodeByKey.get(
+          `${file.path}\u0000${node.stableKey}`,
+        );
+        ids.set(node.stableKey, existingNode?.id || `node_${crypto.randomUUID()}`);
+      }
+      nodeIds.set(file.path, ids);
     }
 
     await executeInBatches(
@@ -288,38 +299,54 @@ export async function syncGitHubSource(
 
     await executeInBatches(
       db,
-      files.map((file) => {
-        const existingNode = existingNodeByPath.get(file.path);
-        const rootNode = parsedByPath.get(file.path)!.nodes[0];
-        return db
-          .insert(graphNodes)
-          .values({
-          id: nodeIds.get(file.path)!,
-          artifactId: artifactIds.get(file.path)!,
-          stableKey: rootNode.stableKey,
-          kind: rootNode.kind,
-          name: rootNode.name,
-          startLine: rootNode.startLine,
-          endLine: rootNode.endLine,
-          contentHash: file.hash,
-          createdAt: existingNode?.createdAt || now,
-          updatedAt: now,
-        })
-          .onConflictDoUpdate({
-            target: [graphNodes.artifactId, graphNodes.stableKey],
-            set: {
-              kind: rootNode.kind,
-              name: rootNode.name,
-              startLine: rootNode.startLine,
-              endLine: rootNode.endLine,
+      files.flatMap((file) => {
+        const parsed = parsedByPath.get(file.path)!;
+        return parsed.nodes.map((node) => {
+          const existingNode = existingNodeByKey.get(
+            `${file.path}\u0000${node.stableKey}`,
+          );
+          return db
+            .insert(graphNodes)
+            .values({
+              id: nodeIds.get(file.path)!.get(node.stableKey)!,
+              artifactId: artifactIds.get(file.path)!,
+              stableKey: node.stableKey,
+              kind: node.kind,
+              name: node.name,
+              startLine: node.startLine,
+              endLine: node.endLine,
               contentHash: file.hash,
+              createdAt: existingNode?.createdAt || now,
               updatedAt: now,
-            },
-          });
+            })
+            .onConflictDoUpdate({
+              target: [graphNodes.artifactId, graphNodes.stableKey],
+              set: {
+                kind: node.kind,
+                name: node.name,
+                startLine: node.startLine,
+                endLine: node.endLine,
+                contentHash: file.hash,
+                updatedAt: now,
+              },
+            });
+        });
       }),
     );
 
     const currentPaths = new Set(files.map((file) => file.path));
+    const currentNodeIds = new Set(
+      [...nodeIds.values()].flatMap((ids) => [...ids.values()]),
+    );
+    const staleNodeIds = existingNodes
+      .filter((item) => currentPaths.has(item.path) && !currentNodeIds.has(item.node.id))
+      .map((item) => item.node.id);
+    for (let index = 0; index < staleNodeIds.length; index += DB_IN_LIST_SIZE) {
+      await db
+        .delete(graphNodes)
+        .where(inArray(graphNodes.id, staleNodeIds.slice(index, index + DB_IN_LIST_SIZE)));
+    }
+
     const removedArtifactIds = existingArtifacts
       .filter((existing) => !currentPaths.has(existing.externalId))
       .map((existing) => existing.id);
@@ -329,7 +356,7 @@ export async function syncGitHubSource(
         .where(inArray(artifacts.id, removedArtifactIds.slice(index, index + DB_IN_LIST_SIZE)));
     }
 
-    const allNodeIds = [...nodeIds.values()];
+    const allNodeIds = [...currentNodeIds];
     for (let index = 0; index < allNodeIds.length; index += DB_IN_LIST_SIZE) {
       const nodeIdBatch = allNodeIds.slice(index, index + DB_IN_LIST_SIZE);
       await db
@@ -343,10 +370,40 @@ export async function syncGitHubSource(
     }
     const relationshipInserts: DbBatchItem[] = [];
     for (const file of files) {
-      const fromNodeId = nodeIds.get(file.path);
+      const fromNodeId = nodeIds.get(file.path)?.get(`file:${file.path}`);
       if (!fromNodeId) continue;
+      for (const node of parsedByPath.get(file.path)!.nodes) {
+        if (node.stableKey === `file:${file.path}`) continue;
+        const toNodeId = nodeIds.get(file.path)?.get(node.stableKey);
+        if (!toNodeId) continue;
+        relationshipInserts.push(
+          db.insert(relationships).values({
+            id: `rel_${crypto.randomUUID()}`,
+            fromNodeId,
+            toNodeId,
+            type: "contains",
+            origin: "deterministic",
+            provenance: "STRUCTURAL",
+            analyzerVersion: "parser-v2",
+            confidence: 1,
+            evidence: `${file.path} defines ${node.name}`,
+            evidenceStartLine: node.startLine,
+            createdAt: now,
+            updatedAt: now,
+          }).onConflictDoNothing({
+            target: [
+              relationships.fromNodeId,
+              relationships.toNodeId,
+              relationships.type,
+              relationships.origin,
+            ],
+          }),
+        );
+      }
       for (const reference of parsedByPath.get(file.path)!.references) {
-        const toNodeId = nodeIds.get(reference.targetPath);
+        const toNodeId = nodeIds
+          .get(reference.targetPath)
+          ?.get(`file:${reference.targetPath}`);
         if (!toNodeId) continue;
         relationshipInserts.push(
           db
@@ -357,6 +414,8 @@ export async function syncGitHubSource(
             toNodeId,
             type: reference.type,
             origin: "deterministic",
+            provenance: reference.provenance,
+            analyzerVersion: "deterministic-v2",
             confidence: reference.confidence,
             evidence: reference.evidence,
             evidenceStartLine: reference.evidenceStartLine,

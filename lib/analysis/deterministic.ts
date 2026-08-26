@@ -220,6 +220,8 @@ export async function persistDeterministicFindings(
         : relationshipSummary,
       confidence: candidate.score,
       origin: candidate.origin,
+      provenance: edge.provenance || "LEGACY",
+      analyzerVersion: edge.analyzerVersion || "deterministic-v1",
       status: "open",
       deduplicationKey,
       createdAt: now,

@@ -81,6 +81,24 @@ function sourceStatus(source: SourceItem) {
   }
 }
 
+function relationshipSignal(artifact: AffectedArtifact): string {
+  const labels: Record<AffectedArtifact["provenance"], string> = {
+    USER_DEFINED: "User-confirmed relationship",
+    EXPLICIT_LINK: "Direct link",
+    EXACT_PATH: "Exact path reference",
+    IMPORT: "Code import",
+    TEST_NAMING: "Test mapping",
+    OPENAPI_ENTITY: "API contract",
+    EXACT_IDENTIFIER: "Exact identifier",
+    SHARED_ENTITY: "Shared entities",
+    SEMANTIC: "Semantic match",
+    CO_CHANGE: "Change history",
+    STRUCTURAL: "Defined in changed file",
+    LEGACY: "Verified relationship",
+  };
+  return `${labels[artifact.provenance]} · ${Math.round(artifact.confidence * 100)}% confidence`;
+}
+
 export function relativeTime(value: string | null, now = Date.now()) {
   if (!value) return "Not checked yet";
   const timestamp = new Date(value).valueOf();
@@ -1064,6 +1082,7 @@ export function SpecGraphApp({
                         {expanded && (
                           <div className="artifact-preview" id={detailsId}>
                             <p>{artifact.reason}</p>
+                            <span>{relationshipSignal(artifact)}</span>
                             <span>
                               Relationship evidence <span aria-hidden="true">·</span>{" "}
                               {artifact.evidenceLocation}
