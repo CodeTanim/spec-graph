@@ -562,60 +562,6 @@ button:disabled {
   border-bottom-color: var(--linked);
 }
 
-.github-setup {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr);
-  gap: 12px 20px;
-  margin-top: 28px;
-  border: 1px solid var(--ink);
-  padding: 22px;
-}
-
-.github-setup > div {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-bottom: 6px;
-}
-
-.github-setup strong {
-  font-size: 15px;
-}
-
-.github-setup span,
-.connection-note {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.github-setup label {
-  align-self: end;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.github-setup select,
-.github-setup input {
-  min-height: 40px;
-  border: 1px solid var(--line);
-  background: var(--paper);
-  padding: 0 11px;
-  font-size: 12px;
-}
-
-.github-setup .primary-action {
-  grid-column: 2;
-  justify-self: end;
-  margin-top: 6px;
-}
-
-.connection-note {
-  margin: 24px 0 0;
-}
-
 .scrim {
   position: fixed;
   inset: 0;
@@ -983,6 +929,35 @@ a.changed-artifact-row:hover strong {
   width: min(460px, 100%);
 }
 
+.source-setup-modal {
+  width: min(520px, 100%);
+}
+
+.source-setup-state {
+  display: flex;
+  min-height: 110px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--line);
+  padding: 20px 2px;
+}
+
+.source-setup-state strong {
+  font-size: 13px;
+}
+
+.source-setup-state span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.source-setup-state.error {
+  border-top-color: var(--ink);
+}
+
 .analysis-progress-mark {
   display: flex;
   gap: 7px;
@@ -1198,19 +1173,6 @@ a.changed-artifact-row:hover strong {
   .source-node-actions {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .github-setup {
-    grid-template-columns: 1fr;
-  }
-
-  .github-setup > div,
-  .github-setup .primary-action {
-    grid-column: 1;
-  }
-
-  .github-setup .primary-action {
-    justify-self: stretch;
   }
 
   .details-actions,

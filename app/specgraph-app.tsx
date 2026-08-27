@@ -159,6 +159,8 @@ export function SpecGraphApp({
   const [confluenceSourceGroupId, setConfluenceSourceGroupId] = useState("");
   const [confluenceSetupLoading, setConfluenceSetupLoading] = useState(false);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
+  const [sourceSetupOpen, setSourceSetupOpen] = useState(false);
+  const [sourceSetupError, setSourceSetupError] = useState("");
   const [sourceConnectionContext, setSourceConnectionContext] =
     useState<SourceConnectionContext | null>(null);
   const [githubSetupLoading, setGitHubSetupLoading] = useState(false);
@@ -226,12 +228,17 @@ export function SpecGraphApp({
         window.history.replaceState({}, "", window.location.pathname);
       } else if (sessionState) {
         setView("sources");
+        setSourceSetupOpen(true);
+        setSourceSetupError("");
+        setConfluenceSessionState("");
+        setConfluenceSourceGroupId("");
+        setConfluenceSpaces([]);
+        setGitHubSessionState(sessionState);
         setGitHubSetupLoading(true);
         void api
           .loadGitHubConnectionSession(sessionState)
           .then((session) => {
             if (cancelled) return;
-            setGitHubSessionState(sessionState);
             setGitHubSourceGroupId(session.sourceGroupId || "");
             setGitHubRepositories(session.items);
             const first = session.items[0];
@@ -240,7 +247,7 @@ export function SpecGraphApp({
           })
           .catch((sessionError: unknown) => {
             if (cancelled) return;
-            setToast(
+            setSourceSetupError(
               sessionError instanceof Error
                 ? sessionError.message
                 : "GitHub repositories could not be loaded.",
@@ -251,19 +258,24 @@ export function SpecGraphApp({
           });
       } else if (confluenceSession) {
         setView("sources");
+        setSourceSetupOpen(true);
+        setSourceSetupError("");
+        setGitHubSessionState("");
+        setGitHubSourceGroupId("");
+        setGitHubRepositories([]);
+        setConfluenceSessionState(confluenceSession);
         setConfluenceSetupLoading(true);
         void api
           .loadConfluenceConnectionSession(confluenceSession)
           .then((session) => {
             if (cancelled) return;
-            setConfluenceSessionState(confluenceSession);
             setConfluenceSpaces(session.items);
             setSelectedConfluenceSpaceId(session.items[0]?.id || "");
             setConfluenceSourceGroupId(session.sourceGroupId || "");
           })
           .catch((sessionError: unknown) => {
             if (cancelled) return;
-            setToast(
+            setSourceSetupError(
               sessionError instanceof Error
                 ? sessionError.message
                 : "Confluence spaces could not be loaded.",
@@ -361,6 +373,7 @@ export function SpecGraphApp({
       if (event.key !== "Escape") return;
       setAnalyzeOpen(false);
       setAnalysisProgress(null);
+      setSourceSetupOpen(false);
       setSelectedChange(null);
       setSelectedArtifact(null);
       setShowEvidence(false);
@@ -482,6 +495,7 @@ export function SpecGraphApp({
   async function finishGitHubConnection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!githubSessionState || !selectedRepositoryId || !githubBranch.trim()) return;
+    setSourceSetupError("");
     setGitHubSetupLoading(true);
     try {
       const result = await api.connectGitHubSource({
@@ -493,6 +507,8 @@ export function SpecGraphApp({
       setGitHubSessionState("");
       setGitHubSourceGroupId("");
       setGitHubRepositories([]);
+      setSourceSetupOpen(false);
+      setSourceSetupError("");
       window.history.replaceState({}, "", window.location.pathname);
       setToast(
         githubSourceGroupId && result.alreadyInGroup && result.alreadyTracked
@@ -504,7 +520,7 @@ export function SpecGraphApp({
             : `${result.source.name} connected · indexing started`,
       );
     } catch (connectionError) {
-      setToast(
+      setSourceSetupError(
         connectionError instanceof Error
           ? connectionError.message
           : "The repository could not be connected.",
@@ -517,6 +533,7 @@ export function SpecGraphApp({
   async function finishConfluenceConnection(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!confluenceSessionState || !selectedConfluenceSpaceId) return;
+    setSourceSetupError("");
     setConfluenceSetupLoading(true);
     try {
       const result = await api.connectConfluenceSource({
@@ -527,6 +544,8 @@ export function SpecGraphApp({
       setConfluenceSessionState("");
       setConfluenceSourceGroupId("");
       setConfluenceSpaces([]);
+      setSourceSetupOpen(false);
+      setSourceSetupError("");
       window.history.replaceState({}, "", window.location.pathname);
       setToast(
         confluenceSourceGroupId && result.alreadyInGroup && result.alreadyTracked
@@ -538,7 +557,7 @@ export function SpecGraphApp({
             : `${result.source.name} connected · indexing started`,
       );
     } catch (connectionError) {
-      setToast(
+      setSourceSetupError(
         connectionError instanceof Error
           ? connectionError.message
           : "The Confluence space could not be connected.",
@@ -590,6 +609,10 @@ export function SpecGraphApp({
   function closeAddSource() {
     setAddSourceOpen(false);
     setSourceConnectionContext(null);
+  }
+
+  function closeSourceSetup() {
+    setSourceSetupOpen(false);
   }
 
   function requestAnalysis() {
@@ -880,59 +903,14 @@ export function SpecGraphApp({
                 </div>
               )}
             </section>
-            {githubRepositories.length > 0 ? (
-              <form className="github-setup" onSubmit={(event) => void finishGitHubConnection(event)}>
-                <div>
-                  <strong>Choose a repository</strong>
-                  <span>Repository documentation is included automatically.</span>
-                </div>
-                <label htmlFor="github-repository">Repository</label>
-                <select
-                  id="github-repository"
-                  value={selectedRepositoryId}
-                  onChange={(event) => {
-                    const repository = githubRepositories.find(
-                      (item) => item.id === event.target.value,
-                    );
-                    setSelectedRepositoryId(event.target.value);
-                    setGitHubBranch(repository?.defaultBranch || "main");
-                  }}
-                >
-                  {githubRepositories.map((repository) => (
-                    <option key={repository.id} value={repository.id}>
-                      {repository.fullName}
-                    </option>
-                  ))}
-                </select>
-                <label htmlFor="github-branch">Branch to watch</label>
-                <input
-                  id="github-branch"
-                  value={githubBranch}
-                  onChange={(event) => setGitHubBranch(event.target.value)}
-                  required
-                />
-                <button type="submit" className="primary-action wide" disabled={githubSetupLoading}>
-                  {githubSetupLoading ? "Preparing repository…" : "Connect repository"}
-                </button>
-              </form>
-            ) : confluenceSpaces.length > 0 ? (
-              <form className="github-setup" onSubmit={(event) => void finishConfluenceConnection(event)}>
-                <div>
-                  <strong>Choose documentation</strong>
-                  <span>Select the Confluence space SpecGraph should watch.</span>
-                </div>
-                <label htmlFor="confluence-space">Space</label>
-                <select id="confluence-space" value={selectedConfluenceSpaceId} onChange={(event) => setSelectedConfluenceSpaceId(event.target.value)}>
-                  {confluenceSpaces.map((space) => <option key={`${space.cloudId}:${space.id}`} value={space.id}>{space.siteName} / {space.name}</option>)}
-                </select>
-                <button type="submit" className="primary-action wide" disabled={confluenceSetupLoading}>
-                  {confluenceSetupLoading ? "Preparing documentation…" : "Connect documentation"}
-                </button>
-              </form>
-            ) : githubSetupLoading || confluenceSetupLoading ? (
-              <p className="connection-note" role="status">
-                {confluenceSetupLoading ? "Loading Confluence spaces…" : "Loading GitHub repositories…"}
-              </p>
+            {githubSessionState || confluenceSessionState ? (
+              <button
+                type="button"
+                className="text-action"
+                onClick={() => setSourceSetupOpen(true)}
+              >
+                Continue connecting source
+              </button>
             ) : (
               <button type="button" className="text-action" onClick={() => openAddSource()}>
                 + Add source
@@ -996,6 +974,148 @@ export function SpecGraphApp({
                 <small>Connection coming next</small>
               </span>
             </div>
+          </section>
+        </div>
+      )}
+
+      {sourceSetupOpen && (githubSessionState || confluenceSessionState) && (
+        <div
+          className="scrim modal-scrim"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeSourceSetup();
+          }}
+        >
+          <section
+            className="analyze-modal source-setup-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="source-setup-title"
+          >
+            <header>
+              <h2 id="source-setup-title">
+                {githubSessionState ? "Choose a repository" : "Choose documentation"}
+              </h2>
+              <button
+                type="button"
+                onClick={closeSourceSetup}
+                aria-label={
+                  githubSessionState
+                    ? "Close repository chooser"
+                    : "Close documentation chooser"
+                }
+              >
+                ×
+              </button>
+            </header>
+            <p>
+              {githubSessionState
+                ? "Select the repository and branch SpecGraph should watch. Repository documentation is included automatically."
+                : "Select the Confluence space SpecGraph should watch."}
+            </p>
+
+            {sourceSetupError &&
+              Boolean(githubRepositories.length || confluenceSpaces.length) && (
+                <div className="source-setup-state error" role="alert">
+                  <strong>SpecGraph couldn’t connect this source.</strong>
+                  <span>{sourceSetupError}</span>
+                </div>
+              )}
+
+            {sourceSetupError &&
+            !githubRepositories.length &&
+            !confluenceSpaces.length ? (
+              <div className="source-setup-state error" role="alert">
+                <strong>SpecGraph couldn’t load this source.</strong>
+                <span>{sourceSetupError}</span>
+              </div>
+            ) : githubSetupLoading && !githubRepositories.length ? (
+              <div className="source-setup-state" role="status">
+                <strong>Loading repositories…</strong>
+                <span>This should only take a moment.</span>
+              </div>
+            ) : confluenceSetupLoading && !confluenceSpaces.length ? (
+              <div className="source-setup-state" role="status">
+                <strong>Loading Confluence spaces…</strong>
+                <span>This should only take a moment.</span>
+              </div>
+            ) : githubSessionState && githubRepositories.length ? (
+              <form onSubmit={(event) => void finishGitHubConnection(event)}>
+                <label htmlFor="github-repository">Repository</label>
+                <select
+                  id="github-repository"
+                  value={selectedRepositoryId}
+                  onChange={(event) => {
+                    const repository = githubRepositories.find(
+                      (item) => item.id === event.target.value,
+                    );
+                    setSelectedRepositoryId(event.target.value);
+                    setGitHubBranch(repository?.defaultBranch || "main");
+                  }}
+                  autoFocus
+                >
+                  {githubRepositories.map((repository) => (
+                    <option key={repository.id} value={repository.id}>
+                      {repository.fullName}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="github-branch">Branch to watch</label>
+                <input
+                  id="github-branch"
+                  value={githubBranch}
+                  onChange={(event) => setGitHubBranch(event.target.value)}
+                  required
+                />
+                <footer>
+                  <button type="button" className="dismiss-action" onClick={closeSourceSetup}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="primary-action wide"
+                    disabled={githubSetupLoading}
+                  >
+                    {githubSetupLoading ? "Preparing repository…" : "Connect repository"}
+                  </button>
+                </footer>
+              </form>
+            ) : confluenceSessionState && confluenceSpaces.length ? (
+              <form onSubmit={(event) => void finishConfluenceConnection(event)}>
+                <label htmlFor="confluence-space">Space</label>
+                <select
+                  id="confluence-space"
+                  value={selectedConfluenceSpaceId}
+                  onChange={(event) => setSelectedConfluenceSpaceId(event.target.value)}
+                  autoFocus
+                >
+                  {confluenceSpaces.map((space) => (
+                    <option key={`${space.cloudId}:${space.id}`} value={space.id}>
+                      {space.siteName} / {space.name}
+                    </option>
+                  ))}
+                </select>
+                <footer>
+                  <button type="button" className="dismiss-action" onClick={closeSourceSetup}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="primary-action wide"
+                    disabled={confluenceSetupLoading}
+                  >
+                    {confluenceSetupLoading
+                      ? "Preparing documentation…"
+                      : "Connect documentation"}
+                  </button>
+                </footer>
+              </form>
+            ) : (
+              <div className="source-setup-state">
+                <strong>No sources are available.</strong>
+                <span>Check the provider account permissions and try again.</span>
+              </div>
+            )}
           </section>
         </div>
       )}

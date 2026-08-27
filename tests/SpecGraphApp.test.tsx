@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SpecGraphApp } from "../app/specgraph-app";
 import { createFakeApi, dashboardFixture } from "./fixtures/specgraph";
 
@@ -13,6 +13,10 @@ function renderApp() {
     />,
   );
 }
+
+afterEach(() => {
+  window.history.replaceState({}, "", "/");
+});
 
 describe("SpecGraphApp", () => {
   it("starts with only changes that need attention", async () => {
@@ -246,6 +250,50 @@ describe("SpecGraphApp", () => {
     );
     expect(screen.getByText("Notion documentation")).toBeInTheDocument();
     expect(screen.getByText("Google Docs")).toBeInTheDocument();
+  });
+
+  it("shows post-auth source selection in a dismissible dialog", async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    api.loadConfluenceConnectionSession = vi.fn(async () => ({
+      items: [
+        {
+          id: "space-software",
+          key: "SD",
+          name: "Software development",
+          cloudId: "cloud-acme",
+          siteName: "codetanim",
+          siteUrl: "https://codetanim.atlassian.net",
+        },
+      ],
+      expiresAt: "2026-08-26T23:00:00.000Z",
+      sourceGroupId: "group-platform",
+    }));
+    window.history.replaceState({}, "", "/?confluence_session=session-1");
+
+    render(
+      <SpecGraphApp api={api} initialData={dashboardFixture} />,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose documentation" });
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole("main")).not.toHaveTextContent("Choose documentation");
+    expect(screen.getByRole("combobox", { name: "Space" })).toHaveValue(
+      "space-software",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Close documentation chooser" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Choose documentation" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Continue connecting source" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Continue connecting source" }));
+    expect(
+      screen.getByRole("dialog", { name: "Choose documentation" }),
+    ).toBeInTheDocument();
   });
 
   it("treats two documentation sources as equal members of one group", async () => {
