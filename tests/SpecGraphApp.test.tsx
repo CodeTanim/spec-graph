@@ -81,7 +81,9 @@ describe("SpecGraphApp", () => {
     expect(
       screen.getByText("Refunds are available within 30 days of the original charge."),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Relationship evidence/)).toHaveTextContent(
+    const relationshipEvidence = screen.getByLabelText("Verified relationship evidence");
+    expect(relationshipEvidence).toHaveTextContent("Exact identifier · 95% confidence");
+    expect(relationshipEvidence).toHaveTextContent(
       "src/refunds/policy.ts:18",
     );
     expect(screen.getByRole("link", { name: /Open evidence/ })).toHaveAttribute(
@@ -228,7 +230,9 @@ describe("SpecGraphApp", () => {
     await user.click(screen.getByRole("button", { name: "Sources" }));
     await user.click(screen.getByRole("button", { name: "+ Add source" }));
 
-    expect(screen.getByRole("dialog", { name: "Add source" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Connect more sources together" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /GitHub repository/ })).toHaveAttribute("href", "/api/github/connect");
     expect(screen.getByRole("link", { name: /Confluence documentation/ })).toHaveAttribute("href", "/api/confluence/connect");
     expect(screen.getByText("Notion documentation")).toBeInTheDocument();
@@ -239,7 +243,9 @@ describe("SpecGraphApp", () => {
 
     await user.click(screen.getByRole("button", { name: "Close source chooser" }));
     await user.click(screen.getByRole("button", { name: "Connect source" }));
-    expect(screen.getByRole("dialog", { name: "Connect source" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Connect more sources together" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /GitHub repository/ })).toHaveAttribute(
       "href",
       "/api/github/connect?group_id=group-platform",
@@ -252,7 +258,7 @@ describe("SpecGraphApp", () => {
     expect(screen.getByText("Google Docs")).toBeInTheDocument();
   });
 
-  it("shows post-auth source selection in a dismissible dialog", async () => {
+  it("dismisses post-auth source selection and restarts from the source chooser", async () => {
     const user = userEvent.setup();
     const api = createFakeApi();
     api.loadConfluenceConnectionSession = vi.fn(async () => ({
@@ -286,14 +292,47 @@ describe("SpecGraphApp", () => {
     expect(
       screen.queryByRole("dialog", { name: "Choose documentation" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Continue connecting source" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("Continue connecting source")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Continue connecting source" }));
+    await user.click(screen.getByRole("button", { name: "+ Add source" }));
     expect(
-      screen.getByRole("dialog", { name: "Choose documentation" }),
+      screen.getByRole("dialog", { name: "Connect more sources together" }),
     ).toBeInTheDocument();
+  });
+
+  it("turns an expired provider session into a fresh source choice", async () => {
+    const api = createFakeApi();
+    api.loadConfluenceConnectionSession = vi.fn(async () => {
+      throw new Error("That Confluence connection expired. Start again.");
+    });
+    window.history.replaceState({}, "", "/?confluence_session=expired-session");
+
+    render(<SpecGraphApp api={api} initialData={dashboardFixture} />);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Connect more sources together",
+    });
+    expect(dialog).toHaveTextContent(
+      "That Confluence connection expired. Choose a source to start again.",
+    );
+    expect(screen.queryByText("SpecGraph couldn’t load this source.")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Confluence documentation/ })).toHaveAttribute(
+      "href",
+      "/api/confluence/connect",
+    );
+  });
+
+  it("renders the account action in the top navigation", () => {
+    render(
+      <SpecGraphApp
+        api={createFakeApi()}
+        accountAction={<button type="button">Log out</button>}
+        initialData={dashboardFixture}
+        loadOnMount={false}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Log out" })).toBeInTheDocument();
   });
 
   it("treats two documentation sources as equal members of one group", async () => {

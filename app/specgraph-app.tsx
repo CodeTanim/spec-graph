@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, Fragment, useEffect, useState } from "react";
+import { FormEvent, Fragment, type ReactNode, useEffect, useState } from "react";
 import { httpSpecGraphApi, type SpecGraphApi } from "../lib/api-client";
 import {
   emptyDashboardSnapshot,
@@ -20,6 +20,7 @@ type View = "changes" | "runs" | "sources";
 
 type SpecGraphAppProps = {
   api?: SpecGraphApi;
+  accountAction?: ReactNode;
   initialData?: DashboardSnapshot;
   loadOnMount?: boolean;
 };
@@ -122,6 +123,7 @@ export function relativeTime(value: string | null, now = Date.now()) {
 
 export function SpecGraphApp({
   api = httpSpecGraphApi,
+  accountAction,
   initialData,
   loadOnMount = true,
 }: SpecGraphAppProps) {
@@ -161,6 +163,7 @@ export function SpecGraphApp({
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [sourceSetupOpen, setSourceSetupOpen] = useState(false);
   const [sourceSetupError, setSourceSetupError] = useState("");
+  const [sourcePickerNotice, setSourcePickerNotice] = useState("");
   const [sourceConnectionContext, setSourceConnectionContext] =
     useState<SourceConnectionContext | null>(null);
   const [githubSetupLoading, setGitHubSetupLoading] = useState(false);
@@ -247,11 +250,17 @@ export function SpecGraphApp({
           })
           .catch((sessionError: unknown) => {
             if (cancelled) return;
-            setSourceSetupError(
+            setGitHubSessionState("");
+            setGitHubSourceGroupId("");
+            setSourceSetupOpen(false);
+            setSourceSetupError("");
+            setSourcePickerNotice(
               sessionError instanceof Error
-                ? sessionError.message
-                : "GitHub repositories could not be loaded.",
+                ? "That GitHub connection expired. Choose a source to start again."
+                : "Choose a source to start again.",
             );
+            setAddSourceOpen(true);
+            window.history.replaceState({}, "", window.location.pathname);
           })
           .finally(() => {
             if (!cancelled) setGitHubSetupLoading(false);
@@ -275,11 +284,17 @@ export function SpecGraphApp({
           })
           .catch((sessionError: unknown) => {
             if (cancelled) return;
-            setSourceSetupError(
+            setConfluenceSessionState("");
+            setConfluenceSourceGroupId("");
+            setSourceSetupOpen(false);
+            setSourceSetupError("");
+            setSourcePickerNotice(
               sessionError instanceof Error
-                ? sessionError.message
-                : "Confluence spaces could not be loaded.",
+                ? "That Confluence connection expired. Choose a source to start again."
+                : "Choose a source to start again.",
             );
+            setAddSourceOpen(true);
+            window.history.replaceState({}, "", window.location.pathname);
           })
           .finally(() => {
             if (!cancelled) setConfluenceSetupLoading(false);
@@ -603,16 +618,26 @@ export function SpecGraphApp({
 
   function openAddSource(context: SourceConnectionContext | null = null) {
     setSourceConnectionContext(context);
+    setSourcePickerNotice("");
     setAddSourceOpen(true);
   }
 
   function closeAddSource() {
     setAddSourceOpen(false);
+    setSourcePickerNotice("");
     setSourceConnectionContext(null);
   }
 
   function closeSourceSetup() {
     setSourceSetupOpen(false);
+    setSourceSetupError("");
+    setGitHubSessionState("");
+    setGitHubSourceGroupId("");
+    setGitHubRepositories([]);
+    setConfluenceSessionState("");
+    setConfluenceSourceGroupId("");
+    setConfluenceSpaces([]);
+    window.history.replaceState({}, "", window.location.pathname);
   }
 
   function requestAnalysis() {
@@ -709,9 +734,12 @@ export function SpecGraphApp({
           ))}
         </nav>
 
-        <button type="button" className="primary-action" onClick={requestAnalysis}>
-          Analyze
-        </button>
+        <div className="topbar-actions">
+          <button type="button" className="primary-action" onClick={requestAnalysis}>
+            Analyze
+          </button>
+          {accountAction}
+        </div>
       </header>
 
       <main className="content">
@@ -903,19 +931,9 @@ export function SpecGraphApp({
                 </div>
               )}
             </section>
-            {githubSessionState || confluenceSessionState ? (
-              <button
-                type="button"
-                className="text-action"
-                onClick={() => setSourceSetupOpen(true)}
-              >
-                Continue connecting source
-              </button>
-            ) : (
-              <button type="button" className="text-action" onClick={() => openAddSource()}>
-                + Add source
-              </button>
-            )}
+            <button type="button" className="text-action" onClick={() => openAddSource()}>
+              + Add source
+            </button>
           </>
         )}
       </main>
@@ -931,7 +949,7 @@ export function SpecGraphApp({
           <section className="analyze-modal source-picker" role="dialog" aria-modal="true" aria-labelledby="add-source-title">
             <header>
               <h2 id="add-source-title">
-                {sourceConnectionContext ? "Connect source" : "Add source"}
+                {sources.length ? "Connect more sources together" : "Add your first source"}
               </h2>
               <button type="button" onClick={closeAddSource} aria-label="Close source chooser">×</button>
             </header>
@@ -940,6 +958,11 @@ export function SpecGraphApp({
                 ? "Choose another source to add to this connected group."
                 : "Choose what SpecGraph should watch."}
             </p>
+            {sourcePickerNotice && (
+              <div className="source-picker-notice" role="status">
+                {sourcePickerNotice}
+              </div>
+            )}
             <div className="source-provider-options">
               {githubConfigured === false ? (
                 <span className="provider-option disabled"><strong>GitHub repository</strong><small>Needs one-time configuration</small></span>
@@ -1184,12 +1207,17 @@ export function SpecGraphApp({
                         {expanded && (
                           <div className="artifact-preview" id={detailsId}>
                             <p>{artifact.reason}</p>
-                            <span>{relationshipSignal(artifact)}</span>
-                            <span>
-                              Relationship evidence <span aria-hidden="true">·</span>{" "}
-                              {artifact.evidenceLocation}
-                            </span>
-                            <blockquote>{artifact.excerpt}</blockquote>
+                            <div
+                              className="relationship-evidence"
+                              aria-label="Verified relationship evidence"
+                            >
+                              <strong>{relationshipSignal(artifact)}</strong>
+                              <span>
+                                Relationship evidence <span aria-hidden="true">·</span>{" "}
+                                {artifact.evidenceLocation}
+                              </span>
+                              <blockquote>{artifact.excerpt}</blockquote>
+                            </div>
                             <div className="artifact-preview-links">
                               {artifact.evidenceUrl && (
                                 <a href={artifact.evidenceUrl} target="_blank" rel="noreferrer">

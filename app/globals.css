@@ -172,6 +172,36 @@ button:disabled {
   font-weight: 700;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+}
+
+.sign-out-form {
+  display: flex;
+  margin: 0;
+}
+
+.sign-out-action {
+  min-height: 42px;
+  border: 1px solid #9fd2f3;
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--accent-ink);
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.sign-out-action:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+
 .primary-action {
   justify-self: end;
   min-height: 42px;
@@ -908,6 +938,31 @@ a.changed-artifact-row:hover strong {
   line-height: 1.45;
 }
 
+.relationship-evidence {
+  margin: 16px 0;
+  border: 1px solid #b9dcf5;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  padding: 16px;
+}
+
+.relationship-evidence > strong {
+  display: block;
+  color: var(--accent-ink);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.relationship-evidence > span {
+  display: block;
+  margin-top: 9px;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .artifact-preview blockquote {
   margin: 18px 0;
   border-left: 2px solid var(--accent);
@@ -915,6 +970,10 @@ a.changed-artifact-row:hover strong {
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
   line-height: 1.6;
+}
+
+.relationship-evidence blockquote {
+  margin: 16px 0 0;
 }
 
 .artifact-preview-links {
@@ -1137,6 +1196,17 @@ a.changed-artifact-row:hover strong {
   border-radius: 12px;
 }
 
+.source-picker-notice {
+  margin-bottom: 16px;
+  border: 1px solid #b9dcf5;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  padding: 12px 14px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .provider-option {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1242,7 +1312,7 @@ a.provider-option:hover {
     padding-bottom: 12px;
   }
 
-  .primary-action {
+  .topbar-actions {
     grid-column: 2;
     grid-row: 1;
   }
@@ -1311,6 +1381,17 @@ a.provider-option:hover {
   .topbar nav button {
     padding-right: 9px;
     padding-left: 9px;
+  }
+
+  .topbar-actions {
+    gap: 5px;
+  }
+
+  .topbar-actions .primary-action,
+  .sign-out-action {
+    min-height: 38px;
+    padding-right: 10px;
+    padding-left: 10px;
   }
 
   .change-item {
