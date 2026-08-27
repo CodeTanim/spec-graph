@@ -51,6 +51,21 @@ describe("SpecGraphApp", () => {
     expect(
       screen.getByRole("dialog", { name: "Refund validation window changed" }),
     ).toBeInTheDocument();
+    const affectedHeading = screen.getByRole("heading", {
+      name: /What may need updating/,
+    });
+    const changedToggle = screen.getByRole("button", { name: /What changed/ });
+    expect(
+      affectedHeading.compareDocumentPosition(changedToggle) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(changedToggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("link", { name: /src\/refunds\/policy\.ts/ }),
+    ).not.toBeInTheDocument();
+
+    await user.click(changedToggle);
+    expect(changedToggle).toHaveAttribute("aria-expanded", "true");
     expect(
       screen.getByRole("link", { name: /src\/refunds\/policy\.ts/ }),
     ).toHaveAttribute(
@@ -110,6 +125,11 @@ describe("SpecGraphApp", () => {
     await user.type(target, "release/2026.08");
     await user.click(screen.getByRole("button", { name: "Run analysis" }));
 
+    expect(
+      screen.getByRole("dialog", { name: "Analysis in progress" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/SpecGraph is checking release\/2026\.08/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue in background" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recent activity" })).toBeInTheDocument();
     expect(screen.getByText("Checking release/2026.08")).toBeInTheDocument();
     expect(screen.getByText("Queued")).toBeInTheDocument();

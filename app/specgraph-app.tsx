@@ -28,6 +28,12 @@ type SourceConnectionContext = {
   groupId: string;
 };
 
+type AnalysisProgress = {
+  target: string;
+  runId: string | null;
+  error: string;
+};
+
 function Arrow() {
   return <span aria-hidden="true">→</span>;
 }
@@ -133,7 +139,9 @@ export function SpecGraphApp({
   const [selectedChange, setSelectedChange] = useState<ChangeItem | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<AffectedArtifact | null>(null);
   const [showEvidence, setShowEvidence] = useState(false);
+  const [showChangedArtifacts, setShowChangedArtifacts] = useState(false);
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null);
   const [savingAction, setSavingAction] = useState(false);
   const [toast, setToast] = useState("");
   const [githubConfigured, setGitHubConfigured] = useState<boolean | null>(null);
@@ -352,9 +360,11 @@ export function SpecGraphApp({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setAnalyzeOpen(false);
+      setAnalysisProgress(null);
       setSelectedChange(null);
       setSelectedArtifact(null);
       setShowEvidence(false);
+      setShowChangedArtifacts(false);
       setAddSourceOpen(false);
       setSourceConnectionContext(null);
     };
@@ -364,11 +374,15 @@ export function SpecGraphApp({
 
   const openCount = changes.counts.open;
   const visibleChanges = changes.items;
+  const activeAnalysisRun = analysisProgress?.runId
+    ? runs.find((run) => run.id === analysisProgress.runId) || null
+    : null;
 
   function chooseView(nextView: View) {
     setView(nextView);
     setSelectedChange(null);
     setSelectedArtifact(null);
+    setShowChangedArtifacts(false);
   }
 
   async function chooseFilter(nextFilter: ChangeFilter) {
@@ -391,12 +405,14 @@ export function SpecGraphApp({
     setSelectedChange(change);
     setSelectedArtifact(null);
     setShowEvidence(false);
+    setShowChangedArtifacts(false);
   }
 
   function closeChange() {
     setSelectedChange(null);
     setSelectedArtifact(null);
     setShowEvidence(false);
+    setShowChangedArtifacts(false);
   }
 
   async function refreshChanges() {
@@ -434,24 +450,31 @@ export function SpecGraphApp({
     const target = String(form.get("target") || "").trim();
     const requestedSourceId = String(form.get("sourceId") || "").trim();
 
+    setAnalyzeOpen(false);
+    setAnalysisProgress({ target, runId: null, error: "" });
+    setView("runs");
+
     try {
       const result = await api.startRun({
         target,
         sourceId: requestedSourceId || sources[0]?.id,
       });
       setRuns((current) => [result.run, ...current]);
-      setAnalyzeOpen(false);
-      setView("runs");
-      setToast(
-        result.run.status === "failed"
-          ? result.run.errorMessage || "Analysis failed."
-          : result.run.status === "queued" || result.run.status === "running"
-            ? `Analysis queued for ${target}`
-            : `Analysis complete for ${target}`,
+      setAnalysisProgress((current) =>
+        current?.target === target ? { target, runId: result.run.id, error: "" } : current,
       );
     } catch (runError) {
-      setToast(
-        runError instanceof Error ? runError.message : "The analysis could not be started.",
+      setAnalysisProgress((current) =>
+        current?.target === target
+          ? {
+              target,
+              runId: null,
+              error:
+                runError instanceof Error
+                  ? runError.message
+                  : "The analysis could not be started.",
+            }
+          : current,
       );
     }
   }
@@ -1004,47 +1027,6 @@ export function SpecGraphApp({
               {relativeTime(selectedChange.occurredAt)}
             </p>
 
-            <section className="details-section">
-              <h3>
-                What changed
-                {selectedChange.changedArtifacts.length > 0 && (
-                  <span>{selectedChange.changedArtifacts.length}</span>
-                )}
-              </h3>
-              {selectedChange.changedArtifacts.length ? (
-                <div className="changed-artifact-list">
-                  {selectedChange.changedArtifacts.map((artifact) => {
-                    const content = (
-                      <>
-                        <span>
-                          <strong>{artifact.location}</strong>
-                          <small>{artifact.kind}</small>
-                        </span>
-                        {artifact.externalUrl && <Arrow />}
-                      </>
-                    );
-                    return artifact.externalUrl ? (
-                      <a
-                        className="changed-artifact-row"
-                        href={artifact.externalUrl}
-                        key={artifact.id}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {content}
-                      </a>
-                    ) : (
-                      <div className="changed-artifact-row" key={artifact.id}>
-                        {content}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p>{selectedChange.summary}</p>
-              )}
-            </section>
-
             <section className="details-section affected-section">
               <h3>
                 What may need updating
@@ -1115,6 +1097,60 @@ export function SpecGraphApp({
                 </p>
               )}
 
+            </section>
+
+            <section className="details-section changed-section">
+              <button
+                type="button"
+                className="details-section-toggle"
+                aria-expanded={showChangedArtifacts}
+                aria-controls={`changed-artifacts-${selectedChange.id}`}
+                onClick={() => setShowChangedArtifacts((current) => !current)}
+              >
+                <span>What changed</span>
+                <span>
+                  {selectedChange.changedArtifacts.length > 0 && (
+                    <small>{selectedChange.changedArtifacts.length}</small>
+                  )}
+                  <b aria-hidden="true">{showChangedArtifacts ? "−" : "+"}</b>
+                </span>
+              </button>
+              {showChangedArtifacts && (
+                <div id={`changed-artifacts-${selectedChange.id}`}>
+                  {selectedChange.changedArtifacts.length ? (
+                    <div className="changed-artifact-list">
+                      {selectedChange.changedArtifacts.map((artifact) => {
+                        const content = (
+                          <>
+                            <span>
+                              <strong>{artifact.location}</strong>
+                              <small>{artifact.kind}</small>
+                            </span>
+                            {artifact.externalUrl && <Arrow />}
+                          </>
+                        );
+                        return artifact.externalUrl ? (
+                          <a
+                            className="changed-artifact-row"
+                            href={artifact.externalUrl}
+                            key={artifact.id}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {content}
+                          </a>
+                        ) : (
+                          <div className="changed-artifact-row" key={artifact.id}>
+                            {content}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p>{selectedChange.summary}</p>
+                  )}
+                </div>
+              )}
             </section>
 
             {selectedChange.status !== "processing" && selectedChange.evidence && (
@@ -1213,6 +1249,80 @@ export function SpecGraphApp({
                 </button>
               </footer>
             </form>
+          </section>
+        </div>
+      )}
+
+      {analysisProgress && (
+        <div
+          className="scrim modal-scrim"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setAnalysisProgress(null);
+          }}
+        >
+          <section
+            className="analyze-modal analysis-progress-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="analysis-progress-title"
+            aria-describedby="analysis-progress-copy"
+          >
+            <header>
+              <h2 id="analysis-progress-title">
+                {analysisProgress.error
+                  ? "Analysis couldn’t start"
+                  : activeAnalysisRun?.status === "failed"
+                    ? "Analysis couldn’t finish"
+                    : activeAnalysisRun?.status === "succeeded"
+                      ? "Analysis complete"
+                      : "Analysis in progress"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setAnalysisProgress(null)}
+                aria-label="Close analysis progress"
+              >
+                ×
+              </button>
+            </header>
+            <div
+              className={
+                analysisProgress.error || activeAnalysisRun?.status === "failed"
+                  ? "analysis-progress-mark failed"
+                  : activeAnalysisRun?.status === "succeeded"
+                    ? "analysis-progress-mark complete"
+                    : "analysis-progress-mark"
+              }
+              aria-hidden="true"
+            >
+              <span />
+              <span />
+              <span />
+            </div>
+            <p id="analysis-progress-copy" aria-live="polite">
+              {analysisProgress.error
+                ? analysisProgress.error
+                : activeAnalysisRun?.status === "failed"
+                  ? activeAnalysisRun.errorMessage || "SpecGraph could not finish this check."
+                  : activeAnalysisRun?.status === "succeeded"
+                    ? `SpecGraph finished checking ${analysisProgress.target}.`
+                    : `SpecGraph is checking ${analysisProgress.target}. You can close this dialog; the run will continue in the background.`}
+            </p>
+            <footer>
+              <button
+                type="button"
+                className="primary-action wide"
+                autoFocus
+                onClick={() => setAnalysisProgress(null)}
+              >
+                {analysisProgress.error || activeAnalysisRun?.status === "failed"
+                  ? "Close"
+                  : activeAnalysisRun?.status === "succeeded"
+                    ? "View results"
+                    : "Continue in background"}
+              </button>
+            </footer>
           </section>
         </div>
       )}

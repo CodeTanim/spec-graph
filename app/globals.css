@@ -704,6 +704,47 @@ button:disabled {
   margin-top: 30px;
 }
 
+.changed-section {
+  padding-top: 0;
+}
+
+.details-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 16px 2px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.details-section-toggle > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.details-section-toggle small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.details-section-toggle b {
+  min-width: 10px;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.details-section-toggle:hover {
+  background: var(--soft);
+}
+
 .changed-artifact-list {
   margin-top: 12px;
   border-bottom: 1px solid var(--line);
@@ -938,6 +979,40 @@ a.changed-artifact-row:hover strong {
   margin-top: 26px;
 }
 
+.analysis-progress-modal {
+  width: min(460px, 100%);
+}
+
+.analysis-progress-mark {
+  display: flex;
+  gap: 7px;
+  margin-top: 34px;
+}
+
+.analysis-progress-mark span {
+  width: 8px;
+  height: 8px;
+  background: var(--ink);
+  animation: analysis-pulse 900ms ease-in-out infinite alternate;
+}
+
+.analysis-progress-mark span:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.analysis-progress-mark span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+.analysis-progress-mark.complete span {
+  animation: none;
+}
+
+.analysis-progress-mark.failed span {
+  background: var(--muted);
+  animation: none;
+}
+
 .source-provider-options {
   display: flex;
   flex-direction: column;
@@ -1002,6 +1077,11 @@ a.changed-artifact-row:hover strong {
 
 @keyframes modal-in {
   from { opacity: 0; transform: translateY(7px); }
+}
+
+@keyframes analysis-pulse {
+  from { opacity: 0.22; }
+  to { opacity: 1; }
 }
 
 @media (max-width: 680px) {
