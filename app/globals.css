@@ -141,7 +141,6 @@ button:disabled {
   place-items: center;
   border-radius: 8px;
   background: linear-gradient(145deg, #0c71b2, var(--accent-strong));
-  box-shadow: 0 7px 16px rgb(38 148 232 / 28%);
   color: var(--paper);
   font-size: 11px;
 }
@@ -209,16 +208,14 @@ button:disabled {
   border-radius: 10px;
   background: linear-gradient(180deg, #0d75b8, var(--accent-strong));
   color: var(--paper);
-  box-shadow: 0 8px 18px rgb(38 148 232 / 24%);
   padding: 0 18px;
   font-size: 12px;
   font-weight: 700;
-  transition: box-shadow 140ms ease, background 140ms ease, transform 140ms ease;
+  transition: background 140ms ease, transform 140ms ease;
 }
 
 .primary-action:hover {
   background: linear-gradient(180deg, var(--accent-strong), var(--accent-ink));
-  box-shadow: 0 11px 24px rgb(38 148 232 / 32%);
   color: var(--paper);
   transform: translateY(-1px);
 }
@@ -646,7 +643,6 @@ button:disabled {
   border-radius: 10px;
   background: var(--paper);
   color: var(--accent-ink);
-  box-shadow: 0 6px 16px rgb(38 148 232 / 10%);
   padding: 0 14px;
   font-size: 12px;
   font-weight: 700;
