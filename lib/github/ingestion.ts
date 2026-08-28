@@ -17,6 +17,7 @@ import {
 import { contentHash } from "./crypto";
 import { assertRepositoryWithinLimits } from "./limits";
 import type { GitHubSourceProvider } from "../providers/source-provider";
+import { pruneArtifactVersions } from "../providers/version-retention";
 import { parseOpenApiContract, type ParsedOpenApiContract } from "../openapi/parser";
 
 const MAX_FILE_BYTES = 160_000;
@@ -24,8 +25,7 @@ const FETCH_CONCURRENCY = 12;
 const DB_BATCH_SIZE = 20;
 const DB_IN_LIST_SIZE = 40;
 
-type DbBatch = Parameters<SpecGraphDb["batch"]>[0];
-type DbBatchItem = DbBatch[number];
+type DbStatement = PromiseLike<unknown>;
 
 type IndexedFile = {
   path: string;
@@ -55,21 +55,10 @@ async function mapInBatches<T, R>(
   return results;
 }
 
-async function executeInBatches(
-  db: SpecGraphDb,
-  statements: DbBatchItem[],
-): Promise<void> {
+async function executeInBatches(statements: DbStatement[]): Promise<void> {
   for (let index = 0; index < statements.length; index += DB_BATCH_SIZE) {
     const batch = statements.slice(index, index + DB_BATCH_SIZE);
     if (!batch.length) continue;
-    if (typeof db.batch === "function") {
-      await db.batch(batch as unknown as DbBatch);
-      continue;
-    }
-    // PGlite and other Drizzle-compatible development drivers do not expose
-    // Neon HTTP batching. Executing the same bounded statements sequentially
-    // keeps the ingestion contract portable and makes incremental behavior
-    // testable without changing production's batched path.
     for (const statement of batch) await statement;
   }
 }
@@ -243,7 +232,6 @@ export async function syncGitHubSource(
     }
 
     await executeInBatches(
-      db,
       files.map((file) => {
         const existing = existingByPath.get(file.path);
         const artifactId = artifactIds.get(file.path)!;
@@ -279,7 +267,6 @@ export async function syncGitHubSource(
     );
 
     await executeInBatches(
-      db,
       files.map((file) =>
         db
           .insert(artifactVersions)
@@ -298,7 +285,6 @@ export async function syncGitHubSource(
     );
 
     await executeInBatches(
-      db,
       files.flatMap((file) => {
         const parsed = parsedByPath.get(file.path)!;
         return parsed.nodes.map((node) => {
@@ -368,7 +354,7 @@ export async function syncGitHubSource(
           ),
         );
     }
-    const relationshipInserts: DbBatchItem[] = [];
+    const relationshipInserts: DbStatement[] = [];
     for (const file of files) {
       const fromNodeId = nodeIds.get(file.path)?.get(`file:${file.path}`);
       if (!fromNodeId) continue;
@@ -433,7 +419,8 @@ export async function syncGitHubSource(
         );
       }
     }
-    await executeInBatches(db, relationshipInserts);
+    await executeInBatches(relationshipInserts);
+    await pruneArtifactVersions(sourceId, db);
 
     await db
       .update(sources)

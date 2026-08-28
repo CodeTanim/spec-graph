@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, Fragment, type ReactNode, useEffect, useState } from "react";
+import {
+  FormEvent,
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { httpSpecGraphApi, type SpecGraphApi } from "../lib/api-client";
 import {
   emptyDashboardSnapshot,
@@ -170,6 +177,7 @@ export function SpecGraphApp({
   const [syncingSourceId, setSyncingSourceId] = useState("");
   const [sourcePendingRemoval, setSourcePendingRemoval] = useState<SourceItem | null>(null);
   const [removingSourceId, setRemovingSourceId] = useState("");
+  const lastWorkspaceRefreshAt = useRef(Date.now());
 
   useEffect(() => {
     if (!loadOnMount) return;
@@ -359,9 +367,17 @@ export function SpecGraphApp({
     if (!loadOnMount) return;
     let cancelled = false;
     let refreshing = false;
-    const timer = window.setInterval(() => {
-      if (refreshing) return;
+    const refreshWhenReturning = () => {
+      if (
+        document.visibilityState === "hidden" ||
+        refreshing ||
+        Date.now() - lastWorkspaceRefreshAt.current < 60_000
+      ) {
+        return;
+      }
+
       refreshing = true;
+      lastWorkspaceRefreshAt.current = Date.now();
       void Promise.all([api.loadRuns(), api.loadChanges(filter), api.loadSources()])
         .then(([nextRuns, nextChanges, nextSources]) => {
           if (cancelled) return;
@@ -376,10 +392,14 @@ export function SpecGraphApp({
         .finally(() => {
           refreshing = false;
         });
-    }, 5_000);
+    };
+
+    window.addEventListener("focus", refreshWhenReturning);
+    document.addEventListener("visibilitychange", refreshWhenReturning);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshWhenReturning);
+      document.removeEventListener("visibilitychange", refreshWhenReturning);
     };
   }, [api, filter, loadOnMount]);
 

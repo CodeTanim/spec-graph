@@ -9,6 +9,7 @@ import {
   sources,
 } from "../../db/schema";
 import { contentHash } from "../github/crypto";
+import { pruneArtifactVersions } from "../providers/version-retention";
 import { ApiError } from "../server/http";
 import type { ConfluenceSourceProvider } from "./client";
 import { confluenceAccessToken } from "./token-service";
@@ -162,6 +163,7 @@ export async function syncConfluenceSource(
     }
 
     const revision = String(latestVersion);
+    await pruneArtifactVersions(sourceId, db);
     await db.update(sources).set({
       status: "connected",
       currentRevision: revision,

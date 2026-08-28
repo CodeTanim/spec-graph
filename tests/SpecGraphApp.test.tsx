@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SpecGraphApp } from "../app/specgraph-app";
@@ -181,6 +181,44 @@ describe("SpecGraphApp", () => {
     expect(screen.getByText("Queued")).toBeInTheDocument();
     expect(await screen.findByText("1 finding", {}, { timeout: 3000 })).toBeInTheDocument();
     expect(api.loadRun).toHaveBeenCalledWith("run-polling");
+  });
+
+  it("does not repeatedly reload the full workspace while the page is idle", async () => {
+    vi.useFakeTimers();
+    const api = createFakeApi({
+      ...dashboardFixture,
+      runs: { items: [] },
+    });
+    api.loadChanges = vi.fn(api.loadChanges);
+    api.loadRuns = vi.fn(api.loadRuns);
+    api.loadSources = vi.fn(api.loadSources);
+
+    render(
+      <SpecGraphApp
+        api={api}
+        initialData={{
+          ...dashboardFixture,
+          runs: { items: [] },
+        }}
+      />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.loadChanges).toHaveBeenCalledTimes(1);
+    expect(api.loadRuns).toHaveBeenCalledTimes(1);
+    expect(api.loadSources).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(api.loadChanges).toHaveBeenCalledTimes(1);
+    expect(api.loadRuns).toHaveBeenCalledTimes(1);
+    expect(api.loadSources).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
   });
 
   it("persists a review action through the API contract", async () => {

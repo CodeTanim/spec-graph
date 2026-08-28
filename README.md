@@ -63,14 +63,14 @@ Notion and Google Docs appear in the product roadmap but are not connected yet.
 
 - Next.js 16 and React 19
 - Auth.js with GitHub sign-in
-- Neon Postgres with Drizzle ORM
+- PostgreSQL with Drizzle ORM (provider-neutral; Supabase and Neon are supported)
 - Vercel Workflow and Cron for durable manual and daily checks
 - A GitHub App and read-only Confluence OAuth connector
 - Vitest, Testing Library, and PGlite for component and database integration tests
 
 ### Local setup
 
-Requirements: Node.js 22 and a Neon-compatible Postgres database.
+Requirements: Node.js 22 and a PostgreSQL database.
 
 ```bash
 npm install
@@ -80,8 +80,11 @@ npm run dev
 ```
 
 Fill in `.env.local` before migrating. Use the pooled `DATABASE_URL` for the app
-and the direct `DATABASE_URL_UNPOOLED` for migrations. Generate `AUTH_SECRET`
-and `CONNECTOR_ENCRYPTION_KEY` with cryptographically secure random values.
+and the direct `DATABASE_URL_UNPOOLED` for migrations. Vercel's Supabase
+integration supplies the equivalent `POSTGRES_URL` and
+`POSTGRES_URL_NON_POOLING` names automatically; SpecGraph accepts either pair.
+Generate `AUTH_SECRET` and `CONNECTOR_ENCRYPTION_KEY` with cryptographically
+secure random values.
 Provider private keys and secrets must remain in local or hosting environment
 variables; never commit them.
 
@@ -137,8 +140,9 @@ results only until a model and evaluation budget are deliberately selected.
 ### Deployment
 
 The live non-commercial deployment is [spec-graph.vercel.app](https://spec-graph.vercel.app).
-The repository is linked to Vercel and Neon. Vercel environment variables must
-contain the database, Auth.js, GitHub App, and optional Confluence secrets.
+The repository is linked to Vercel and uses a portable PostgreSQL connection.
+Vercel environment variables must contain the database, Auth.js, GitHub App,
+and optional Confluence secrets.
 Apply reviewed Drizzle migrations before promoting code that depends on them.
 
 See [SPECGRAPH_MVP_IMPLEMENTATION_PLAN.md](./SPECGRAPH_MVP_IMPLEMENTATION_PLAN.md)

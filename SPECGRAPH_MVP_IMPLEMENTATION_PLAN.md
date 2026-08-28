@@ -1031,6 +1031,7 @@ Package 6 is complete when the reviewed starter set has exact expected outputs, 
 - [x] Record provenance and analyzer version on relationships and findings.
 - [x] Combine independent relationship signals without turning source-group membership into evidence.
 - [x] Expose a compact evidence type and confidence label only inside expanded finding details.
+- [ ] Make each entry in **What changed** the navigation anchor for its impacts: clicking a changed file or page reveals the linked items that may need updating, why each item was flagged, and the exact relationship/evidence location. Avoid repeating the full changed-item inventory inside every affected-item detail.
 - [x] Bound semantic candidates and source text before any provider call.
 - [x] Freeze and validate the semantic input/output contract.
 - [x] Verify model excerpts byte-for-byte against the supplied artifact revisions before persistence.
@@ -1144,3 +1145,13 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Added persisted symbol and endpoint nodes, structural containment, exact identifier and API relationships, and conservative cross-provider documentation links for strong shared entities.
 - Added multi-signal confidence ranking plus persisted provenance/analyzer versions, shown as one compact explanation inside expanded finding evidence.
 - Completed the provider-neutral semantic safety layer: bounded candidate retrieval, frozen structured I/O, combined confidence, byte-exact evidence verification, semantic/hybrid persistence, usage/cost/failure telemetry, deterministic fallback, and adversarial tests. A paid model remains unconfigured pending comparative evaluation.
+
+### 2026-08-26
+
+- Recorded the next finding-detail refinement: **What changed** should be the primary entry point. A user clicks a changed file or page there to see which linked resources may need updating, the reason for each impact, and the exact evidence connecting them, instead of scanning a repeated list of changed items inside each impact card.
+
+### 2026-08-27
+
+- Diagnosed the production database outage as Neon's 5 GB monthly public-network-transfer quota, not exhausted disk storage. Removed the idle five-second full-workspace polling loop, retained focused polling only for active runs, and refresh stale workspace data when a user returns to the tab.
+- Replaced the Neon-only HTTP database driver with a standard pooled PostgreSQL driver so the same schema can run on Supabase or another PostgreSQL host. Added bounded artifact revision retention (three revisions per artifact) to prevent extracted source and documentation text from growing indefinitely.
+- Production restoration requires provisioning the replacement PostgreSQL project, applying the existing migrations, replacing the Vercel database connection variables, and reconnecting/reindexing sources because the quota-blocked Neon database cannot currently be exported.
