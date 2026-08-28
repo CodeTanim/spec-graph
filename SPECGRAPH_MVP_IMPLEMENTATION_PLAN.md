@@ -1044,6 +1044,21 @@ Package 6 is complete when the reviewed starter set has exact expected outputs, 
 
 Package 7 is ready for provider evaluation when every accepted semantic finding has exact source evidence, provider failures cannot fail deterministic runs, and token/cost telemetry is captured. It is complete only after the hybrid analyzer improves recall without crossing the agreed precision threshold.
 
+### Package 8 — Truthful first-run activation
+
+**Status:** Complete for the core activation states; deeper review-action integrity remains next.
+
+- [x] Distinguish no sources, indexing, ready for a first check, source failure, and checked-with-no-findings states.
+- [x] Reserve **Everything is up to date** for workspaces that completed a check.
+- [x] Put a direct **Connect your first source** action in the default Changes view.
+- [x] Open source setup when Analyze is selected before any source is connected.
+- [x] Keep analysis unavailable while every connected source is still being prepared.
+- [x] Show source freshness and distinct ready, preparing, disconnected, and error status colors.
+- [x] Rename manual source **Sync** to the clearer **Check for updates**.
+- [x] Cover every first-run state with component tests.
+
+Package 8 is complete when a new user always sees the next valid action, the UI never claims a workspace is current before a successful check, and source preparation or failure is visible without relying on a toast.
+
 ---
 
 ## 16. Open Decisions

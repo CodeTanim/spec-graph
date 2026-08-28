@@ -350,6 +350,10 @@ button:disabled {
   box-shadow: var(--shadow-sm);
 }
 
+.change-list.onboarding-list {
+  margin-top: 48px;
+}
+
 .change-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -435,6 +439,11 @@ button:disabled {
 .empty-message span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.empty-action {
+  align-self: flex-start;
+  margin-top: 12px;
 }
 
 .simple-list,
@@ -557,6 +566,12 @@ button:disabled {
   font-size: 11px;
 }
 
+.source-freshness {
+  margin-bottom: 7px;
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
 .source-node-actions {
   display: flex;
   align-items: center;
@@ -616,22 +631,28 @@ button:disabled {
   width: 100%;
 }
 
-.connected {
+.source-status {
   border-radius: 999px;
-  background: var(--linked-soft);
-  color: var(--linked);
   padding: 5px 8px;
   font-size: 10px;
   font-weight: 700;
 }
 
-.source-error {
-  border-radius: 999px;
+.source-status.connected {
+  background: var(--linked-soft);
+  color: var(--linked);
+}
+
+.source-status.pending,
+.source-status.syncing {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.source-status.error,
+.source-status.disconnected {
   background: var(--danger-soft);
   color: var(--danger);
-  padding: 5px 8px;
-  font-size: 10px;
-  font-weight: 700;
 }
 
 .text-action {
@@ -1416,8 +1437,7 @@ a.provider-option:hover {
     grid-template-columns: 34px minmax(0, 1fr);
   }
 
-  .source-node-heading > .connected,
-  .source-node-heading > .source-error {
+  .source-node-heading > .source-status {
     grid-column: 2;
   }
 

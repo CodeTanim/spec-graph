@@ -95,6 +95,17 @@ function sourceStatus(source: SourceItem) {
   }
 }
 
+function sourceFreshness(source: SourceItem) {
+  if (source.status === "pending" || source.status === "syncing") {
+    return "Indexing now";
+  }
+  if (source.status === "error") return "The last check failed";
+  if (source.status === "disconnected") return "Reconnect to continue";
+  return source.lastSyncedAt
+    ? `Last checked ${relativeTime(source.lastSyncedAt)}`
+    : "Not checked yet";
+}
+
 function relationshipSignal(artifact: AffectedArtifact): string {
   const labels: Record<AffectedArtifact["provenance"], string> = {
     USER_DEFINED: "User-confirmed relationship",
@@ -422,6 +433,19 @@ export function SpecGraphApp({
 
   const openCount = changes.counts.open;
   const visibleChanges = changes.items;
+  const hasSources = sources.length > 0;
+  const hasReadySource = sources.some((source) => source.status === "connected");
+  const sourcesPreparing = sources.some(
+    (source) => source.status === "pending" || source.status === "syncing",
+  );
+  const sourcesNeedAttention = sources.some(
+    (source) => source.status === "error" || source.status === "disconnected",
+  );
+  const hasCompletedCheck = Boolean(
+    changes.lastCheckedAt || runs.some((run) => run.status === "succeeded"),
+  );
+  const loadingWorkspace = loadingChanges || loadingSources;
+  const showChangeFilters = changes.counts.total > 0 || (hasSources && hasCompletedCheck);
   const activeAnalysisRun = analysisProgress?.runId
     ? runs.find((run) => run.id === analysisProgress.runId) || null
     : null;
@@ -552,7 +576,7 @@ export function SpecGraphApp({
             ? `${result.source.name} added to this connected group`
           : result.alreadyTracked
             ? `${result.source.name} was already connected`
-            : `${result.source.name} connected · indexing started`,
+            : `${result.source.name} connected. Preparing it now.`,
       );
     } catch (connectionError) {
       setSourceSetupError(
@@ -589,7 +613,7 @@ export function SpecGraphApp({
             ? `${result.source.name} added to this connected group`
           : result.alreadyTracked
             ? `${result.source.name} was already connected`
-            : `${result.source.name} connected · indexing started`,
+            : `${result.source.name} connected. Preparing it now.`,
       );
     } catch (connectionError) {
       setSourceSetupError(
@@ -608,7 +632,7 @@ export function SpecGraphApp({
     try {
       const result = await api.syncSource(sourceId);
       await refreshSources();
-      setToast(`${result.source.name} sync started`);
+      setToast(`${result.source.name} check started`);
     } catch (syncError) {
       setToast(syncError instanceof Error ? syncError.message : "The source could not be synced.");
     } finally {
@@ -662,7 +686,12 @@ export function SpecGraphApp({
 
   function requestAnalysis() {
     if (!sources.length) {
-      setToast("Connect a source before starting an analysis.");
+      openAddSource();
+      return;
+    }
+    if (!hasReadySource) {
+      setView("sources");
+      setToast("Your sources are still being prepared.");
       return;
     }
     setAnalyzeOpen(true);
@@ -687,12 +716,13 @@ export function SpecGraphApp({
             <strong>{name}</strong>
             <small>{detail}</small>
           </div>
-          <span className={source.status === "error" ? "source-error" : "connected"}>
+          <span className={`source-status ${source.status}`}>
             {sourceStatus(source)}
           </span>
         </div>
 
         <div className="source-node-contents">
+          <small className="source-freshness">{sourceFreshness(source)}</small>
           {source.provider === "github" ? (
             <>
               <span>{indexedFiles(source.codeArtifactCount)} of source code</span>
@@ -708,10 +738,19 @@ export function SpecGraphApp({
             <button
               type="button"
               className="source-sync"
-              disabled={Boolean(syncingSourceId)}
+              disabled={
+                Boolean(syncingSourceId) ||
+                source.status === "syncing" ||
+                source.status === "pending"
+              }
+              aria-label={`Check ${name} for updates`}
               onClick={() => void syncSource(source.id)}
             >
-              {syncingSourceId === source.id ? "Syncing…" : "Sync"}
+              {syncingSourceId === source.id
+                ? "Checking…"
+                : source.status === "syncing" || source.status === "pending"
+                  ? "Preparing…"
+                  : "Check for updates"}
             </button>
             <button
               type="button"
@@ -775,46 +814,65 @@ export function SpecGraphApp({
             <section className="intro" aria-labelledby="changes-title">
               <p className="section-label">Changes</p>
               <h1 id="changes-title">
-                {loadingChanges
+                {loadingWorkspace
                   ? "Checking your workspace"
-                  : openCount === 0
-                    ? "Everything is up to date"
-                    : `${openCount} ${openCount === 1 ? "change needs" : "changes need"} your attention`}
+                  : openCount > 0
+                    ? `${openCount} ${openCount === 1 ? "change needs" : "changes need"} your attention`
+                    : !hasSources
+                      ? "Connect your first source"
+                      : sourcesNeedAttention
+                        ? "A source needs attention"
+                        : sourcesPreparing
+                          ? "Preparing your sources"
+                          : !hasCompletedCheck
+                            ? "Ready for your first check"
+                            : "Everything is up to date"}
               </h1>
               <p>
-                We watch your connected docs and code. When something changes,
-                we show what else may need updating.
+                {openCount > 0
+                  ? "Review what changed, what may now be outdated, and the evidence connecting them."
+                  : !hasSources && !loadingWorkspace
+                    ? "Connect code and documentation so SpecGraph can show what may need updating."
+                    : sourcesNeedAttention
+                      ? "Open Sources to reconnect or try checking the source again."
+                      : sourcesPreparing
+                        ? "We’re indexing what you connected. You can leave this page while it finishes."
+                        : !hasCompletedCheck
+                          ? "Your sources are connected. Run a check to find linked updates."
+                          : "We watch your connected docs and code. When something changes, we show what else may need updating."}
               </p>
             </section>
 
-            <div className="list-toolbar" aria-label="Change filters">
-              <div>
-                <button
-                  type="button"
-                  aria-pressed={filter === "open"}
-                  onClick={() => void chooseFilter("open")}
-                >
-                  Open <span>{openCount}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={filter === "all"}
-                  onClick={() => void chooseFilter("all")}
-                >
-                  All <span>{changes.counts.total}</span>
-                </button>
+            {showChangeFilters && (
+              <div className="list-toolbar" aria-label="Change filters">
+                <div>
+                  <button
+                    type="button"
+                    aria-pressed={filter === "open"}
+                    onClick={() => void chooseFilter("open")}
+                  >
+                    Open <span>{openCount}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={filter === "all"}
+                    onClick={() => void chooseFilter("all")}
+                  >
+                    All <span>{changes.counts.total}</span>
+                  </button>
+                </div>
+                <p>
+                  {loadingChanges
+                    ? "Checking…"
+                    : changes.lastCheckedAt
+                      ? `Last checked ${relativeTime(changes.lastCheckedAt)}`
+                      : "Not checked yet"}
+                </p>
               </div>
-              <p>
-                {loadingChanges
-                  ? "Checking…"
-                  : changes.lastCheckedAt
-                    ? `Last checked ${relativeTime(changes.lastCheckedAt)}`
-                    : "Not checked yet"}
-              </p>
-            </div>
+            )}
 
             <section
-              className="change-list"
+              className={`change-list${showChangeFilters ? "" : " onboarding-list"}`}
               aria-label="Detected changes"
               aria-busy={loadingChanges}
             >
@@ -845,12 +903,60 @@ export function SpecGraphApp({
               ))}
               {!loadingChanges && !visibleChanges.length && (
                 <div className="empty-message">
-                  <strong>{filter === "open" ? "No open changes." : "No changes yet."}</strong>
+                  <strong>
+                    {!hasSources
+                      ? "Nothing is connected yet."
+                      : sourcesNeedAttention
+                        ? "A connected source needs attention."
+                        : sourcesPreparing
+                          ? "Your sources are being prepared."
+                          : !hasCompletedCheck
+                            ? "Everything is ready for a first check."
+                            : filter === "open"
+                              ? "No open changes."
+                              : "No changes yet."}
+                  </strong>
                   <span>
-                    {sources.length
-                      ? "We’ll add one here when something needs attention."
-                      : "Connect a source to start checking code and documentation."}
+                    {!hasSources
+                      ? "Add a repository or documentation source to begin."
+                      : sourcesNeedAttention
+                        ? "Review its connection before relying on the latest results."
+                        : sourcesPreparing
+                          ? "We’ll let you know when they are ready to check."
+                          : !hasCompletedCheck
+                            ? "Run a check to see whether connected items may be outdated."
+                            : "We’ll add one here when something needs attention."}
                   </span>
+                  {!hasSources && (
+                    <button
+                      type="button"
+                      className="primary-action empty-action"
+                      onClick={() => openAddSource()}
+                    >
+                      Connect your first source
+                    </button>
+                  )}
+                  {hasSources &&
+                    !sourcesPreparing &&
+                    !sourcesNeedAttention &&
+                    !hasCompletedCheck && (
+                      <button
+                        type="button"
+                        className="primary-action empty-action"
+                        onClick={requestAnalysis}
+                      >
+                        Run your first check
+                      </button>
+                    )}
+                  {hasSources && sourcesNeedAttention && openCount === 0 && (
+                    <button
+                      type="button"
+                      className="text-action empty-action"
+                      onClick={() => chooseView("sources")}
+                    >
+                      Review sources
+                    </button>
+                  )}
                 </div>
               )}
             </section>

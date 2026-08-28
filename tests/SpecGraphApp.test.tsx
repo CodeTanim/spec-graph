@@ -2,6 +2,7 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SpecGraphApp } from "../app/specgraph-app";
+import { emptyDashboardSnapshot } from "../lib/contracts/specgraph";
 import { createFakeApi, dashboardFixture } from "./fixtures/specgraph";
 
 function renderApp() {
@@ -19,6 +20,152 @@ afterEach(() => {
 });
 
 describe("SpecGraphApp", () => {
+  it("guides a fresh workspace directly into source setup", async () => {
+    const user = userEvent.setup();
+    render(
+      <SpecGraphApp
+        api={createFakeApi(emptyDashboardSnapshot)}
+        initialData={emptyDashboardSnapshot}
+        loadOnMount={false}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Connect your first source" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Everything is up to date")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Change filters")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Connect your first source" }));
+    expect(
+      screen.getByRole("dialog", { name: "Add your first source" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Close source chooser" }));
+    await user.click(screen.getByRole("button", { name: "Analyze" }));
+    expect(
+      screen.getByRole("dialog", { name: "Add your first source" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows when connected sources are still being prepared", async () => {
+    const user = userEvent.setup();
+    const source = {
+      ...dashboardFixture.sources.items[0],
+      status: "syncing" as const,
+      lastSyncedAt: null,
+    };
+    const snapshot = {
+      ...emptyDashboardSnapshot,
+      sources: {
+        items: [source],
+        groups: [{ id: "group-preparing", sources: [source] }],
+      },
+    };
+    render(
+      <SpecGraphApp
+        api={createFakeApi(snapshot)}
+        initialData={snapshot}
+        loadOnMount={false}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Preparing your sources" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+    expect(screen.getByText("Indexing now")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Check platform-api for updates" }),
+    ).toBeDisabled();
+  });
+
+  it("offers the first check only after a source is ready", async () => {
+    const user = userEvent.setup();
+    const source = dashboardFixture.sources.items[0];
+    const snapshot = {
+      ...emptyDashboardSnapshot,
+      sources: {
+        items: [source],
+        groups: [{ id: "group-ready", sources: [source] }],
+      },
+    };
+    render(
+      <SpecGraphApp
+        api={createFakeApi(snapshot)}
+        initialData={snapshot}
+        loadOnMount={false}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Ready for your first check" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Run your first check" }));
+    expect(screen.getByRole("dialog", { name: "Analyze now" })).toBeInTheDocument();
+  });
+
+  it("only says everything is up to date after a completed check", () => {
+    const source = dashboardFixture.sources.items[0];
+    const completedRun = {
+      ...dashboardFixture.runs.items[0],
+      findingsCount: 0,
+      status: "succeeded" as const,
+    };
+    const snapshot = {
+      changes: {
+        items: [],
+        counts: { open: 0, total: 0 },
+        lastCheckedAt: completedRun.completedAt,
+      },
+      runs: { items: [completedRun] },
+      sources: {
+        items: [source],
+        groups: [{ id: "group-checked", sources: [source] }],
+      },
+    };
+    render(
+      <SpecGraphApp
+        api={createFakeApi(snapshot)}
+        initialData={snapshot}
+        loadOnMount={false}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Everything is up to date" }),
+    ).toBeInTheDocument();
+  });
+
+  it("directs source failures to the source screen", async () => {
+    const user = userEvent.setup();
+    const source = {
+      ...dashboardFixture.sources.items[0],
+      status: "error" as const,
+    };
+    const snapshot = {
+      ...emptyDashboardSnapshot,
+      sources: {
+        items: [source],
+        groups: [{ id: "group-error", sources: [source] }],
+      },
+    };
+    render(
+      <SpecGraphApp
+        api={createFakeApi(snapshot)}
+        initialData={snapshot}
+        loadOnMount={false}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "A source needs attention" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Review sources" }));
+    expect(screen.getByRole("heading", { name: "Connected sources" })).toBeInTheDocument();
+    expect(screen.getByText("The last check failed")).toBeInTheDocument();
+  });
+
   it("starts with only changes that need attention", async () => {
     const user = userEvent.setup();
     renderApp();
