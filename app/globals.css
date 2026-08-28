@@ -1053,11 +1053,6 @@ a.changed-artifact-row:hover strong {
   font-size: 12px;
 }
 
-.causal-summary a {
-  display: inline;
-  font-size: inherit;
-}
-
 .artifact-evidence {
   margin-top: 22px;
   border-top: 1px solid var(--line);

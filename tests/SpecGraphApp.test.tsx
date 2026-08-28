@@ -229,14 +229,7 @@ describe("SpecGraphApp", () => {
     expect(causalSummary).toHaveTextContent(
       "Customer Refund Guide may need updating because policy.ts changed.",
     );
-    expect(causalSummary?.querySelectorAll("a")[0]).toHaveAttribute(
-      "href",
-      "https://acme.atlassian.net/wiki/spaces/OPS/pages/100/refunds",
-    );
-    expect(causalSummary?.querySelectorAll("a")[1]).toHaveAttribute(
-      "href",
-      "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts#L18-L21",
-    );
+    expect(causalSummary?.querySelectorAll("a")).toHaveLength(0);
     await user.click(screen.getByText("Why SpecGraph flagged this"));
     expect(
       screen.getByText("Refunds are available within 30 days of the original charge."),
@@ -248,7 +241,7 @@ describe("SpecGraphApp", () => {
     );
     expect(screen.getByRole("link", { name: "Open policy.ts" })).toHaveAttribute(
       "href",
-      "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts#L18-L21",
+      "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts",
     );
     expect(
       screen.getByRole("link", { name: "Open Customer Refund Guide" }),

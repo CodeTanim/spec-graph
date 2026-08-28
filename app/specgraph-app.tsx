@@ -1398,8 +1398,7 @@ export function SpecGraphApp({
                       : selectedChange.changedArtifacts.length > 1
                         ? `${selectedChange.changedArtifacts.length} changed source items`
                         : selectedChange.source;
-                    const changedItemUrl =
-                      artifact.evidenceUrl || changedArtifact?.externalUrl || null;
+                    const changedItemUrl = changedArtifact?.externalUrl || null;
 
                     return (
                       <div className="artifact-item" key={artifact.id}>
@@ -1436,26 +1435,8 @@ export function SpecGraphApp({
                         {expanded && (
                           <div className="artifact-preview" id={detailsId}>
                             <p className="causal-summary">
-                              {artifact.externalUrl ? (
-                                <a
-                                  href={artifact.externalUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {artifact.name}
-                                </a>
-                              ) : (
-                                <strong>{artifact.name}</strong>
-                              )}{" "}
-                              may need updating because{" "}
-                              {changedItemUrl ? (
-                                <a href={changedItemUrl} target="_blank" rel="noreferrer">
-                                  {changedItemLabel}
-                                </a>
-                              ) : (
-                                <strong>{changedItemLabel}</strong>
-                              )}{" "}
-                              changed.
+                              <strong>{artifact.name}</strong> may need updating because{" "}
+                              <strong>{changedItemLabel}</strong> changed.
                             </p>
                             <div className="artifact-preview-links">
                               {artifact.externalUrl && (
