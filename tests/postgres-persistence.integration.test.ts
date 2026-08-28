@@ -12,6 +12,7 @@ import {
   artifacts,
   changeEvents,
   findingEvidence,
+  findingActions,
   findings,
   githubInstallations,
   graphNodes,
@@ -41,6 +42,7 @@ import {
   listChanges,
   listRuns,
   updateChange,
+  updateFinding,
 } from "../lib/server/specgraph-repository";
 
 let client: PGlite;
@@ -946,33 +948,89 @@ components:
       createdAt: now,
       updatedAt: now,
     });
-    await db.insert(findings).values({
-      id: "finding_1",
-      runId: "run_1",
-      affectedNodeId: "node_doc",
-      title: "Refund documentation may be stale",
-      summary: "The documentation still says 30 days.",
-      deduplicationKey: "refund-doc",
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.insert(findingEvidence).values({
-      id: "evidence_1",
-      findingId: "finding_1",
-      artifactVersionId: "ver_doc",
-      location: "docs/refunds.md:1",
-      excerpt: "Refunds are available for 30 days.",
-      sourceUrl:
-        "https://github.com/acme/platform-api/blob/abc123/docs/refunds.md#L1",
-      createdAt: now,
-    });
+    await db.insert(findings).values([
+      {
+        id: "finding_1",
+        runId: "run_1",
+        affectedNodeId: "node_doc",
+        title: "Refund documentation may be stale",
+        summary: "The documentation still says 30 days.",
+        deduplicationKey: "refund-doc",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "finding_2",
+        runId: "run_1",
+        affectedNodeId: "node_doc",
+        title: "Refund example may be stale",
+        summary: "The example still says 30 days.",
+        deduplicationKey: "refund-example",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    await db.insert(findingEvidence).values([
+      {
+        id: "evidence_1",
+        findingId: "finding_1",
+        artifactVersionId: "ver_doc",
+        location: "docs/refunds.md:1",
+        excerpt: "Refunds are available for 30 days.",
+        sourceUrl:
+          "https://github.com/acme/platform-api/blob/abc123/docs/refunds.md#L1",
+        createdAt: now,
+      },
+      {
+        id: "evidence_2",
+        findingId: "finding_2",
+        artifactVersionId: "ver_doc",
+        location: "docs/refunds.md:1",
+        excerpt: "Example: request a refund within 30 days.",
+        sourceUrl:
+          "https://github.com/acme/platform-api/blob/abc123/docs/refunds.md#L1",
+        createdAt: now,
+      },
+    ]);
 
     const open = await listChanges(context.workspace.id, "open", db);
     expect(open.items[0].changedArtifacts).toEqual([
       expect.objectContaining({ location: "src/refunds/policy.ts", kind: "Code" }),
     ]);
-    expect(open.items[0].artifacts[0].externalUrl).toContain("github.com");
-    expect(open.items[0].artifacts[0].evidenceLocation).toBe("docs/refunds.md:1");
+    const firstSuggestion = open.items[0].artifacts.find(
+      (artifact) => artifact.id === "finding_1",
+    );
+    expect(firstSuggestion?.externalUrl).toContain("github.com");
+    expect(firstSuggestion?.evidenceLocation).toBe("docs/refunds.md:1");
+    expect(firstSuggestion?.reviewStatus).toBe("open");
+    expect(firstSuggestion?.changedArtifact).toEqual(
+      expect.objectContaining({
+        name: "policy.ts",
+        location: "src/refunds/policy.ts",
+      }),
+    );
+
+    await updateFinding(
+      context.workspace.id,
+      "chg_1",
+      "finding_1",
+      context.user.databaseId,
+      "resolve",
+      db,
+    );
+    const partiallyReviewed = await listChanges(context.workspace.id, "open", db);
+    expect(partiallyReviewed.items).toHaveLength(1);
+    expect(
+      partiallyReviewed.items[0].artifacts.find(
+        (artifact) => artifact.id === "finding_1",
+      )?.reviewStatus,
+    ).toBe("resolved");
+    expect(
+      partiallyReviewed.items[0].artifacts.find(
+        (artifact) => artifact.id === "finding_2",
+      )?.reviewStatus,
+    ).toBe("open");
+
     await updateChange(
       context.workspace.id,
       "chg_1",
@@ -982,13 +1040,19 @@ components:
     );
     expect((await listChanges(context.workspace.id, "open", db)).items).toHaveLength(0);
     expect((await listChanges(context.workspace.id, "all", db)).items[0].status).toBe(
-      "checked",
+      "reviewed",
     );
-    const [persistedFinding] = await db
-      .select({ status: findings.status })
+    const persistedFindings = await db
+      .select({ id: findings.id, status: findings.status })
       .from(findings)
-      .where(eq(findings.id, "finding_1"));
-    expect(persistedFinding.status).toBe("dismissed");
+      .where(eq(findings.runId, "run_1"));
+    expect(persistedFindings).toEqual(
+      expect.arrayContaining([
+        { id: "finding_1", status: "resolved" },
+        { id: "finding_2", status: "dismissed" },
+      ]),
+    );
+    expect(await db.select().from(findingActions)).toHaveLength(2);
   });
 
   it("persists only cross-domain impacts and supports documentation-to-documentation", async () => {

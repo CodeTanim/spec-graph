@@ -225,6 +225,19 @@ describe("SpecGraphApp", () => {
     );
     await user.click(screen.getByRole("button", { name: /Customer Refund Guide/ }));
 
+    const causalSummary = document.querySelector(".causal-summary");
+    expect(causalSummary).toHaveTextContent(
+      "Customer Refund Guide may need updating because policy.ts changed.",
+    );
+    expect(causalSummary?.querySelectorAll("a")[0]).toHaveAttribute(
+      "href",
+      "https://acme.atlassian.net/wiki/spaces/OPS/pages/100/refunds",
+    );
+    expect(causalSummary?.querySelectorAll("a")[1]).toHaveAttribute(
+      "href",
+      "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts#L18-L21",
+    );
+    await user.click(screen.getByText("Why SpecGraph flagged this"));
     expect(
       screen.getByText("Refunds are available within 30 days of the original charge."),
     ).toBeInTheDocument();
@@ -233,11 +246,13 @@ describe("SpecGraphApp", () => {
     expect(relationshipEvidence).toHaveTextContent(
       "src/refunds/policy.ts:18",
     );
-    expect(screen.getByRole("link", { name: /Open evidence/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Open policy.ts" })).toHaveAttribute(
       "href",
       "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts#L18-L21",
     );
-    expect(screen.getByRole("link", { name: /Open affected source/ })).toHaveAttribute(
+    expect(
+      screen.getByRole("link", { name: "Open Customer Refund Guide" }),
+    ).toHaveAttribute(
       "href",
       "https://acme.atlassian.net/wiki/spaces/OPS/pages/100/refunds",
     );
@@ -368,19 +383,111 @@ describe("SpecGraphApp", () => {
     vi.useRealTimers();
   });
 
-  it("persists a review action through the API contract", async () => {
+  it("persists one suggestion review without silently closing the whole change", async () => {
     const user = userEvent.setup();
     renderApp();
 
     await user.click(
       screen.getByRole("button", { name: /Refund validation window changed/ }),
     );
-    await user.click(screen.getByRole("button", { name: "Mark resolved" }));
+    await user.click(screen.getByRole("button", { name: /Customer Refund Guide/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Mark suggestion resolved" }),
+    );
+
+    expect(screen.getByText("Resolved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reopen suggestion" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reopen all 1 suggestion" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Customer Refund Guide resolved",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Close change details" }));
 
     expect(
       screen.queryByRole("button", { name: /Refund validation window changed/ }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Change resolved");
+  });
+
+  it("keeps mixed review decisions visible and labels bulk actions explicitly", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /Reason is now required for refund requests/,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: /Refund SDK/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Mark suggestion resolved" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Resolve all 1 open suggestion" }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss all 1 open suggestion" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "All 6" }));
+    const reviewedChange = screen.getByRole("button", {
+      name: /Reason is now required for refund requests.*Reviewed/,
+    });
+    expect(reviewedChange).toBeInTheDocument();
+    await user.click(reviewedChange);
+    expect(screen.getAllByText("Resolved").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Dismissed").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: /API request guide/ }));
+    await user.click(screen.getByRole("button", { name: "Reopen suggestion" }));
+    expect(
+      screen.getByRole("button", { name: "Mark suggestion resolved" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the completed run's actual findings from View results", async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    const completedRunId = "run-completed-manual";
+    api.startRun = vi.fn(async () => ({
+      run: {
+        ...dashboardFixture.runs.items[0],
+        id: completedRunId,
+        status: "succeeded" as const,
+        progress: 100,
+      },
+    }));
+    api.loadChanges = vi.fn(async () => ({
+      ...dashboardFixture.changes,
+      items: [
+        {
+          ...dashboardFixture.changes.items[0],
+          runId: completedRunId,
+        },
+        ...dashboardFixture.changes.items.slice(1),
+      ],
+    }));
+    render(
+      <SpecGraphApp
+        api={api}
+        initialData={dashboardFixture}
+        loadOnMount={false}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Analyze" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "What should we check?" }),
+      "refund policy",
+    );
+    await user.click(screen.getByRole("button", { name: "Run analysis" }));
+    await user.click(screen.getByRole("button", { name: "View results" }));
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Refund validation window changed",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("keeps connected sources understandable", async () => {

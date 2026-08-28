@@ -173,7 +173,10 @@ async function listAffectedArtifacts(
       evidenceExcerpt: findingEvidence.excerpt,
       evidenceUrl: findingEvidence.sourceUrl,
       changedArtifactKind: changedArtifactRecords.kind,
+      changedArtifactId: changedArtifactRecords.id,
+      changedArtifactTitle: changedArtifactRecords.title,
       changedArtifactPath: changedArtifactRecords.path,
+      changedArtifactUrl: changedArtifactRecords.canonicalUrl,
       relationshipType: relationships.type,
       relationshipFromNodeId: relationships.fromNodeId,
       relationshipEvidence: relationships.evidence,
@@ -265,6 +268,18 @@ async function listAffectedArtifacts(
       name: row.artifactTitle || row.findingTitle,
       kind: artifactKind(row.artifactKind),
       location: row.artifactPath || "Source location unavailable",
+      changedArtifact: row.changedArtifactPath
+        ? {
+            id:
+              row.changedArtifactId ||
+              row.changedNodeId ||
+              row.changedArtifactPath,
+            name: row.changedArtifactTitle || row.changedArtifactPath,
+            kind: artifactKind(row.changedArtifactKind),
+            location: row.changedArtifactPath,
+            externalUrl: row.changedArtifactUrl,
+          }
+        : null,
       evidenceLocation: reconstructed
         ? `${row.relationshipEvidencePath}:${reconstructed.startLine}`
         : row.evidenceLocation || "Evidence location unavailable",
@@ -301,6 +316,7 @@ function toAffectedArtifact(
     name: item.name,
     kind: item.kind,
     location: item.location,
+    changedArtifact: item.changedArtifact,
     evidenceLocation: item.evidenceLocation,
     excerpt: item.excerpt,
     reason: item.reason,
@@ -309,7 +325,23 @@ function toAffectedArtifact(
     provenance: item.provenance,
     externalUrl: item.externalUrl,
     evidenceUrl: item.evidenceUrl,
+    reviewStatus: item.reviewStatus,
   };
+}
+
+function reviewedChangeStatus(
+  affected: Array<
+    AffectedArtifact & { reviewStatus: "open" | "resolved" | "dismissed" }
+  >,
+): ChangeItem["status"] {
+  if (affected.some((item) => item.reviewStatus === "open")) return "open";
+  if (affected.length && affected.every((item) => item.reviewStatus === "resolved")) {
+    return "resolved";
+  }
+  if (affected.length && affected.every((item) => item.reviewStatus === "dismissed")) {
+    return "dismissed";
+  }
+  return "reviewed";
 }
 
 export async function listChanges(
@@ -347,12 +379,15 @@ export async function listChanges(
         row.sourceUrl,
         db,
       );
+      const affectedWithChangedSource = affected.map((item) =>
+        item.changedArtifact || changedArtifacts.length !== 1
+          ? item
+          : { ...item, changedArtifact: changedArtifacts[0] },
+      );
       const status =
         row.runStatus === "queued" || row.runStatus === "running"
           ? "processing"
-          : affected.some((item) => item.reviewStatus === "open")
-            ? "open"
-            : "checked";
+          : reviewedChangeStatus(affected);
 
       return {
         id: row.changeId,
@@ -366,7 +401,7 @@ export async function listChanges(
         summary: row.summary,
         evidence: row.evidenceSummary,
         changedArtifacts,
-        artifacts: affected.map(toAffectedArtifact),
+        artifacts: affectedWithChangedSource.map(toAffectedArtifact),
       };
     }),
   );
@@ -417,7 +452,7 @@ export async function updateChange(
   }
 
   const findingRows = await db
-    .select({ id: findings.id })
+    .select({ id: findings.id, status: findings.status })
     .from(findings)
     .where(inArray(findings.runId, runRows.map((run) => run.id)));
 
@@ -429,7 +464,60 @@ export async function updateChange(
     action === "dismiss" ? "dismissed" : action === "resolve" ? "resolved" : "open";
   const now = new Date().toISOString();
 
-  for (const finding of findingRows) {
+  const applicableFindings = findingRows.filter((finding) =>
+    action === "reopen" ? finding.status !== "open" : finding.status === "open",
+  );
+
+  for (const finding of applicableFindings) {
+    await db
+      .update(findings)
+      .set({ status: nextStatus, updatedAt: now })
+      .where(eq(findings.id, finding.id));
+    await db.insert(findingActions).values({
+      id: `act_${crypto.randomUUID()}`,
+      findingId: finding.id,
+      userId,
+      action,
+      createdAt: now,
+    });
+  }
+
+  return getChange(workspaceId, changeId, db);
+}
+
+export async function updateFinding(
+  workspaceId: string,
+  changeId: string,
+  findingId: string,
+  userId: string,
+  action: FindingAction,
+  db: SpecGraphDb = getDb(),
+): Promise<ChangeItem> {
+  const [finding] = await db
+    .select({ id: findings.id, status: findings.status })
+    .from(findings)
+    .innerJoin(analysisRuns, eq(findings.runId, analysisRuns.id))
+    .where(
+      and(
+        eq(findings.id, findingId),
+        eq(analysisRuns.workspaceId, workspaceId),
+        eq(analysisRuns.changeEventId, changeId),
+      ),
+    )
+    .limit(1);
+
+  if (!finding) {
+    throw new ApiError(
+      404,
+      "FINDING_NOT_FOUND",
+      "That suggestion was not found for this change.",
+    );
+  }
+
+  const nextStatus =
+    action === "dismiss" ? "dismissed" : action === "resolve" ? "resolved" : "open";
+  if (finding.status !== nextStatus) {
+    const now = new Date().toISOString();
     await db
       .update(findings)
       .set({ status: nextStatus, updatedAt: now })

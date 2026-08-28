@@ -37,6 +37,14 @@ const changes: ChangeItem[] = [
         name: "Customer Refund Guide",
         kind: "Confluence",
         location: "Customer Operations / Refunds / Eligibility",
+        changedArtifact: {
+          id: "src/refunds/policy.ts",
+          name: "policy.ts",
+          kind: "Code",
+          location: "src/refunds/policy.ts",
+          externalUrl:
+            "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts",
+        },
         evidenceLocation: "src/refunds/policy.ts:18",
         excerpt: "Refunds are available within 30 days of the original charge.",
         reason: "The page still contains the previous refund window.",
@@ -46,6 +54,7 @@ const changes: ChangeItem[] = [
         externalUrl: "https://acme.atlassian.net/wiki/spaces/OPS/pages/100/refunds",
         evidenceUrl:
           "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts#L18-L21",
+        reviewStatus: "open",
       },
     ],
   },
@@ -76,6 +85,14 @@ const changes: ChangeItem[] = [
         name: "Refund SDK",
         kind: "Code",
         location: "packages/sdk/src/refunds.ts / createRefund",
+        changedArtifact: {
+          id: "api/openapi.yaml",
+          name: "openapi.yaml",
+          kind: "OpenAPI",
+          location: "api/openapi.yaml",
+          externalUrl:
+            "https://github.com/acme/platform-api/blob/def456/api/openapi.yaml",
+        },
         evidenceLocation: "api/openapi.yaml:42",
         excerpt: "createRefund({ transactionId })",
         reason: "The SDK still omits the new reason field.",
@@ -85,12 +102,21 @@ const changes: ChangeItem[] = [
         externalUrl: "https://github.com/acme/platform-api/blob/def456/packages/sdk/src/refunds.ts",
         evidenceUrl:
           "https://github.com/acme/platform-api/blob/def456/api/openapi.yaml#L42-L45",
+        reviewStatus: "open",
       },
       {
         id: "finding-refund-docs",
         name: "API request guide",
         kind: "Markdown",
         location: "docs/api/refunds.md / Request body",
+        changedArtifact: {
+          id: "api/openapi.yaml",
+          name: "openapi.yaml",
+          kind: "OpenAPI",
+          location: "api/openapi.yaml",
+          externalUrl:
+            "https://github.com/acme/platform-api/blob/def456/api/openapi.yaml",
+        },
         evidenceLocation: "docs/api/refunds.md:22",
         excerpt: "{ \"transactionId\": \"txn_123\" }",
         reason: "The request example still omits the reason field.",
@@ -100,6 +126,7 @@ const changes: ChangeItem[] = [
         externalUrl: "https://github.com/acme/platform-api/blob/def456/docs/api/refunds.md",
         evidenceUrl:
           "https://github.com/acme/platform-api/blob/def456/docs/api/refunds.md#L22-L25",
+        reviewStatus: "open",
       },
     ],
   },
@@ -129,6 +156,13 @@ const changes: ChangeItem[] = [
         name: "Payout API guide",
         kind: "Markdown",
         location: "docs/api/payouts.md / Response",
+        changedArtifact: {
+          id: "api/openapi.yaml",
+          name: "openapi.yaml",
+          kind: "OpenAPI",
+          location: "api/openapi.yaml",
+          externalUrl: null,
+        },
         evidenceLocation: "docs/api/payouts.md:31",
         excerpt: "{ \"id\": \"po_123\", \"amount\": 4200 }",
         reason: "The response example does not include settlementStatus.",
@@ -137,6 +171,7 @@ const changes: ChangeItem[] = [
         provenance: "OPENAPI_ENTITY",
         externalUrl: null,
         evidenceUrl: null,
+        reviewStatus: "open",
       },
     ],
   },
@@ -169,7 +204,7 @@ const changes: ChangeItem[] = [
     source: "Confluence / Authentication",
     sourceUrl: null,
     occurredAt: "2026-08-14T15:00:00.000Z",
-    status: "checked",
+    status: "resolved",
     affected: 0,
     summary: "A documentation clarification was reviewed against the repository README.",
     evidence: "The README and page describe the same authentication flow.",
@@ -191,7 +226,7 @@ const changes: ChangeItem[] = [
     source: "Confluence / Settlement Operations",
     sourceUrl: null,
     occurredAt: "2026-08-13T15:00:00.000Z",
-    status: "checked",
+    status: "dismissed",
     affected: 0,
     summary: "The runbook owner changed.",
     evidence: "The ownership entry was reviewed.",
@@ -216,9 +251,7 @@ const runs: RunItem[] = changes.map((change) => ({
   status:
     change.status === "processing"
       ? "running"
-      : change.status === "checked" || change.status === "open"
-        ? "succeeded"
-        : "failed",
+      : "succeeded",
   progress: change.status === "processing" ? 45 : 100,
   createdAt: change.occurredAt,
   completedAt: change.status === "processing" ? null : change.occurredAt,
@@ -286,6 +319,29 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
     };
   }
 
+  function reviewChange(
+    change: ChangeItem,
+    findingId: string | null,
+    action: FindingAction,
+  ): ChangeItem {
+    const nextReviewStatus: ChangeItem["artifacts"][number]["reviewStatus"] =
+      action === "reopen" ? "open" : action === "resolve" ? "resolved" : "dismissed";
+    const artifacts = change.artifacts.map((artifact) => {
+      if (findingId && artifact.id !== findingId) return artifact;
+      if (action !== "reopen" && artifact.reviewStatus !== "open") return artifact;
+      return { ...artifact, reviewStatus: nextReviewStatus };
+    });
+    const reviewStatuses = new Set(artifacts.map((artifact) => artifact.reviewStatus));
+    const status: ChangeItem["status"] = reviewStatuses.has("open")
+      ? "open"
+      : reviewStatuses.size === 1 && reviewStatuses.has("resolved")
+        ? "resolved"
+        : reviewStatuses.size === 1 && reviewStatuses.has("dismissed")
+          ? "dismissed"
+          : "reviewed";
+    return { ...change, artifacts, status };
+  }
+
   return {
     async loadChanges(filter) {
       return changeResponse(filter);
@@ -296,11 +352,18 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
       return item;
     },
     async updateChange(id, action: FindingAction) {
-      const nextStatus = action === "reopen" ? "open" : "checked";
       currentChanges = currentChanges.map((change) =>
-        change.id === id ? { ...change, status: nextStatus } : change,
+        change.id === id ? reviewChange(change, null, action) : change,
       );
       const item = currentChanges.find((change) => change.id === id);
+      if (!item) throw new Error("Change not found");
+      return item;
+    },
+    async updateFinding(changeId, findingId, action: FindingAction) {
+      currentChanges = currentChanges.map((change) =>
+        change.id === changeId ? reviewChange(change, findingId, action) : change,
+      );
+      const item = currentChanges.find((change) => change.id === changeId);
       if (!item) throw new Error("Change not found");
       return item;
     },

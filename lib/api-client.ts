@@ -24,6 +24,11 @@ export type SpecGraphApi = {
   loadChanges(filter: ChangeFilter): Promise<ChangeListResponse>;
   loadChange(id: string): Promise<ChangeItem>;
   updateChange(id: string, action: FindingAction): Promise<ChangeItem>;
+  updateFinding(
+    changeId: string,
+    findingId: string,
+    action: FindingAction,
+  ): Promise<ChangeItem>;
   loadRuns(): Promise<RunListResponse>;
   loadRun(id: string): Promise<RunItem>;
   startRun(input: StartRunInput): Promise<StartRunResponse>;
@@ -72,6 +77,16 @@ export const httpSpecGraphApi: SpecGraphApi = {
       method: "PATCH",
       body: JSON.stringify({ action }),
     });
+    return result.item;
+  },
+  async updateFinding(changeId, findingId, action) {
+    const result = await requestJson<{ item: ChangeItem }>(
+      `/api/changes/${changeId}/findings/${findingId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ action }),
+      },
+    );
     return result.item;
   },
   loadRuns() {

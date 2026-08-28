@@ -458,7 +458,7 @@ test("changes, evidence, review actions, and manual runs persist through the API
   });
   assert.equal(resolveResponse.status, 200);
   const resolved = await json(resolveResponse);
-  assert.equal(resolved.item.status, "checked");
+  assert.equal(resolved.item.status, "resolved");
 
   const openAfterResolve = await json(await appFetch("/api/changes?status=open"));
   assert.equal(openAfterResolve.items.length, 0);

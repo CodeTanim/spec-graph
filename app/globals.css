@@ -932,6 +932,30 @@ a.changed-artifact-row:hover strong {
   gap: 5px;
 }
 
+.artifact-row-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.review-status {
+  border-radius: 999px;
+  padding: 4px 7px;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.review-status.resolved {
+  background: var(--linked-soft);
+  color: var(--linked);
+}
+
+.review-status.dismissed {
+  background: var(--soft);
+  color: var(--muted);
+}
+
 .artifact-list strong {
   font-size: 13px;
 }
@@ -1022,6 +1046,76 @@ a.changed-artifact-row:hover strong {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.artifact-preview > .causal-summary {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.causal-summary a {
+  display: inline;
+  font-size: inherit;
+}
+
+.artifact-evidence {
+  margin-top: 22px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.artifact-evidence summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+  padding: 16px 2px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.artifact-evidence summary::-webkit-details-marker {
+  display: none;
+}
+
+.artifact-evidence summary::after {
+  content: "+";
+  color: var(--accent-ink);
+  font-size: 15px;
+}
+
+.artifact-evidence[open] summary::after {
+  content: "−";
+}
+
+.artifact-evidence-body {
+  padding: 2px 0 18px;
+}
+
+.artifact-evidence-body > p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.artifact-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.artifact-review-actions .primary-action {
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: 10px;
 }
 
 .analysis-message {

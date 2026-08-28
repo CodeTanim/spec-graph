@@ -1,5 +1,10 @@
 export type ChangeFilter = "open" | "all";
-export type ChangeStatus = "open" | "processing" | "checked";
+export type ChangeStatus =
+  | "open"
+  | "processing"
+  | "resolved"
+  | "dismissed"
+  | "reviewed";
 export type FindingReviewStatus = "open" | "resolved" | "dismissed";
 export type FindingAction = "dismiss" | "resolve" | "reopen";
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
@@ -47,6 +52,7 @@ export type AffectedArtifact = {
   name: string;
   kind: ArtifactKind;
   location: string;
+  changedArtifact: ChangedArtifact | null;
   evidenceLocation: string;
   excerpt: string;
   reason: string;
@@ -55,6 +61,7 @@ export type AffectedArtifact = {
   provenance: RelationshipProvenance;
   externalUrl: string | null;
   evidenceUrl: string | null;
+  reviewStatus: FindingReviewStatus;
 };
 
 export type ChangeItem = {

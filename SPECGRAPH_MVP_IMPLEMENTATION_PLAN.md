@@ -1059,6 +1059,22 @@ Package 7 is ready for provider evaluation when every accepted semantic finding 
 
 Package 8 is complete when a new user always sees the next valid action, the UI never claims a workspace is current before a successful check, and source preparation or failure is visible without relying on a toast.
 
+### Package 9 — Review integrity
+
+**Status:** Complete for persisted suggestion-level review.
+
+- [x] Resolve, dismiss, or reopen one affected item without changing its siblings.
+- [x] Expose each suggestion’s persisted review state in the change detail.
+- [x] Preserve and label resolved, dismissed, and mixed review outcomes in **All**.
+- [x] Keep bulk review available, but label the exact number of open suggestions affected.
+- [x] Make bulk resolve/dismiss preserve suggestions that were already reviewed individually.
+- [x] Explain each suggestion as “affected item may need updating because changed item changed,” with direct links to both sources.
+- [x] Keep confidence and provenance secondary under a collapsible **Why SpecGraph flagged this** section.
+- [x] Make **View results** open the completed run’s actual change detail.
+- [x] Cover individual, mixed, bulk, reopen, and result-navigation behavior with component and persistence tests.
+
+Package 9 is complete when every review action has an explicit scope, persisted status is visible and reversible, and a completed manual check leads directly to its findings.
+
 ---
 
 ## 16. Open Decisions

@@ -48,8 +48,13 @@ function Arrow() {
 
 function statusText(change: ChangeItem) {
   if (change.status === "processing") return "Analyzing…";
-  if (change.status === "checked") return "Checked";
-  return `${change.affected} affected`;
+  if (change.status === "resolved") return "Resolved";
+  if (change.status === "dismissed") return "Dismissed";
+  if (change.status === "reviewed") return "Reviewed";
+  const openSuggestions = change.artifacts.filter(
+    (artifact) => artifact.reviewStatus === "open",
+  ).length;
+  return `${openSuggestions} ${openSuggestions === 1 ? "suggestion" : "suggestions"}`;
 }
 
 function runResult(run: RunItem) {
@@ -163,6 +168,7 @@ export function SpecGraphApp({
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null);
   const [savingAction, setSavingAction] = useState(false);
+  const [savingFindingId, setSavingFindingId] = useState("");
   const [toast, setToast] = useState("");
   const [githubConfigured, setGitHubConfigured] = useState<boolean | null>(null);
   const [confluenceConfigured, setConfluenceConfigured] = useState<boolean | null>(null);
@@ -449,6 +455,9 @@ export function SpecGraphApp({
   const activeAnalysisRun = analysisProgress?.runId
     ? runs.find((run) => run.id === analysisProgress.runId) || null
     : null;
+  const selectedOpenSuggestions = selectedChange?.artifacts.filter(
+    (artifact) => artifact.reviewStatus === "open",
+  ).length ?? 0;
 
   function chooseView(nextView: View) {
     setView(nextView);
@@ -499,12 +508,18 @@ export function SpecGraphApp({
 
   async function applyFindingAction(action: FindingAction) {
     if (!selectedChange || savingAction) return;
+    const suggestionCount =
+      action === "reopen" ? selectedChange.artifacts.length : selectedOpenSuggestions;
     setSavingAction(true);
     try {
       await api.updateChange(selectedChange.id, action);
       closeChange();
       await refreshChanges();
-      setToast(action === "dismiss" ? "Change dismissed" : "Change resolved");
+      const verb =
+        action === "dismiss" ? "dismissed" : action === "resolve" ? "resolved" : "reopened";
+      setToast(
+        `${suggestionCount} ${suggestionCount === 1 ? "suggestion" : "suggestions"} ${verb}`,
+      );
     } catch (actionError) {
       setToast(
         actionError instanceof Error
@@ -513,6 +528,73 @@ export function SpecGraphApp({
       );
     } finally {
       setSavingAction(false);
+    }
+  }
+
+  async function applyArtifactAction(
+    artifact: AffectedArtifact,
+    action: FindingAction,
+  ) {
+    if (!selectedChange || savingFindingId) return;
+    setSavingFindingId(artifact.id);
+    try {
+      const updatedChange = await api.updateFinding(
+        selectedChange.id,
+        artifact.id,
+        action,
+      );
+      const updatedArtifact = updatedChange.artifacts.find(
+        (item) => item.id === artifact.id,
+      );
+      setSelectedChange(updatedChange);
+      setSelectedArtifact(updatedArtifact || null);
+      await refreshChanges();
+      setToast(
+        action === "dismiss"
+          ? `${artifact.name} dismissed`
+          : action === "resolve"
+            ? `${artifact.name} resolved`
+            : `${artifact.name} reopened`,
+      );
+    } catch (actionError) {
+      setToast(
+        actionError instanceof Error
+          ? actionError.message
+          : "The suggestion could not be updated.",
+      );
+    } finally {
+      setSavingFindingId("");
+    }
+  }
+
+  async function viewAnalysisResults() {
+    if (!analysisProgress?.runId) {
+      setAnalysisProgress(null);
+      return;
+    }
+    setLoadingChanges(true);
+    try {
+      const nextChanges = await api.loadChanges("all");
+      const matchingChange = nextChanges.items.find(
+        (change) => change.runId === analysisProgress.runId,
+      );
+      setFilter("all");
+      setChanges(nextChanges);
+      setView("changes");
+      setAnalysisProgress(null);
+      if (matchingChange) {
+        openChange(matchingChange);
+      } else {
+        setToast("This check completed without any suggestions.");
+      }
+    } catch (loadError) {
+      setToast(
+        loadError instanceof Error
+          ? loadError.message
+          : "The analysis results could not be loaded.",
+      );
+    } finally {
+      setLoadingChanges(false);
     }
   }
 
@@ -1306,6 +1388,18 @@ export function SpecGraphApp({
                   {selectedChange.artifacts.map((artifact) => {
                     const expanded = selectedArtifact?.id === artifact.id;
                     const detailsId = `artifact-details-${artifact.id}`;
+                    const changedArtifact =
+                      artifact.changedArtifact ||
+                      (selectedChange.changedArtifacts.length === 1
+                        ? selectedChange.changedArtifacts[0]
+                        : null);
+                    const changedItemLabel = changedArtifact
+                      ? changedArtifact.name
+                      : selectedChange.changedArtifacts.length > 1
+                        ? `${selectedChange.changedArtifacts.length} changed source items`
+                        : selectedChange.source;
+                    const changedItemUrl =
+                      artifact.evidenceUrl || changedArtifact?.externalUrl || null;
 
                     return (
                       <div className="artifact-item" key={artifact.id}>
@@ -1327,35 +1421,101 @@ export function SpecGraphApp({
                               {artifact.location}
                             </small>
                           </span>
-                          <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                          <span className="artifact-row-state">
+                            {artifact.reviewStatus !== "open" && (
+                              <small className={`review-status ${artifact.reviewStatus}`}>
+                                {artifact.reviewStatus === "resolved"
+                                  ? "Resolved"
+                                  : "Dismissed"}
+                              </small>
+                            )}
+                            <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                          </span>
                         </button>
 
                         {expanded && (
                           <div className="artifact-preview" id={detailsId}>
-                            <p>{artifact.reason}</p>
-                            <div
-                              className="relationship-evidence"
-                              aria-label="Verified relationship evidence"
-                            >
-                              <strong>{relationshipSignal(artifact)}</strong>
-                              <span>
-                                Relationship evidence <span aria-hidden="true">·</span>{" "}
-                                {artifact.evidenceLocation}
-                              </span>
-                              <blockquote>{artifact.excerpt}</blockquote>
-                            </div>
+                            <p className="causal-summary">
+                              {artifact.externalUrl ? (
+                                <a
+                                  href={artifact.externalUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {artifact.name}
+                                </a>
+                              ) : (
+                                <strong>{artifact.name}</strong>
+                              )}{" "}
+                              may need updating because{" "}
+                              {changedItemUrl ? (
+                                <a href={changedItemUrl} target="_blank" rel="noreferrer">
+                                  {changedItemLabel}
+                                </a>
+                              ) : (
+                                <strong>{changedItemLabel}</strong>
+                              )}{" "}
+                              changed.
+                            </p>
                             <div className="artifact-preview-links">
-                              {artifact.evidenceUrl && (
-                                <a href={artifact.evidenceUrl} target="_blank" rel="noreferrer">
-                                  Open evidence <Arrow />
+                              {artifact.externalUrl && (
+                                <a href={artifact.externalUrl} target="_blank" rel="noreferrer">
+                                  Open {artifact.name} <Arrow />
                                 </a>
                               )}
-                              {artifact.externalUrl &&
-                                artifact.externalUrl !== artifact.evidenceUrl && (
-                                  <a href={artifact.externalUrl} target="_blank" rel="noreferrer">
-                                    Open affected source <Arrow />
-                                  </a>
-                                )}
+                              {changedItemUrl && changedItemUrl !== artifact.externalUrl && (
+                                <a href={changedItemUrl} target="_blank" rel="noreferrer">
+                                  Open {changedItemLabel} <Arrow />
+                                </a>
+                              )}
+                            </div>
+                            <details className="artifact-evidence">
+                              <summary>Why SpecGraph flagged this</summary>
+                              <div className="artifact-evidence-body">
+                                <p>{artifact.reason}</p>
+                                <div
+                                  className="relationship-evidence"
+                                  aria-label="Verified relationship evidence"
+                                >
+                                  <strong>{relationshipSignal(artifact)}</strong>
+                                  <span>
+                                    Relationship evidence <span aria-hidden="true">·</span>{" "}
+                                    {artifact.evidenceLocation}
+                                  </span>
+                                  <blockquote>{artifact.excerpt}</blockquote>
+                                </div>
+                              </div>
+                            </details>
+                            <div className="artifact-review-actions">
+                              {artifact.reviewStatus === "open" ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="dismiss-action"
+                                    disabled={Boolean(savingFindingId)}
+                                    onClick={() => void applyArtifactAction(artifact, "dismiss")}
+                                  >
+                                    Dismiss suggestion
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="primary-action"
+                                    disabled={Boolean(savingFindingId)}
+                                    onClick={() => void applyArtifactAction(artifact, "resolve")}
+                                  >
+                                    Mark suggestion resolved
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="text-action"
+                                  disabled={Boolean(savingFindingId)}
+                                  onClick={() => void applyArtifactAction(artifact, "reopen")}
+                                >
+                                  Reopen suggestion
+                                </button>
+                              )}
                             </div>
                           </div>
                         )}
@@ -1440,24 +1600,42 @@ export function SpecGraphApp({
             )}
             {showEvidence && <p className="evidence-copy">{selectedChange.evidence}</p>}
 
-            {selectedChange.status === "open" && (
+            {selectedChange.status !== "processing" &&
+              selectedChange.artifacts.length > 0 && (
               <footer className="details-actions">
-                <button
-                  type="button"
-                  className="dismiss-action"
-                  disabled={savingAction}
-                  onClick={() => void applyFindingAction("dismiss")}
-                >
-                  Dismiss
-                </button>
-                <button
-                  type="button"
-                  className="primary-action wide"
-                  disabled={savingAction}
-                  onClick={() => void applyFindingAction("resolve")}
-                >
-                  Mark resolved <Arrow />
-                </button>
+                {selectedOpenSuggestions > 0 ? (
+                  <>
+                    <button
+                      type="button"
+                      className="dismiss-action"
+                      disabled={savingAction || Boolean(savingFindingId)}
+                      onClick={() => void applyFindingAction("dismiss")}
+                    >
+                      Dismiss all {selectedOpenSuggestions} open{" "}
+                      {selectedOpenSuggestions === 1 ? "suggestion" : "suggestions"}
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-action wide"
+                      disabled={savingAction || Boolean(savingFindingId)}
+                      onClick={() => void applyFindingAction("resolve")}
+                    >
+                      Resolve all {selectedOpenSuggestions} open{" "}
+                      {selectedOpenSuggestions === 1 ? "suggestion" : "suggestions"}{" "}
+                      <Arrow />
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-action"
+                    disabled={savingAction || Boolean(savingFindingId)}
+                    onClick={() => void applyFindingAction("reopen")}
+                  >
+                    Reopen all {selectedChange.artifacts.length}{" "}
+                    {selectedChange.artifacts.length === 1 ? "suggestion" : "suggestions"}
+                  </button>
+                )}
               </footer>
             )}
           </aside>
@@ -1588,7 +1766,11 @@ export function SpecGraphApp({
                 type="button"
                 className="primary-action wide"
                 autoFocus
-                onClick={() => setAnalysisProgress(null)}
+                onClick={() =>
+                  activeAnalysisRun?.status === "succeeded"
+                    ? void viewAnalysisResults()
+                    : setAnalysisProgress(null)
+                }
               >
                 {analysisProgress.error || activeAnalysisRun?.status === "failed"
                   ? "Close"
