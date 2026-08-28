@@ -98,14 +98,14 @@ These defaults prevent the project from stalling. Change them only through the d
 | First code source | GitHub App | Provides scoped access, webhooks, installation identity, and a credible production integration. |
 | Repository documentation | Discover Markdown, MDX, README, and OpenAPI automatically | Users should not reconnect documentation that already lives beside their code. |
 | First external documentation source | Confluence | Makes the cross-source product promise real without introducing a broad connector catalog. |
-| Graph storage | Neon Postgres relational tables | The MVP graph remains relational and bounded while gaining portable SQL persistence outside Sites. |
+| Graph storage | Supabase Postgres relational tables | The MVP graph remains relational and bounded on portable SQL while the Vercel Marketplace integration manages production connection variables. |
 | Artifact snapshots | Git commit SHA and provider revision links | GitHub already retains immutable revisions; add blob storage only when external documents require it. |
 | Analysis strategy | Deterministic graph first, semantic model second | Improves explainability, precision, and cost control. |
 | Run updates | Client polling | Simple and adequate for MVP-scale jobs. |
 | Automatic checks | Once per day; manual Analyze remains immediate | Keeps the noncommercial MVP simple and low-noise without delaying an explicit user request. |
 | Product action | Detect and explain only | Keeps the first release safe and measurable. |
 | Initial tenancy | Auth.js GitHub identity with one private workspace per user | Authentication is explicit, portable, and server-enforced rather than supplied by a hosting-specific header. |
-| Deployment direction | Vercel Hobby, Neon Postgres, Auth.js, and Vercel Workflow | This noncommercial MVP gets a reproducible Next.js runtime, durable jobs, managed secrets, and a free development database. |
+| Deployment direction | Vercel Hobby, Supabase Postgres, Auth.js, and Vercel Workflow | This noncommercial MVP gets a reproducible Next.js runtime, durable jobs, managed secrets, and a portable free-tier development database. |
 
 ### Minimal source-connection experience
 
@@ -152,7 +152,7 @@ The UI should never require users to understand ingestion, graph construction, w
 - [x] Component tests for the main UI behaviors.
 - [x] Rendered HTML tests.
 - [x] Standard Next.js and Vercel deployment scaffolding.
-- [x] Drizzle and Neon Postgres persistence.
+- [x] Drizzle and provider-neutral Postgres persistence, currently hosted by Supabase.
 - [x] Auth.js GitHub identity and protected API helpers.
 - [x] Persistent database schema and initial migration.
 - [x] Authenticated personal workspace resolution.
@@ -183,7 +183,7 @@ flowchart LR
     UI --> API["Authenticated API routes"]
     GitHub["GitHub App and webhooks"] --> API
     Confluence["Confluence pages and changes"] --> API
-    API --> DB["Neon Postgres product database"]
+    API --> DB["Supabase Postgres product database"]
     API --> Jobs["Vercel Workflows"]
     Jobs --> Fetch["Provider content and change fetcher"]
     Fetch --> Parse["Typed artifact parsers"]
@@ -439,7 +439,7 @@ Exit criteria:
 
 Goal: establish durable, authenticated product state.
 
-- [x] Provision Neon Postgres and configure pooled application and direct migration URLs.
+- [x] Provision portable Postgres persistence and configure pooled application and direct migration URLs; production currently uses Supabase.
 - [x] Implement the core Drizzle schema and enums.
 - [x] Generate and inspect the initial SQL migration.
 - [x] Add repository modules for sources, runs, findings, and actions.
@@ -453,7 +453,7 @@ Goal: establish durable, authenticated product state.
 
 Exit criteria:
 
-- [x] Feed, Runs, and Sources load from Neon Postgres.
+- [x] Feed, Runs, and Sources load from the production Postgres database.
 - [x] A finding action survives page refresh.
 - [x] One user cannot access another workspace's IDs in integration tests.
 - [ ] Migrations work against a fresh database and an existing local database.
@@ -489,9 +489,9 @@ Goal: move SpecGraph away from OpenAI Sites without losing the working product o
 The existing Sites deployment remains available as rollback until GitHub authentication, repository connection, sync, analysis, and webhooks pass on the stable Vercel domain. Do not delete the Sites project during that verification window.
 
 - [x] Inventory Sites-specific dependencies: vinext/Worker output, authenticated-user headers, D1 bindings, runtime environment access, deployment packaging, and the current domain.
-- [x] Select Vercel Hobby, Neon Postgres, Auth.js GitHub sign-in, Vercel Workflow, and Vercel secret management as one compatible system.
+- [x] Select Vercel Hobby, provider-neutral Postgres, Auth.js GitHub sign-in, Vercel Workflow, and Vercel secret management as one compatible system; Supabase is the current Postgres host.
 - [x] Keep product repositories and provider adapters independent from the hosting runtime through small auth, database, job, and environment boundaries.
-- [x] Start the pre-release Neon environment from an empty schema; the former D1 data is disposable staging data and is not migrated.
+- [x] Start the replacement Postgres environment from an empty schema; the former D1 and quota-blocked Neon data are disposable staging data and are not migrated.
 - [x] Run all migrations from an empty replacement database and verify workspace idempotency, source-group deduplication, evidence links, review persistence, and run retries against Postgres.
 - [x] Configure GitHub App credentials and update its homepage, OAuth callback, and webhook URL for the replacement domain.
 - [ ] Configure Confluence OAuth callbacks against the replacement domain before production Confluence authorization begins.
@@ -505,7 +505,7 @@ Exit criteria:
 
 - [x] A clean GitHub checkout builds and deploys with standard Next.js tooling; removal of archived Sites-only files waits for the live smoke gate.
 - [x] Authentication and workspace identity are server-enforced through Auth.js and workspace-scoped repositories.
-- [x] Structured data persists across deploys and migrations in Neon Postgres.
+- [x] Structured data persists across deploys and migrations in Supabase Postgres.
 - [ ] GitHub and Confluence callbacks use the replacement domain.
 - [x] Background jobs and bounded retries use Vercel Workflow without request-lifetime coupling; live log inspection remains part of the smoke test.
 - [ ] The end-to-end smoke test passes before Sites is decommissioned.
@@ -1053,7 +1053,7 @@ Package 7 is ready for provider evaluation when every accepted semantic finding 
 | Demo repository | Create a small public fixture repository with intentionally linked code, docs, OpenAPI, and tests | M2 | Proposed |
 | GitHub App ownership | Create under the account or organization that will host the public project | M2 | Proposed |
 | Durable job runner | Vercel Workflow with idempotent persisted operations and bounded retries | M4 | Decided |
-| Replacement deployment stack | Vercel Hobby + Neon Postgres + Auth.js + Vercel Workflow and managed secrets | H1, before production Confluence OAuth | Decided |
+| Replacement deployment stack | Vercel Hobby + Supabase Postgres + Auth.js + Vercel Workflow and managed secrets | H1, before production Confluence OAuth | Decided |
 | Confluence site and space | Use one read-only demo space containing intentionally linked product documentation | M6 | Proposed |
 | Semantic model and budget | Choose after deterministic evaluation baseline exists | M7 | Deferred |
 | Recruiter access | Public app with a safe demo mode, or private app with a frictionless review path | M10 | Deferred |
@@ -1085,6 +1085,7 @@ Add entries when a default above changes.
 | 2026-08-23 | Parse OpenAPI changes deterministically before semantic review | The contract already states exact operations, schemas, and required fields, so a model should not rediscover those facts | JSON and YAML versions produce structured facts; `$ref` usage carries schema changes to operations; only matching Markdown or Confluence documentation becomes an affected candidate |
 | 2026-08-25 | Model connected sources as provider-neutral groups | GitHub, Confluence, and future documentation providers are equal peers; connection order must not define ownership | Every source receives one group membership, group-level Connect source supports any provider, and membership scopes relationship discovery without becoming evidence |
 | 2026-08-25 | Keep semantic analysis behind a provider-neutral, evidence-verifying adapter | The MVP should not pay for or display model guesses until quality can be measured against deterministic results | Production remains deterministic-only; any future model receives bounded candidates, must return exact excerpts, and records usage/cost/failure telemetry |
+| 2026-08-28 | Move production Postgres from Neon to Supabase and eliminate idle workspace polling | Neon's free public-network-transfer quota was exhausted by frequent whole-workspace refreshes; a provider-neutral driver and quieter refresh policy prevent recurrence and preserve portability | Vercel now injects Supabase pooled and direct connection URLs; production starts from a clean migrated database, source connections must be re-created, and the old Neon resource remains disconnected for rollback reference rather than active use |
 
 ---
 
@@ -1154,4 +1155,10 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 
 - Diagnosed the production database outage as Neon's 5 GB monthly public-network-transfer quota, not exhausted disk storage. Removed the idle five-second full-workspace polling loop, retained focused polling only for active runs, and refresh stale workspace data when a user returns to the tab.
 - Replaced the Neon-only HTTP database driver with a standard pooled PostgreSQL driver so the same schema can run on Supabase or another PostgreSQL host. Added bounded artifact revision retention (three revisions per artifact) to prevent extracted source and documentation text from growing indefinitely.
-- Production restoration requires provisioning the replacement PostgreSQL project, applying the existing migrations, replacing the Vercel database connection variables, and reconnecting/reindexing sources because the quota-blocked Neon database cannot currently be exported.
+- Production restoration requires reconnecting and reindexing sources because the quota-blocked Neon database could not be exported.
+
+### 2026-08-28
+
+- Provisioned `supabase-bisque-blanket` through the Vercel Marketplace, connected it to Production, Preview, and Development, and disconnected (without deleting) the quota-blocked Neon resource.
+- Applied and verified all six migrations against the fresh Supabase database (23 public tables), then redeployed the existing production artifact so the stable `https://spec-graph.vercel.app` alias received the new database variables.
+- Verified the authenticated production workspace and source chooser load without browser errors, and confirmed the unauthenticated Sources API returns `401`. Production is restored with an intentionally empty workspace; GitHub and Confluence sources must now be reconnected and indexed.
