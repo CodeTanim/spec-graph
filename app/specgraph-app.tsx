@@ -147,8 +147,9 @@ export function relativeTime(value: string | null, now = Date.now()) {
 }
 
 const DAILY_ANALYSIS_HOUR_UTC = 13;
-const SOURCE_REFRESH_POLL_MS = 900;
+const SOURCE_REFRESH_POLL_MS = 2_500;
 const SOURCE_REFRESH_TIMEOUT_MS = 90_000;
+const ACTIVE_RUN_POLL_DELAYS_MS = [2_000, 5_000, 10_000, 20_000, 30_000] as const;
 
 export function nextDailyAnalysisTime(now = new Date()): Date {
   const next = new Date(now);
@@ -226,6 +227,7 @@ export function SpecGraphApp({
   const [sourcePendingRemoval, setSourcePendingRemoval] = useState<SourceItem | null>(null);
   const [removingSourceId, setRemovingSourceId] = useState("");
   const lastWorkspaceRefreshAt = useRef(Date.now());
+  const activeRunPollAttempt = useRef(0);
 
   useEffect(() => {
     if (!loadOnMount) return;
@@ -373,11 +375,19 @@ export function SpecGraphApp({
     const activeRuns = runs.filter(
       (run) => run.status === "queued" || run.status === "running",
     );
-    if (!activeRuns.length) return;
+    if (!activeRuns.length) {
+      activeRunPollAttempt.current = 0;
+      return;
+    }
 
     const pollQuickly = activeRuns.some(
       (run) => run.status === "running" || run.execution === "immediate",
     );
+    const pollDelay = pollQuickly
+      ? ACTIVE_RUN_POLL_DELAYS_MS[
+          Math.min(activeRunPollAttempt.current, ACTIVE_RUN_POLL_DELAYS_MS.length - 1)
+        ]
+      : 60_000;
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
@@ -386,6 +396,22 @@ export function SpecGraphApp({
           if (cancelled) return;
           const updatedRuns = nextRuns.items;
           const updatedById = new Map(updatedRuns.map((run) => [run.id, run]));
+          const previousFingerprint = activeRuns
+            .map((run) => `${run.id}:${run.status}:${run.progress}`)
+            .join("|");
+          const updatedFingerprint = activeRuns
+            .map((run) => {
+              const updated = updatedById.get(run.id);
+              return `${run.id}:${updated?.status || "missing"}:${updated?.progress || 0}`;
+            })
+            .join("|");
+          activeRunPollAttempt.current =
+            previousFingerprint === updatedFingerprint
+              ? Math.min(
+                  activeRunPollAttempt.current + 1,
+                  ACTIVE_RUN_POLL_DELAYS_MS.length - 1,
+                )
+              : 0;
           const completedActiveRun = activeRuns.some((run) => {
             const updated = updatedById.get(run.id);
             return updated?.status === "succeeded" || updated?.status === "failed";
@@ -399,7 +425,7 @@ export function SpecGraphApp({
         .catch(() => {
           // A later page refresh can resume polling from the persisted run state.
         });
-    }, pollQuickly ? 900 : 60_000);
+    }, pollDelay);
 
     return () => {
       cancelled = true;
@@ -764,9 +790,11 @@ export function SpecGraphApp({
       const result = await api.syncSource(sourceId);
       const deadline = Date.now() + SOURCE_REFRESH_TIMEOUT_MS;
       let sawRefreshInProgress = false;
+      let firstCheck = true;
 
       while (Date.now() < deadline) {
-        await wait(SOURCE_REFRESH_POLL_MS);
+        if (!firstCheck) await wait(SOURCE_REFRESH_POLL_MS);
+        firstCheck = false;
         const nextSources = await api.loadSources();
         setSources(nextSources.items);
         setSourceGroups(nextSources.groups);

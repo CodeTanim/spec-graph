@@ -123,8 +123,10 @@ export async function executeGitHubPullRequestAnalysis(
       })
       .where(eq(analysisRuns.id, runId));
 
-    await syncGitHubSource(workspaceId, selectedSource.id, client, db);
-    await rebuildCrossSourceRelationships(workspaceId, selectedSource.id, db);
+    const sync = await syncGitHubSource(workspaceId, selectedSource.id, client, db);
+    if (sync.changed) {
+      await rebuildCrossSourceRelationships(workspaceId, selectedSource.id, db);
+    }
     const resolvedChanges = await resolveGitHubChangedNodes(
       selectedSource.id,
       [...changedPaths],
@@ -203,14 +205,16 @@ export async function executeGitHubPushAnalysis(
       throw new ApiError(409, "GITHUB_SOURCE_REQUIRED", "Choose a connected GitHub source.");
     }
 
-    await syncGitHubSource(
+    const sync = await syncGitHubSource(
       workspaceId,
       selectedSource.id,
       client,
       db,
       input.afterRevision,
     );
-    await rebuildCrossSourceRelationships(workspaceId, selectedSource.id, db);
+    if (sync.changed) {
+      await rebuildCrossSourceRelationships(workspaceId, selectedSource.id, db);
+    }
     const now = new Date().toISOString();
     await db
       .update(analysisRuns)

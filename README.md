@@ -83,6 +83,12 @@ Fill in `.env.local` before migrating. Use the pooled `DATABASE_URL` for the app
 and the direct `DATABASE_URL_UNPOOLED` for migrations. Vercel's Supabase
 integration supplies the equivalent `POSTGRES_URL` and
 `POSTGRES_URL_NON_POOLING` names automatically; SpecGraph accepts either pair.
+Keep the production database variables scoped to Vercel Production. Give
+Preview its own Supabase project or database branch, and use a separate local
+database for Development. Set `DATABASE_DEPLOYMENT_ENVIRONMENT` to
+`production`, `preview`, or `development` beside each URL; SpecGraph then stops
+startup if a deployment is pointed at a database labeled for another
+environment.
 Generate `AUTH_SECRET` and `CONNECTOR_ENCRYPTION_KEY` with cryptographically
 secure random values.
 Provider private keys and secrets must remain in local or hosting environment
@@ -144,6 +150,13 @@ The repository is linked to Vercel and uses a portable PostgreSQL connection.
 Vercel environment variables must contain the database, Auth.js, GitHub App,
 and optional Confluence secrets.
 Apply reviewed Drizzle migrations before promoting code that depends on them.
+
+To keep database transfer bounded, the runtime reads only current artifact
+versions during sync, reuses persisted evidence excerpts in the feed, batches
+dashboard counts, skips graph rebuilds when a source revision is unchanged,
+and progressively backs off active-run polling. Historical artifact bodies are
+retained according to the revision-retention policy rather than loaded into
+ordinary dashboard requests.
 
 See [SPECGRAPH_MVP_IMPLEMENTATION_PLAN.md](./SPECGRAPH_MVP_IMPLEMENTATION_PLAN.md)
 for scope, acceptance gates, current status, and remaining work.

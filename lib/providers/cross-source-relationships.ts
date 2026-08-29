@@ -37,7 +37,12 @@ async function rebuildPair(
     })
     .from(graphNodes)
     .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
-    .where(eq(artifacts.sourceId, repositorySourceId));
+    .where(
+      and(
+        eq(artifacts.sourceId, repositorySourceId),
+        like(graphNodes.stableKey, "file:%"),
+      ),
+    );
   const repositoryRootNodes = repositoryNodes.filter(
     (item) => item.stableKey === `file:${item.path}`,
   );
@@ -56,10 +61,13 @@ async function rebuildPair(
         eq(artifactVersions.revision, artifacts.currentRevision),
       ),
     )
-    .where(eq(artifacts.sourceId, documentationSourceId));
-  const documentationNodes = documentationNodeRecords.filter((item) =>
-    item.stableKey.startsWith("page:"),
-  );
+    .where(
+      and(
+        eq(artifacts.sourceId, documentationSourceId),
+        like(graphNodes.stableKey, "page:%"),
+      ),
+    );
+  const documentationNodes = documentationNodeRecords;
 
   const repositoryNodeIds = repositoryRootNodes.map((item) => item.nodeId);
   const documentationNodeIds = documentationNodes.map((item) => item.nodeId);
@@ -178,19 +186,16 @@ async function rebuildEntityRelationships(
   memberIds: string[],
   db: SpecGraphDb,
 ) {
-  const rows = await db
+  const artifactRows = await db
     .select({
       artifactId: artifacts.id,
       externalId: artifacts.externalId,
       sourceId: artifacts.sourceId,
       kind: artifacts.kind,
       path: artifacts.path,
-      nodeId: graphNodes.id,
-      stableKey: graphNodes.stableKey,
       text: artifactVersions.extractedText,
     })
     .from(artifacts)
-    .innerJoin(graphNodes, eq(graphNodes.artifactId, artifacts.id))
     .innerJoin(
       artifactVersions,
       and(
@@ -200,26 +205,35 @@ async function rebuildEntityRelationships(
     )
     .where(inArray(artifacts.sourceId, memberIds));
 
-  const byArtifact = new Map<string, EntityArtifact & { nodes: typeof rows }>();
-  for (const row of rows) {
-    let artifact = byArtifact.get(row.artifactId);
-    if (!artifact) {
-      artifact = {
-        artifactId: row.artifactId,
-        sourceId: row.sourceId,
-        kind: row.kind,
-        path: row.path,
-        rootNodeId: "",
-        text: row.text,
-        entityNodeIds: new Map(),
-        nodes: [],
-      };
-      byArtifact.set(row.artifactId, artifact);
-    }
-    artifact.nodes.push(row);
+  if (!artifactRows.length) return;
+  const artifactIds = artifactRows.map((row) => row.artifactId);
+  const nodeRows = await db
+    .select({
+      artifactId: graphNodes.artifactId,
+      nodeId: graphNodes.id,
+      stableKey: graphNodes.stableKey,
+    })
+    .from(graphNodes)
+    .where(inArray(graphNodes.artifactId, artifactIds));
+
+  const byArtifact = new Map<string, EntityArtifact>();
+  for (const row of artifactRows) {
+    byArtifact.set(row.artifactId, {
+      artifactId: row.artifactId,
+      sourceId: row.sourceId,
+      kind: row.kind,
+      path: row.path,
+      rootNodeId: "",
+      text: row.text,
+      entityNodeIds: new Map(),
+    });
+  }
+  for (const row of nodeRows) {
+    const artifact = byArtifact.get(row.artifactId);
+    if (!artifact) continue;
     if (
-      row.stableKey === `file:${row.path}` ||
-      row.stableKey === `page:${row.externalId}`
+      row.stableKey === `file:${artifact.path}` ||
+      row.stableKey.startsWith("page:")
     ) {
       artifact.rootNodeId = row.nodeId;
     }
@@ -231,7 +245,7 @@ async function rebuildEntityRelationships(
   const indexedArtifacts = [...byArtifact.values()].filter(
     (artifact) => artifact.rootNodeId,
   );
-  const nodeIds = [...new Set(rows.map((row) => row.nodeId))];
+  const nodeIds = [...new Set(nodeRows.map((row) => row.nodeId))];
   if (nodeIds.length) {
     await db.delete(relationships).where(and(
       or(

@@ -4,7 +4,6 @@ import { getDb, type SpecGraphDb } from "../../db";
 import {
   analysisRuns,
   artifacts,
-  artifactVersions,
   changeEvents,
   findingActions,
   findingEvidence,
@@ -44,7 +43,6 @@ const changedGraphNodes = alias(graphNodes, "changed_graph_nodes");
 const changedArtifactRecords = alias(artifacts, "changed_artifact_records");
 const evidenceGraphNodes = alias(graphNodes, "evidence_graph_nodes");
 const evidenceArtifactRecords = alias(artifacts, "evidence_artifact_records");
-const evidenceVersions = alias(artifactVersions, "evidence_versions");
 
 function normalizeTimestamp(value: string | null): string | null {
   if (!value) return null;
@@ -90,17 +88,16 @@ function parseChangedArtifacts(value: string): ChangedArtifact[] {
   }
 }
 
-async function listChangedArtifacts(
-  runId: string,
-  storedValue: string,
-  changeUrl: string | null,
+async function listChangedArtifactsForRuns(
+  runIds: string[],
   db: SpecGraphDb,
-): Promise<ChangedArtifact[]> {
-  const stored = parseChangedArtifacts(storedValue);
-  if (stored.length) return stored;
+): Promise<Map<string, ChangedArtifact[]>> {
+  const byRun = new Map(runIds.map((runId) => [runId, [] as ChangedArtifact[]]));
+  if (!runIds.length) return byRun;
 
   const rows = await db
     .select({
+      runId: findings.runId,
       artifactId: artifacts.id,
       kind: artifacts.kind,
       title: artifacts.title,
@@ -110,38 +107,22 @@ async function listChangedArtifacts(
     .from(findings)
     .innerJoin(graphNodes, eq(findings.changedNodeId, graphNodes.id))
     .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
-    .where(eq(findings.runId, runId));
-  const unique = new Map<string, ChangedArtifact>();
+    .where(inArray(findings.runId, runIds));
+  const seenByRun = new Map<string, Set<string>>();
   for (const row of rows) {
-    unique.set(row.artifactId, {
+    const seen = seenByRun.get(row.runId) || new Set<string>();
+    if (seen.has(row.artifactId)) continue;
+    seen.add(row.artifactId);
+    seenByRun.set(row.runId, seen);
+    byRun.get(row.runId)?.push({
       id: row.artifactId,
       name: row.title,
       kind: artifactKind(row.kind),
       location: row.path,
-      externalUrl: changeUrl || row.canonicalUrl,
+      externalUrl: row.canonicalUrl,
     });
   }
-  return [...unique.values()];
-}
-
-function referencedExcerpt(
-  content: string,
-  targetPath: string,
-  storedEvidence: string,
-  storedStartLine: number | null,
-): { excerpt: string; startLine: number } {
-  const lines = content.split("\n");
-  const filename = targetPath.split("/").at(-1) || targetPath;
-  let index = lines.findIndex((line) => line.includes(targetPath));
-  if (index < 0) index = lines.findIndex((line) => line.includes(filename));
-  if (index < 0 && storedStartLine) index = storedStartLine - 1;
-  if (index < 0) {
-    return { excerpt: storedEvidence, startLine: 1 };
-  }
-  return {
-    excerpt: lines.slice(index, index + 4).join("\n").trim() || storedEvidence,
-    startLine: index + 1,
-  };
+  return byRun;
 }
 
 function lineUrl(
@@ -153,12 +134,19 @@ function lineUrl(
   return `${url.split("#L")[0]}#L${startLine}-L${startLine + 3}`;
 }
 
-async function listAffectedArtifacts(
-  runId: string,
+type ReviewedAffectedArtifact = AffectedArtifact & {
+  reviewStatus: "open" | "resolved" | "dismissed";
+};
+
+async function listAffectedArtifactsForRuns(
+  runIds: string[],
   db: SpecGraphDb,
-): Promise<Array<AffectedArtifact & { reviewStatus: "open" | "resolved" | "dismissed" }>> {
+): Promise<Map<string, ReviewedAffectedArtifact[]>> {
+  const byRun = new Map(runIds.map((runId) => [runId, [] as ReviewedAffectedArtifact[]]));
+  if (!runIds.length) return byRun;
   const rows = await db
     .select({
+      runId: findings.runId,
       findingId: findings.id,
       findingTitle: findings.title,
       findingSummary: findings.summary,
@@ -186,7 +174,6 @@ async function listAffectedArtifacts(
       relationshipEvidenceKind: evidenceArtifactRecords.kind,
       relationshipEvidencePath: evidenceArtifactRecords.path,
       relationshipEvidenceUrl: evidenceArtifactRecords.canonicalUrl,
-      relationshipEvidenceContent: evidenceVersions.extractedText,
     })
     .from(findings)
     .leftJoin(graphNodes, eq(findings.affectedNodeId, graphNodes.id))
@@ -214,42 +201,17 @@ async function listAffectedArtifacts(
       evidenceArtifactRecords,
       eq(evidenceGraphNodes.artifactId, evidenceArtifactRecords.id),
     )
-    .leftJoin(
-      evidenceVersions,
-      and(
-        eq(evidenceVersions.artifactId, evidenceArtifactRecords.id),
-        eq(evidenceVersions.revision, evidenceArtifactRecords.currentRevision),
-      ),
-    )
     .leftJoin(findingEvidence, eq(findingEvidence.findingId, findings.id))
-    .where(eq(findings.runId, runId))
+    .where(inArray(findings.runId, runIds))
     .orderBy(desc(findings.createdAt));
 
-  const unique = new Map<
-    string,
-    AffectedArtifact & { reviewStatus: "open" | "resolved" | "dismissed" }
-  >();
+  const unique = new Set<string>();
 
   for (const row of rows) {
-    if (unique.has(row.findingId)) continue;
-    const reconstructEvidence = Boolean(
-      row.relationshipEvidencePath &&
-        row.evidenceLocation &&
-        !row.evidenceLocation.startsWith(`${row.relationshipEvidencePath}:`),
-    );
-    const targetPath =
-      row.relationshipFromNodeId === row.changedNodeId
-        ? row.artifactPath
-        : row.changedArtifactPath;
-    const reconstructed =
-      reconstructEvidence && row.relationshipEvidenceContent && targetPath
-        ? referencedExcerpt(
-            row.relationshipEvidenceContent,
-            targetPath,
-            row.relationshipEvidence || row.evidenceExcerpt || "",
-            row.relationshipEvidenceStartLine,
-          )
-        : null;
+    const uniqueKey = `${row.runId}:${row.findingId}`;
+    if (unique.has(uniqueKey)) continue;
+    unique.add(uniqueKey);
+    const fallbackEvidenceStartLine = Math.max(1, row.relationshipEvidenceStartLine || 1);
     const reason =
       row.relationshipType &&
       row.relationshipFromNodeId &&
@@ -265,7 +227,7 @@ async function listAffectedArtifacts(
             row.relationshipFromNodeId === row.changedNodeId,
           )
         : row.findingSummary;
-    unique.set(row.findingId, {
+    byRun.get(row.runId)?.push({
       id: row.findingId,
       name: row.artifactTitle || row.findingTitle,
       kind: artifactKind(row.artifactKind),
@@ -282,30 +244,32 @@ async function listAffectedArtifacts(
             externalUrl: row.changedArtifactUrl,
           }
         : null,
-      evidenceLocation: reconstructed
-        ? `${row.relationshipEvidencePath}:${reconstructed.startLine}`
-        : row.evidenceLocation || "Evidence location unavailable",
+      evidenceLocation:
+        row.evidenceLocation ||
+        (row.relationshipEvidencePath
+          ? `${row.relationshipEvidencePath}:${fallbackEvidenceStartLine}`
+          : "Evidence location unavailable"),
       excerpt:
-        reconstructed?.excerpt ||
         row.evidenceExcerpt ||
+        row.relationshipEvidence ||
         "No source excerpt was recorded.",
       reason,
       confidence: row.findingConfidence,
       origin: row.findingOrigin,
       provenance: row.findingProvenance,
       externalUrl: row.artifactUrl,
-      evidenceUrl: reconstructed
-        ? lineUrl(
+      evidenceUrl:
+        row.evidenceUrl ||
+        lineUrl(
             row.relationshipEvidenceKind,
             row.relationshipEvidenceUrl,
-            reconstructed.startLine,
-          )
-        : row.evidenceUrl,
+            fallbackEvidenceStartLine,
+          ),
       reviewStatus: row.reviewStatus,
     });
   }
 
-  return [...unique.values()];
+  return byRun;
 }
 
 function toAffectedArtifact(
@@ -373,15 +337,26 @@ export async function listChanges(
     .orderBy(desc(changeEvents.occurredAt), desc(analysisRuns.createdAt))
     .limit(50);
 
-  const items = await Promise.all(
-    rows.map(async (row): Promise<ChangeItem> => {
-      const affected = await listAffectedArtifacts(row.runId, db);
-      const changedArtifacts = await listChangedArtifacts(
-        row.runId,
-        row.changedArtifactsJson,
-        row.sourceUrl,
-        db,
-      );
+  const runIds = rows.map((row) => row.runId);
+  const fallbackRunIds = rows
+    .filter((row) => !parseChangedArtifacts(row.changedArtifactsJson).length)
+    .map((row) => row.runId);
+  const [affectedByRun, changedArtifactsByRun] = await Promise.all([
+    listAffectedArtifactsForRuns(runIds, db),
+    listChangedArtifactsForRuns(fallbackRunIds, db),
+  ]);
+
+  const items = rows.map((row): ChangeItem => {
+      const affected = affectedByRun.get(row.runId) || [];
+      const storedChangedArtifacts = parseChangedArtifacts(row.changedArtifactsJson);
+      const changedArtifacts = (
+        storedChangedArtifacts.length
+          ? storedChangedArtifacts
+          : changedArtifactsByRun.get(row.runId) || []
+      ).map((artifact) => ({
+        ...artifact,
+        externalUrl: artifact.externalUrl || row.sourceUrl,
+      }));
       const affectedWithChangedSource = affected.map((item) =>
         item.changedArtifact || changedArtifacts.length !== 1
           ? item
@@ -410,8 +385,7 @@ export async function listChanges(
         changedArtifacts,
         artifacts: affectedWithChangedSource.map(toAffectedArtifact),
       };
-    }),
-  );
+    });
 
   const openCount = items.filter((item) => item.status === "open").length;
   const scheduledCount = items.filter((item) => item.status === "scheduled").length;
@@ -583,10 +557,18 @@ export async function listRuns(
     .orderBy(desc(analysisRuns.createdAt))
     .limit(50);
 
+  const runIds = rows.map((row) => row.id);
+  const countRows = runIds.length
+    ? await db
+        .select({ runId: findings.runId, value: count() })
+        .from(findings)
+        .where(inArray(findings.runId, runIds))
+        .groupBy(findings.runId)
+    : [];
+  const countsByRun = new Map(countRows.map((row) => [row.runId, row.value]));
+
   return {
-    items: await Promise.all(
-      rows.map(async (row) => toRunItem(row, await findingCount(row.id, db))),
-    ),
+    items: rows.map((row) => toRunItem(row, countsByRun.get(row.id) || 0)),
   };
 }
 
@@ -739,33 +721,25 @@ export async function listSources(
     .where(eq(sources.workspaceId, workspaceId))
     .orderBy(desc(sources.createdAt));
 
-  const items = await Promise.all(
-      rows.map(async (row): Promise<SourceItem> => {
-        const [allArtifacts, codeArtifacts, documentationArtifacts] = await Promise.all([
-          db
-            .select({ value: count() })
-            .from(artifacts)
-            .where(eq(artifacts.sourceId, row.id)),
-          db
-            .select({ value: count() })
-            .from(artifacts)
-            .where(
-              and(
-                eq(artifacts.sourceId, row.id),
-                inArray(artifacts.kind, ["code", "test"]),
-              ),
-            ),
-          db
-            .select({ value: count() })
-            .from(artifacts)
-            .where(
-              and(
-                eq(artifacts.sourceId, row.id),
-                inArray(artifacts.kind, ["markdown", "openapi", "confluence"]),
-              ),
-            ),
-        ]);
+  const sourceIds = rows.map((row) => row.id);
+  const artifactCountRows = sourceIds.length
+    ? await db
+        .select({
+          sourceId: artifacts.sourceId,
+          all: count(),
+          code: sql<number>`count(*) filter (where ${artifacts.kind} in ('code', 'test'))`.mapWith(Number),
+          documentation: sql<number>`count(*) filter (where ${artifacts.kind} in ('markdown', 'openapi', 'confluence'))`.mapWith(Number),
+        })
+        .from(artifacts)
+        .where(inArray(artifacts.sourceId, sourceIds))
+        .groupBy(artifacts.sourceId)
+    : [];
+  const countsBySource = new Map(
+    artifactCountRows.map((row) => [row.sourceId, row]),
+  );
 
+  const items = rows.map((row): SourceItem => {
+        const sourceCounts = countsBySource.get(row.id);
         return {
           id: row.id,
           provider: row.provider,
@@ -774,13 +748,12 @@ export async function listSources(
           status: row.status,
           lastError: row.lastError,
           lastSyncedAt: normalizeTimestamp(row.lastSyncedAt),
-          artifactCount: allArtifacts[0]?.value ?? 0,
-          codeArtifactCount: codeArtifacts[0]?.value ?? 0,
-          documentationArtifactCount: documentationArtifacts[0]?.value ?? 0,
+          artifactCount: sourceCounts?.all ?? 0,
+          codeArtifactCount: sourceCounts?.code ?? 0,
+          documentationArtifactCount: sourceCounts?.documentation ?? 0,
           canonicalUrl: row.canonicalUrl,
         };
-      }),
-    );
+      });
   let memberships = await db
     .select({
       groupId: sourceGroupMembers.groupId,

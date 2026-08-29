@@ -103,12 +103,13 @@ describe("GitHub graph ingestion", () => {
       },
     };
 
-    await syncGitHubSource(
+    const firstSync = await syncGitHubSource(
       context.workspace.id,
       "source-ingestion",
       provider,
       db,
     );
+    expect(firstSync.changed).toBe(true);
     expect(
       (await db.select().from(relationships)).filter(
         (relationship) => relationship.type === "links",
@@ -123,12 +124,13 @@ describe("GitHub graph ingestion", () => {
     ]));
 
     revision = "rev-2";
-    await syncGitHubSource(
+    const secondSync = await syncGitHubSource(
       context.workspace.id,
       "source-ingestion",
       provider,
       db,
     );
+    expect(secondSync.changed).toBe(true);
     expect(
       (await db.select().from(relationships)).filter(
         (relationship) => relationship.type === "links",
@@ -140,5 +142,17 @@ describe("GitHub graph ingestion", () => {
       ),
     ).toBe(false);
     expect(await db.select().from(artifacts)).toHaveLength(2);
+
+    const unchangedSync = await syncGitHubSource(
+      context.workspace.id,
+      "source-ingestion",
+      provider,
+      db,
+    );
+    expect(unchangedSync).toMatchObject({
+      changed: false,
+      revision: "rev-2",
+      artifactCount: 2,
+    });
   });
 });

@@ -246,8 +246,16 @@ export async function checkConfluenceSource(
 ): Promise<ScheduledConfluenceResult> {
   const before = await indexedPages(sourceId, db);
   await baselineExistingPages(before, db);
-  await syncConfluenceSource(workspaceId, sourceId, encryptionKey, client, db);
-  await rebuildCrossSourceRelationships(workspaceId, sourceId, db);
+  const sync = await syncConfluenceSource(
+    workspaceId,
+    sourceId,
+    encryptionKey,
+    client,
+    db,
+  );
+  if (sync.changed) {
+    await rebuildCrossSourceRelationships(workspaceId, sourceId, db);
+  }
 
   if (!before.length) {
     await baselineExistingPages(await indexedPages(sourceId, db), db);

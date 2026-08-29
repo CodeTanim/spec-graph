@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb, type SpecGraphDb } from "../../db";
 import {
   artifacts,
@@ -163,8 +163,39 @@ export async function persistDeterministicFindings(
     ...affectedByNode.entries(),
   ]);
   const consideredArtifacts = new Set<string>();
+  const evidenceVersionByKey = new Map<
+    string,
+    Promise<{ id: string; text: string } | null>
+  >();
   let persistedFindings = 0;
   const now = new Date().toISOString();
+
+  const evidenceVersion = (
+    artifactId: string,
+    revision: string | null,
+  ): Promise<{ id: string; text: string } | null> => {
+    const key = `${artifactId}:${revision || "latest"}`;
+    const existing = evidenceVersionByKey.get(key);
+    if (existing) return existing;
+    const pending = (async () => {
+      const rows = await db
+        .select({ id: artifactVersions.id, text: artifactVersions.extractedText })
+        .from(artifactVersions)
+        .where(
+          revision
+            ? and(
+                eq(artifactVersions.artifactId, artifactId),
+                eq(artifactVersions.revision, revision),
+              )
+            : eq(artifactVersions.artifactId, artifactId),
+        )
+        .orderBy(desc(artifactVersions.createdAt))
+        .limit(1);
+      return rows[0] || null;
+    })();
+    evidenceVersionByKey.set(key, pending);
+    return pending;
+  };
 
   for (const candidate of candidates) {
     const { edge, changedNodeId, affectedNodeId } = candidate;
@@ -180,20 +211,11 @@ export async function persistDeterministicFindings(
     consideredArtifacts.add(affected.artifactId);
 
     const evidenceRecord = recordByNode.get(edge.fromNodeId);
-    const versions = await db
-      .select()
-      .from(artifactVersions)
-      .where(
-        eq(
-          artifactVersions.artifactId,
-          evidenceRecord?.artifactId || affected.artifactId,
-        ),
-      )
-      .orderBy(desc(artifactVersions.createdAt));
-    const version =
-      versions.find(
-        (item) => item.revision === evidenceRecord?.currentRevision,
-      ) || versions[0];
+    const evidenceArtifactId = evidenceRecord?.artifactId || affected.artifactId;
+    const version = await evidenceVersion(
+      evidenceArtifactId,
+      evidenceRecord?.currentRevision || null,
+    );
     const startLine = Math.max(
       1,
       edge.evidenceStartLine || evidenceRecord?.startLine || 1,
@@ -212,7 +234,7 @@ export async function persistDeterministicFindings(
     const changeSummary = changedSummaryByNode.get(changedNodeId);
     const deduplicationKey = `${changedNodeId}:${affected.artifactId}:${candidate.path.map((item) => item.type).join(">")}`;
     const excerpt = version
-      ? evidenceExcerpt(version.extractedText, startLine)
+      ? evidenceExcerpt(version.text, startLine)
       : edge.evidence;
     const evidenceLocation = `${evidenceRecord?.path || affected.path}:${startLine}`;
     const changedRecord = changedRecordByNode.get(changedNodeId);

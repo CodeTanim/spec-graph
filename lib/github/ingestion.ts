@@ -69,7 +69,7 @@ export async function syncGitHubSource(
   client: GitHubSourceProvider,
   db: SpecGraphDb = getDb(),
   revisionOverride?: string,
-): Promise<{ artifactCount: number; revision: string }> {
+): Promise<{ artifactCount: number; revision: string; changed: boolean }> {
   const [record] = await db
     .select({
       source: sources,
@@ -112,7 +112,7 @@ export async function syncGitHubSource(
         .update(sources)
         .set({ status: "connected", lastSyncedAt: now, updatedAt: now })
         .where(eq(sources.id, sourceId));
-      return { artifactCount: indexed?.value ?? 0, revision };
+      return { artifactCount: indexed?.value ?? 0, revision, changed: false };
     }
     const tree = await client.repositoryTree(
       record.installationExternalId,
@@ -153,28 +153,22 @@ export async function syncGitHubSource(
       .from(artifacts)
       .where(eq(artifacts.sourceId, sourceId));
     const previousContentByPath = new Map<string, string>();
-    const existingById = new Map(existingArtifacts.map((item) => [item.id, item]));
-    const existingArtifactIds = existingArtifacts.map((item) => item.id);
-    for (let index = 0; index < existingArtifactIds.length; index += DB_IN_LIST_SIZE) {
-      const versions = await db
-        .select({
-          artifactId: artifactVersions.artifactId,
-          revision: artifactVersions.revision,
-          content: artifactVersions.extractedText,
-        })
-        .from(artifactVersions)
-        .where(
-          inArray(
-            artifactVersions.artifactId,
-            existingArtifactIds.slice(index, index + DB_IN_LIST_SIZE),
-          ),
-        );
-      for (const version of versions) {
-        const artifact = existingById.get(version.artifactId);
-        if (artifact?.currentRevision === version.revision) {
-          previousContentByPath.set(artifact.externalId, version.content);
-        }
-      }
+    const currentVersions = await db
+      .select({
+        path: artifacts.externalId,
+        content: artifactVersions.extractedText,
+      })
+      .from(artifactVersions)
+      .innerJoin(
+        artifacts,
+        and(
+          eq(artifactVersions.artifactId, artifacts.id),
+          eq(artifactVersions.revision, artifacts.currentRevision),
+        ),
+      )
+      .where(eq(artifacts.sourceId, sourceId));
+    for (const version of currentVersions) {
+      previousContentByPath.set(version.path, version.content);
     }
     const knownPaths = new Set(files.map((file) => file.path));
     const openApiContracts = new Map<string, ParsedOpenApiContract[]>();
@@ -432,7 +426,7 @@ export async function syncGitHubSource(
         updatedAt: now,
       })
       .where(eq(sources.id, sourceId));
-    return { artifactCount: files.length, revision };
+    return { artifactCount: files.length, revision, changed: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "GitHub synchronization failed.";
     await db

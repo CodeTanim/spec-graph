@@ -53,7 +53,7 @@ export async function syncConfluenceSource(
   encryptionKey: string,
   client: ConfluenceSourceProvider,
   db: SpecGraphDb = getDb(),
-): Promise<{ artifactCount: number; revision: string }> {
+): Promise<{ artifactCount: number; revision: string; changed: boolean }> {
   const [record] = await db.select({ source: sources, connection: confluenceConnections })
     .from(sources)
     .innerJoin(confluenceConnections, eq(sources.confluenceConnectionId, confluenceConnections.id))
@@ -85,6 +85,12 @@ export async function syncConfluenceSource(
     }
     const existingArtifacts = await db.select().from(artifacts).where(eq(artifacts.sourceId, sourceId));
     const existingByPage = new Map(existingArtifacts.map((item) => [item.externalId, item]));
+    const changed =
+      pages.length !== existingArtifacts.length ||
+      pages.some((page) => {
+        const existing = existingByPage.get(page.id);
+        return !existing || existing.currentRevision !== String(page.version);
+      });
     const nodeIds: string[] = [];
     let latestVersion = 0;
 
@@ -171,7 +177,7 @@ export async function syncConfluenceSource(
       lastSyncedAt: now,
       updatedAt: now,
     }).where(eq(sources.id, sourceId));
-    return { artifactCount: pages.length, revision };
+    return { artifactCount: pages.length, revision, changed };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Confluence synchronization failed.";
     await db.update(sources).set({ status: "error", lastError: message, updatedAt: new Date().toISOString() })

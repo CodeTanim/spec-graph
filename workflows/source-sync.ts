@@ -25,24 +25,29 @@ export async function syncSourceStep(workspaceId: string, sourceId: string) {
   const db = getDb();
   const source = await getSource(workspaceId, sourceId, db);
   try {
+    let changed = false;
     if (source.provider === "github") {
-      await syncGitHubSource(
+      const result = await syncGitHubSource(
         workspaceId,
         sourceId,
         new GitHubClient(getGitHubAppConfig()),
         db,
       );
+      changed = result.changed;
     } else {
       const config = getConfluenceConfig();
-      await syncConfluenceSource(
+      const result = await syncConfluenceSource(
         workspaceId,
         sourceId,
         config.encryptionKey,
         new ConfluenceClient(config),
         db,
       );
+      changed = result.changed;
     }
-    await rebuildCrossSourceRelationships(workspaceId, sourceId, db);
+    if (changed) {
+      await rebuildCrossSourceRelationships(workspaceId, sourceId, db);
+    }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Source synchronization failed.";
