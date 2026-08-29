@@ -598,6 +598,7 @@ export const findings = pgTable(
       .notNull()
       .default("open"),
     deduplicationKey: text("deduplication_key").notNull(),
+    impactFingerprint: text("impact_fingerprint"),
     ...timestamps,
   },
   (table) => [
@@ -605,6 +606,7 @@ export const findings = pgTable(
       table.runId,
       table.deduplicationKey,
     ),
+    uniqueIndex("idx_findings_impact_fingerprint").on(table.impactFingerprint),
     index("idx_findings_run_status").on(table.runId, table.status),
   ],
 );

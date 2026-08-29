@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { getDb, type SpecGraphDb } from "../../db";
 import {
   artifacts,
@@ -16,6 +16,7 @@ import {
   type AnalysisArtifactKind,
   type CandidateEdge,
 } from "./candidates";
+import { createImpactFingerprint } from "./impact-fingerprint";
 
 export { shouldCreateImpactFinding } from "./candidates";
 
@@ -95,6 +96,7 @@ export async function persistDeterministicFindings(
       canonicalUrl: artifacts.canonicalUrl,
       startLine: graphNodes.startLine,
       endLine: graphNodes.endLine,
+      contentHash: graphNodes.contentHash,
     })
     .from(graphNodes)
     .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
@@ -160,7 +162,8 @@ export async function persistDeterministicFindings(
     ...changedRecordByNode.entries(),
     ...affectedByNode.entries(),
   ]);
-  const persistedArtifacts = new Set<string>();
+  const consideredArtifacts = new Set<string>();
+  let persistedFindings = 0;
   const now = new Date().toISOString();
 
   for (const candidate of candidates) {
@@ -170,11 +173,11 @@ export async function persistDeterministicFindings(
     if (
       !affected ||
       !changedKind ||
-      persistedArtifacts.has(affected.artifactId)
+      consideredArtifacts.has(affected.artifactId)
     ) {
       continue;
     }
-    persistedArtifacts.add(affected.artifactId);
+    consideredArtifacts.add(affected.artifactId);
 
     const evidenceRecord = recordByNode.get(edge.fromNodeId);
     const versions = await db
@@ -208,6 +211,38 @@ export async function persistDeterministicFindings(
       : `This ${artifactNoun(affected.kind)} is connected to the changed ${artifactNoun(changedKind)} ${changedPath} through ${candidate.depth} verified relationship steps.`;
     const changeSummary = changedSummaryByNode.get(changedNodeId);
     const deduplicationKey = `${changedNodeId}:${affected.artifactId}:${candidate.path.map((item) => item.type).join(">")}`;
+    const excerpt = version
+      ? evidenceExcerpt(version.extractedText, startLine)
+      : edge.evidence;
+    const evidenceLocation = `${evidenceRecord?.path || affected.path}:${startLine}`;
+    const changedRecord = changedRecordByNode.get(changedNodeId);
+    const impactFingerprint = await createImpactFingerprint({
+      changed: {
+        nodeId: changedNodeId,
+        revision: changedRecord?.currentRevision || changedRecord?.contentHash || "unknown",
+      },
+      affected: {
+        artifactId: affected.artifactId,
+        revision: affected.currentRevision || affected.contentHash || "unknown",
+      },
+      relationship: {
+        origin: candidate.origin,
+        provenance: edge.provenance || "LEGACY",
+        analyzerVersion: edge.analyzerVersion || "deterministic-v1",
+        signals: candidate.path.map((signal) => ({
+          type: signal.type,
+          origin: signal.origin,
+          provenance: signal.provenance || "LEGACY",
+          analyzerVersion: signal.analyzerVersion || "deterministic-v1",
+          evidence: signal.evidence,
+          evidenceStartLine: signal.evidenceStartLine,
+        })),
+      },
+      evidence: {
+        location: evidenceLocation,
+        excerpt,
+      },
+    });
     const stableSuffix = (await sha256Hex(`${runId}:${deduplicationKey}`)).slice(0, 32);
     const inserted = await db.insert(findings).values({
       id: `finding_${stableSuffix}`,
@@ -224,32 +259,20 @@ export async function persistDeterministicFindings(
       analyzerVersion: edge.analyzerVersion || "deterministic-v1",
       status: "open",
       deduplicationKey,
+      impactFingerprint,
       createdAt: now,
       updatedAt: now,
-    }).onConflictDoNothing({
-      target: [findings.runId, findings.deduplicationKey],
-    }).returning({ id: findings.id });
-    const [existingFinding] = inserted.length
-      ? inserted
-      : await db
-          .select({ id: findings.id })
-          .from(findings)
-          .where(and(
-            eq(findings.runId, runId),
-            eq(findings.deduplicationKey, deduplicationKey),
-          ))
-          .limit(1);
-    if (!existingFinding) continue;
+    }).onConflictDoNothing().returning({ id: findings.id });
+    const insertedFinding = inserted[0];
+    if (!insertedFinding) continue;
     await db.insert(findingEvidence).values({
       id: `evidence_${stableSuffix}`,
-      findingId: existingFinding.id,
+      findingId: insertedFinding.id,
       artifactVersionId: version?.id || null,
-      location: `${evidenceRecord?.path || affected.path}:${startLine}`,
+      location: evidenceLocation,
       startLine,
       endLine,
-      excerpt: version
-        ? evidenceExcerpt(version.extractedText, startLine)
-        : edge.evidence,
+      excerpt,
       sourceUrl: evidenceUrl(
         evidenceRecord?.kind || affected.kind,
         evidenceRecord?.canonicalUrl || affected.canonicalUrl,
@@ -259,7 +282,8 @@ export async function persistDeterministicFindings(
       type: "relationship",
       createdAt: now,
     }).onConflictDoNothing({ target: findingEvidence.id });
+    persistedFindings += 1;
   }
 
-  return persistedArtifacts.size;
+  return persistedFindings;
 }

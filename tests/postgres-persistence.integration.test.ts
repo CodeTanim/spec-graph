@@ -1436,12 +1436,12 @@ components:
         ],
         db,
       ),
-    ).toBe(1);
+    ).toBe(0);
     expect(
       await db
         .select({ affectedNodeId: findings.affectedNodeId })
         .from(findings)
         .where(eq(findings.runId, "run_mixed_policy")),
-    ).toEqual([{ affectedNodeId: "node_secondary_doc" }]);
+    ).toEqual([]);
   });
 });

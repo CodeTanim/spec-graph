@@ -660,7 +660,7 @@ Goal: make the product usable over repeated runs and credible under failure.
 - [x] Persist dismiss, resolve, and reopen actions.
 - [x] Record the actor and timestamp for every action.
 - [x] Make Open and All filters query real persisted states.
-- [ ] Decide how a previously dismissed relationship behaves after a materially new change.
+- [x] Scope dismiss and resolve decisions to an impact fingerprint: identical revisions and evidence retain the prior review decision, while a materially new revision or verified evidence creates a fresh open suggestion without rewriting history.
 - [x] Add durable retry policies with capped attempts and backoff.
 - [x] Prevent two workers from completing the same run concurrently.
 - [x] Add timeout and cancellation handling.
@@ -1117,6 +1117,7 @@ Add entries when a default above changes.
 | 2026-08-25 | Model connected sources as provider-neutral groups | GitHub, Confluence, and future documentation providers are equal peers; connection order must not define ownership | Every source receives one group membership, group-level Connect source supports any provider, and membership scopes relationship discovery without becoming evidence |
 | 2026-08-25 | Keep semantic analysis behind a provider-neutral, evidence-verifying adapter | The MVP should not pay for or display model guesses until quality can be measured against deterministic results | Production remains deterministic-only; any future model receives bounded candidates, must return exact excerpts, and records usage/cost/failure telemetry |
 | 2026-08-28 | Move production Postgres from Neon to Supabase and eliminate idle workspace polling | Neon's free public-network-transfer quota was exhausted by frequent whole-workspace refreshes; a provider-neutral driver and quieter refresh policy prevent recurrence and preserve portability | Vercel now injects Supabase pooled and direct connection URLs; production starts from a clean migrated database, source connections must be re-created, and the old Neon resource remains disconnected for rollback reference rather than active use |
+| 2026-08-29 | Treat review decisions as impact-specific, not permanent relationship suppression | A dismissal or resolution answers whether one affected resource needs attention for one concrete source revision and body of evidence; it should survive exact reruns without hiding genuinely new drift | Findings receive a revision-and-evidence fingerprint unique across runs; exact reruns create no duplicate, materially new impacts start open, and earlier findings plus action audit records remain unchanged |
 
 ---
 
@@ -1202,3 +1203,4 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Added stale-run reconciliation to scheduled processing and active-run polling, covering workers that disappear before their workflow timeout handler can report back.
 - Added one-line structured operational logs for workflow dispatch, webhook intake, and the full analysis-attempt lifecycle, correlated by run, workflow, workspace, source, and provider delivery IDs without logging source content or credentials.
 - Added integration coverage proving that a transient timeout fails cleanly, rejects late completion, and succeeds on the next attempt. Serialized PGlite integration files so the complete 17-test database suite is reliable on constrained developer and CI machines.
+- Completed the repeated-review policy with a provider-neutral impact fingerprint over changed revision, affected revision, relationship provenance, analyzer version, and exact evidence. Identical reruns preserve dismissed or resolved findings without duplicating evidence; materially new revisions produce a separate open finding while the earlier action history remains intact.

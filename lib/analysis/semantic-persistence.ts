@@ -9,6 +9,7 @@ import {
 } from "../../db/schema";
 import { sha256Hex } from "../github/crypto";
 import { shouldCreateImpactFinding, type CandidateEdge } from "./candidates";
+import { createImpactFingerprint } from "./impact-fingerprint";
 import {
   buildSemanticAnalysisInput,
   executeSemanticAnalysis,
@@ -94,6 +95,33 @@ export async function executeAndPersistSemanticAnalysis(
     if (!candidate) continue;
     const origin = candidate.relationshipContext.length ? "hybrid" : "semantic";
     const deduplicationKey = `${input.changed.nodeId}:${candidate.artifact.artifactId}:semantic:${execution.analyzerVersion}`;
+    const impactFingerprint = await createImpactFingerprint({
+      changed: {
+        nodeId: input.changed.nodeId,
+        revision: input.changed.revision,
+      },
+      affected: {
+        artifactId: candidate.artifact.artifactId,
+        revision: candidate.artifact.revision,
+      },
+      relationship: {
+        origin,
+        provenance: "SEMANTIC",
+        analyzerVersion: execution.analyzerVersion,
+        signals: candidate.relationshipContext.map((signal) => ({
+          type: signal.type,
+          origin: signal.origin,
+          provenance: signal.provenance || "LEGACY",
+          analyzerVersion: execution.analyzerVersion,
+          evidence: signal.evidence,
+          evidenceStartLine: null,
+        })),
+      },
+      evidence: {
+        location: `${candidate.artifact.path}:${decision.candidateStartLine}`,
+        excerpt: decision.candidateExcerpt || "",
+      },
+    });
     const stableSuffix = (await sha256Hex(`${input.runId}:${deduplicationKey}`)).slice(0, 32);
     const relationshipId = `relationship_semantic_${stableSuffix}`;
 
@@ -139,11 +167,10 @@ export async function executeAndPersistSemanticAnalysis(
       analyzerVersion: execution.analyzerVersion,
       status: "open",
       deduplicationKey,
+      impactFingerprint,
       createdAt: now,
       updatedAt: now,
-    }).onConflictDoNothing({
-      target: [findings.runId, findings.deduplicationKey],
-    }).returning({ id: findings.id });
+    }).onConflictDoNothing().returning({ id: findings.id });
     const findingId = inserted[0]?.id;
     if (!findingId) continue;
 

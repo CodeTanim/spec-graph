@@ -57,6 +57,13 @@
       "when": 1787974441478,
       "tag": "0007_careless_ulik",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788017365908,
+      "tag": "0008_stormy_purifiers",
+      "breakpoints": true
     }
   ]
 }
