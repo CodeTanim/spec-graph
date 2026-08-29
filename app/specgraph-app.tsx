@@ -128,7 +128,7 @@ function relationshipSignal(artifact: AffectedArtifact): string {
     STRUCTURAL: "Defined in changed file",
     LEGACY: "Verified relationship",
   };
-  return `${labels[artifact.provenance]} · ${Math.round(artifact.confidence * 100)}% confidence`;
+  return labels[artifact.provenance];
 }
 
 export function relativeTime(value: string | null, now = Date.now()) {
@@ -1535,11 +1535,17 @@ export function SpecGraphApp({
                                 <p>{artifact.reason}</p>
                                 <div
                                   className="relationship-evidence"
-                                  aria-label="Verified relationship evidence"
+                                  aria-label="Connection evidence"
                                 >
-                                  <strong>{relationshipSignal(artifact)}</strong>
+                                  <strong>
+                                    {Math.round(artifact.confidence * 100)}% confidence this
+                                    item is connected to the change
+                                  </strong>
                                   <span>
-                                    Relationship evidence <span aria-hidden="true">·</span>{" "}
+                                    Connection found through: {relationshipSignal(artifact)}
+                                  </span>
+                                  <span>
+                                    Supporting reference: {" "}
                                     {artifact.evidenceLocation}
                                   </span>
                                   <blockquote>{artifact.excerpt}</blockquote>

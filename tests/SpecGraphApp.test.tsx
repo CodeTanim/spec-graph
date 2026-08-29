@@ -234,10 +234,15 @@ describe("SpecGraphApp", () => {
     expect(
       screen.getByText("Refunds are available within 30 days of the original charge."),
     ).toBeInTheDocument();
-    const relationshipEvidence = screen.getByLabelText("Verified relationship evidence");
-    expect(relationshipEvidence).toHaveTextContent("Exact identifier · 95% confidence");
+    const relationshipEvidence = screen.getByLabelText("Connection evidence");
     expect(relationshipEvidence).toHaveTextContent(
-      "src/refunds/policy.ts:18",
+      "95% confidence this item is connected to the change",
+    );
+    expect(relationshipEvidence).toHaveTextContent(
+      "Connection found through: Exact identifier",
+    );
+    expect(relationshipEvidence).toHaveTextContent(
+      "Supporting reference: src/refunds/policy.ts:18",
     );
     expect(screen.getByRole("link", { name: "Open policy.ts" })).toHaveAttribute(
       "href",
