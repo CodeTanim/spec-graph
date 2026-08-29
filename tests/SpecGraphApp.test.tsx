@@ -74,9 +74,9 @@ describe("SpecGraphApp", () => {
       screen.getByRole("heading", { name: "Preparing your sources" }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Sources" }));
-    expect(screen.getByText("Indexing now")).toBeInTheDocument();
+    expect(screen.getByText("Fetching the latest content")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Check platform-api for updates" }),
+      screen.getByRole("button", { name: "Refresh platform-api source" }),
     ).toBeDisabled();
   });
 
@@ -115,7 +115,7 @@ describe("SpecGraphApp", () => {
     const snapshot = {
       changes: {
         items: [],
-        counts: { open: 0, total: 0 },
+        counts: { open: 0, scheduled: 0, total: 0 },
         lastCheckedAt: completedRun.completedAt,
       },
       runs: { items: [completedRun] },
@@ -163,7 +163,7 @@ describe("SpecGraphApp", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Review sources" }));
     expect(screen.getByRole("heading", { name: "Connected sources" })).toBeInTheDocument();
-    expect(screen.getByText("The last check failed")).toBeInTheDocument();
+    expect(screen.getByText("The last refresh failed")).toBeInTheDocument();
   });
 
   it("starts with only changes that need attention", async () => {
@@ -293,7 +293,7 @@ describe("SpecGraphApp", () => {
     expect(screen.getByRole("button", { name: "Continue in background" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recent activity" })).toBeInTheDocument();
     expect(screen.getByText("Checking release/2026.08")).toBeInTheDocument();
-    expect(screen.getByText("Queued")).toBeInTheDocument();
+    expect(screen.getByText("Starting…")).toBeInTheDocument();
   });
 
   it("polls a persisted run and shows its completed result", async () => {
@@ -302,6 +302,7 @@ describe("SpecGraphApp", () => {
       id: "run-polling",
       title: "Checking #842",
       target: "#842",
+      trigger: "manual" as const,
       status: "queued" as const,
       progress: 0,
       findingsCount: 0,
@@ -316,10 +317,9 @@ describe("SpecGraphApp", () => {
     };
     const api = createFakeApi();
     let runListLoads = 0;
-    api.loadRuns = async () => ({
+    api.loadRuns = vi.fn(async () => ({
       items: [runListLoads++ === 0 ? queuedRun : completedRun],
-    });
-    api.loadRun = vi.fn(async () => completedRun);
+    }));
 
     render(
       <SpecGraphApp
@@ -333,9 +333,44 @@ describe("SpecGraphApp", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Runs" }));
 
-    expect(screen.getByText("Queued")).toBeInTheDocument();
+    expect(screen.getByText("Starting…")).toBeInTheDocument();
     expect(await screen.findByText("1 finding", {}, { timeout: 3000 })).toBeInTheDocument();
-    expect(api.loadRun).toHaveBeenCalledWith("run-polling");
+    expect(api.loadRuns).toHaveBeenCalled();
+  });
+
+  it("describes webhook work as scheduled until the daily analysis begins", () => {
+    const scheduledChange = {
+      ...dashboardFixture.changes.items[0],
+      id: "scheduled-change",
+      status: "scheduled" as const,
+      artifacts: [],
+      affected: 0,
+    };
+    const scheduledRun = {
+      ...dashboardFixture.runs.items[0],
+      id: scheduledChange.runId,
+      trigger: "github" as const,
+      status: "queued" as const,
+      progress: 0,
+      completedAt: null,
+    };
+    const snapshot = {
+      ...dashboardFixture,
+      changes: {
+        items: [scheduledChange],
+        counts: { open: 0, scheduled: 1, total: 1 },
+        lastCheckedAt: dashboardFixture.changes.lastCheckedAt,
+      },
+      runs: { items: [scheduledRun] },
+    };
+
+    render(
+      <SpecGraphApp api={createFakeApi(snapshot)} initialData={snapshot} loadOnMount={false} />,
+    );
+
+    expect(screen.getByText("Scheduled for daily check")).toBeInTheDocument();
+    expect(screen.getByText(/Next daily analysis/)).toBeInTheDocument();
+    expect(screen.queryByText("Analyzing…")).not.toBeInTheDocument();
   });
 
   it("does not repeatedly reload the full workspace while the page is idle", async () => {
@@ -507,6 +542,41 @@ describe("SpecGraphApp", () => {
     expect(screen.getAllByRole("button", { name: "Connect source" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "+ Add documentation" })).not.toBeInTheDocument();
     expect(screen.queryByText("Alex Kim")).not.toBeInTheDocument();
+  });
+
+  it("tracks a source refresh through completion", async () => {
+    const user = userEvent.setup();
+    const api = createFakeApi();
+    const source = dashboardFixture.sources.items[0];
+    const refreshing = { ...source, status: "syncing" as const };
+    const refreshed = {
+      ...source,
+      status: "connected" as const,
+      lastSyncedAt: new Date().toISOString(),
+    };
+    let sourceLoads = 0;
+    api.syncSource = vi.fn(async () => ({ source }));
+    api.loadSources = vi.fn(async () => {
+      const current = sourceLoads++ === 0 ? refreshing : refreshed;
+      return {
+        items: [current],
+        groups: [{ id: "group-platform", sources: [current] }],
+      };
+    });
+
+    render(
+      <SpecGraphApp api={api} initialData={dashboardFixture} loadOnMount={false} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+    await user.click(screen.getByRole("button", { name: "Refresh platform-api source" }));
+
+    expect(screen.getByRole("button", { name: "Refresh platform-api source" })).toHaveTextContent(
+      "Refreshing…",
+    );
+    expect(
+      await screen.findByText("acme/platform-api refreshed successfully", {}, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(api.loadSources).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the source chooser neutral and connects from either provider", async () => {

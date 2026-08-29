@@ -130,6 +130,15 @@ describe("Neon-compatible Postgres persistence", () => {
       status: "received",
       analysisRunId: runs[0].id,
     });
+
+    const scheduledChanges = await listChanges(context.workspace.id, "all", db);
+    expect(scheduledChanges.items).toHaveLength(1);
+    expect(scheduledChanges.items[0]).toMatchObject({
+      status: "scheduled",
+      affected: 0,
+    });
+    expect(scheduledChanges.counts).toEqual({ open: 0, scheduled: 1, total: 1 });
+    expect(scheduledChanges.lastCheckedAt).toBeNull();
   });
 
   it("turns each new Confluence page version into one scheduled run", async () => {

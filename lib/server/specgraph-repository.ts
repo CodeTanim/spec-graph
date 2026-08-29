@@ -385,9 +385,11 @@ export async function listChanges(
           : { ...item, changedArtifact: changedArtifacts[0] },
       );
       const status =
-        row.runStatus === "queued" || row.runStatus === "running"
-          ? "processing"
-          : reviewedChangeStatus(affected);
+        row.runStatus === "queued"
+          ? "scheduled"
+          : row.runStatus === "running"
+            ? "processing"
+            : reviewedChangeStatus(affected);
 
       return {
         id: row.changeId,
@@ -407,14 +409,15 @@ export async function listChanges(
   );
 
   const openCount = items.filter((item) => item.status === "open").length;
+  const scheduledCount = items.filter((item) => item.status === "scheduled").length;
   const visibleItems = filter === "open" ? items.filter((item) => item.status === "open") : items;
   const lastCheckedAt = rows
-    .map((row) => normalizeTimestamp(row.runCompletedAt || row.runCreatedAt))
+    .map((row) => normalizeTimestamp(row.runCompletedAt))
     .find(Boolean) || null;
 
   return {
     items: visibleItems,
-    counts: { open: openCount, total: items.length },
+    counts: { open: openCount, scheduled: scheduledCount, total: items.length },
     lastCheckedAt,
   };
 }
@@ -705,6 +708,7 @@ export async function listSources(
           name: row.name,
           detail: row.detail,
           status: row.status,
+          lastError: row.lastError,
           lastSyncedAt: normalizeTimestamp(row.lastSyncedAt),
           artifactCount: allArtifacts[0]?.value ?? 0,
           codeArtifactCount: codeArtifacts[0]?.value ?? 0,

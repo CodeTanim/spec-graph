@@ -47,6 +47,7 @@ function Arrow() {
 }
 
 function statusText(change: ChangeItem) {
+  if (change.status === "scheduled") return "Scheduled for daily check";
   if (change.status === "processing") return "Analyzing…";
   if (change.status === "resolved") return "Resolved";
   if (change.status === "dismissed") return "Dismissed";
@@ -58,7 +59,9 @@ function statusText(change: ChangeItem) {
 }
 
 function runResult(run: RunItem) {
-  if (run.status === "queued") return "Queued";
+  if (run.status === "queued") {
+    return run.trigger === "github" ? "Scheduled for daily check" : "Starting…";
+  }
   if (run.status === "running") return `Analyzing… ${run.progress}%`;
   if (run.status === "failed") return "Failed";
   if (run.findingsCount === 0) return "No findings";
@@ -90,7 +93,7 @@ function sourceStatus(source: SourceItem) {
     case "connected":
       return "Connected";
     case "syncing":
-      return "Preparing";
+      return "Refreshing";
     case "error":
       return "Needs attention";
     case "disconnected":
@@ -101,10 +104,9 @@ function sourceStatus(source: SourceItem) {
 }
 
 function sourceFreshness(source: SourceItem) {
-  if (source.status === "pending" || source.status === "syncing") {
-    return "Indexing now";
-  }
-  if (source.status === "error") return "The last check failed";
+  if (source.status === "pending") return "Indexing for the first time";
+  if (source.status === "syncing") return "Fetching the latest content";
+  if (source.status === "error") return source.lastError || "The last refresh failed";
   if (source.status === "disconnected") return "Reconnect to continue";
   return source.lastSyncedAt
     ? `Last checked ${relativeTime(source.lastSyncedAt)}`
@@ -142,6 +144,34 @@ export function relativeTime(value: string | null, now = Date.now()) {
   const days = Math.floor(hours / 24);
   if (days === 1) return "yesterday";
   return `${days} days ago`;
+}
+
+const DAILY_ANALYSIS_HOUR_UTC = 13;
+const SOURCE_REFRESH_POLL_MS = 900;
+const SOURCE_REFRESH_TIMEOUT_MS = 90_000;
+
+export function nextDailyAnalysisTime(now = new Date()): Date {
+  const next = new Date(now);
+  next.setUTCHours(DAILY_ANALYSIS_HOUR_UTC, 0, 0, 0);
+  if (next.valueOf() <= now.valueOf()) next.setUTCDate(next.getUTCDate() + 1);
+  return next;
+}
+
+function nextDailyAnalysisLabel(now = new Date()): string {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(nextDailyAnalysisTime(now));
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function changeIsPending(change: ChangeItem): boolean {
+  return change.status === "scheduled" || change.status === "processing";
 }
 
 export function SpecGraphApp({
@@ -333,7 +363,7 @@ export function SpecGraphApp({
 
   useEffect(() => {
     if (!toast) return;
-    const timer = window.setTimeout(() => setToast(""), 2800);
+    const timer = window.setTimeout(() => setToast(""), 4500);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
@@ -344,35 +374,31 @@ export function SpecGraphApp({
     );
     if (!activeRuns.length) return;
 
+    const pollQuickly = activeRuns.some(
+      (run) => run.status === "running" || run.trigger !== "github",
+    );
+
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      void Promise.all(activeRuns.map((run) => api.loadRun(run.id)))
-        .then(async (updatedRuns) => {
+      void api.loadRuns()
+        .then(async (nextRuns) => {
           if (cancelled) return;
-          setRuns((current) =>
-            current.map(
-              (run) => updatedRuns.find((updated) => updated.id === run.id) || run,
-            ),
-          );
-          if (
-            updatedRuns.some(
-              (run) => run.status === "succeeded" || run.status === "failed",
-            )
-          ) {
-            const [nextChanges, nextRuns] = await Promise.all([
-              api.loadChanges(filter),
-              api.loadRuns(),
-            ]);
-            if (!cancelled) {
-              setChanges(nextChanges);
-              setRuns(nextRuns.items);
-            }
+          const updatedRuns = nextRuns.items;
+          const updatedById = new Map(updatedRuns.map((run) => [run.id, run]));
+          const completedActiveRun = activeRuns.some((run) => {
+            const updated = updatedById.get(run.id);
+            return updated?.status === "succeeded" || updated?.status === "failed";
+          });
+          setRuns(updatedRuns);
+          if (completedActiveRun) {
+            const nextChanges = await api.loadChanges(filter);
+            if (!cancelled) setChanges(nextChanges);
           }
         })
         .catch(() => {
           // A later page refresh can resume polling from the persisted run state.
         });
-    }, 900);
+    }, pollQuickly ? 900 : 60_000);
 
     return () => {
       cancelled = true;
@@ -438,6 +464,7 @@ export function SpecGraphApp({
   }, []);
 
   const openCount = changes.counts.open;
+  const scheduledCount = changes.counts.scheduled;
   const visibleChanges = changes.items;
   const hasSources = sources.length > 0;
   const hasReadySource = sources.some((source) => source.status === "connected");
@@ -710,13 +737,49 @@ export function SpecGraphApp({
 
   async function syncSource(sourceId: string) {
     if (syncingSourceId) return;
+    const previousSource = sources.find((source) => source.id === sourceId);
     setSyncingSourceId(sourceId);
     try {
       const result = await api.syncSource(sourceId);
-      await refreshSources();
-      setToast(`${result.source.name} check started`);
+      const deadline = Date.now() + SOURCE_REFRESH_TIMEOUT_MS;
+      let sawRefreshInProgress = false;
+
+      while (Date.now() < deadline) {
+        await wait(SOURCE_REFRESH_POLL_MS);
+        const nextSources = await api.loadSources();
+        setSources(nextSources.items);
+        setSourceGroups(nextSources.groups);
+        const refreshedSource = nextSources.items.find((source) => source.id === sourceId);
+        if (!refreshedSource) throw new Error("That source is no longer connected.");
+        if (refreshedSource.status === "error") {
+          throw new Error(
+            refreshedSource.lastError || `${result.source.name} could not be refreshed.`,
+          );
+        }
+        if (
+          refreshedSource.status === "pending" ||
+          refreshedSource.status === "syncing"
+        ) {
+          sawRefreshInProgress = true;
+          continue;
+        }
+        if (
+          refreshedSource.status === "connected" &&
+          (sawRefreshInProgress ||
+            refreshedSource.lastSyncedAt !== previousSource?.lastSyncedAt)
+        ) {
+          setToast(`${result.source.name} refreshed successfully`);
+          return;
+        }
+      }
+
+      setToast(
+        `${result.source.name} is still refreshing. Its status will update when it finishes.`,
+      );
     } catch (syncError) {
-      setToast(syncError instanceof Error ? syncError.message : "The source could not be synced.");
+      setToast(
+        syncError instanceof Error ? syncError.message : "The source could not be refreshed.",
+      );
     } finally {
       setSyncingSourceId("");
     }
@@ -825,14 +888,14 @@ export function SpecGraphApp({
                 source.status === "syncing" ||
                 source.status === "pending"
               }
-              aria-label={`Check ${name} for updates`}
+              aria-label={`Refresh ${name} source`}
               onClick={() => void syncSource(source.id)}
             >
               {syncingSourceId === source.id
-                ? "Checking…"
+                ? "Refreshing…"
                 : source.status === "syncing" || source.status === "pending"
                   ? "Preparing…"
-                  : "Check for updates"}
+                  : "Refresh source"}
             </button>
             <button
               type="button"
@@ -900,6 +963,8 @@ export function SpecGraphApp({
                   ? "Checking your workspace"
                   : openCount > 0
                     ? `${openCount} ${openCount === 1 ? "change needs" : "changes need"} your attention`
+                    : scheduledCount > 0
+                      ? `${scheduledCount} ${scheduledCount === 1 ? "change is" : "changes are"} scheduled`
                     : !hasSources
                       ? "Connect your first source"
                       : sourcesNeedAttention
@@ -913,6 +978,8 @@ export function SpecGraphApp({
               <p>
                 {openCount > 0
                   ? "Review what changed, what may now be outdated, and the evidence connecting them."
+                  : scheduledCount > 0
+                    ? `SpecGraph saved ${scheduledCount === 1 ? "this change" : "these changes"} and will analyze ${scheduledCount === 1 ? "it" : "them"} during the next daily run.`
                   : !hasSources && !loadingWorkspace
                     ? "Connect code and documentation so SpecGraph can show what may need updating."
                     : sourcesNeedAttention
@@ -946,6 +1013,8 @@ export function SpecGraphApp({
                 <p>
                   {loadingChanges
                     ? "Checking…"
+                    : scheduledCount > 0
+                      ? `${scheduledCount} scheduled · Next daily analysis ${nextDailyAnalysisLabel()}`
                     : changes.lastCheckedAt
                       ? `Last checked ${relativeTime(changes.lastCheckedAt)}`
                       : "Not checked yet"}
@@ -995,7 +1064,9 @@ export function SpecGraphApp({
                           : !hasCompletedCheck
                             ? "Everything is ready for a first check."
                             : filter === "open"
-                              ? "No open changes."
+                              ? scheduledCount > 0
+                                ? "No analyzed changes need attention yet."
+                                : "No open changes."
                               : "No changes yet."}
                   </strong>
                   <span>
@@ -1007,6 +1078,8 @@ export function SpecGraphApp({
                           ? "We’ll let you know when they are ready to check."
                           : !hasCompletedCheck
                             ? "Run a check to see whether connected items may be outdated."
+                            : filter === "open" && scheduledCount > 0
+                              ? `${scheduledCount} ${scheduledCount === 1 ? "change is" : "changes are"} waiting for the next daily analysis. Open All to see ${scheduledCount === 1 ? "it" : "them"}.`
                             : "We’ll add one here when something needs attention."}
                   </span>
                   {!hasSources && (
@@ -1050,7 +1123,10 @@ export function SpecGraphApp({
             <section className="intro compact" aria-labelledby="runs-title">
               <p className="section-label">Runs</p>
               <h1 id="runs-title">Recent activity</h1>
-              <p>Automatic and manual checks appear here.</p>
+              <p>
+                Automatic analysis runs daily. Next: {nextDailyAnalysisLabel()}. Manual
+                analysis starts right away.
+              </p>
             </section>
             <section className="simple-list" aria-label="Analysis runs" aria-busy={loadingRuns}>
               {runs.map((run) => (
@@ -1085,7 +1161,10 @@ export function SpecGraphApp({
             <section className="intro compact" aria-labelledby="sources-title">
               <p className="section-label">Sources</p>
               <h1 id="sources-title">Connected sources</h1>
-              <p>SpecGraph watches the sources you connect.</p>
+              <p>
+                Refreshing fetches the latest content and rebuilds source relationships. It
+                does not start an impact analysis.
+              </p>
             </section>
             <section
               className="source-graph"
@@ -1506,8 +1585,10 @@ export function SpecGraphApp({
                 </div>
               ) : (
                 <p className="analysis-message">
-                  {selectedChange.status === "processing"
-                    ? "Analysis is still running."
+                  {selectedChange.status === "scheduled"
+                    ? `This change is saved for the next daily analysis on ${nextDailyAnalysisLabel()}.`
+                    : selectedChange.status === "processing"
+                      ? "Analysis is running now."
                     : "No affected items were found."}
                 </p>
               )}
@@ -1568,7 +1649,7 @@ export function SpecGraphApp({
               )}
             </section>
 
-            {selectedChange.status !== "processing" && selectedChange.evidence && (
+            {!changeIsPending(selectedChange) && selectedChange.evidence && (
               <button
                 type="button"
                 className="evidence-toggle"
@@ -1581,7 +1662,7 @@ export function SpecGraphApp({
             )}
             {showEvidence && <p className="evidence-copy">{selectedChange.evidence}</p>}
 
-            {selectedChange.status !== "processing" &&
+            {!changeIsPending(selectedChange) &&
               selectedChange.artifacts.length > 0 && (
               <footer className="details-actions">
                 {selectedOpenSuggestions > 0 ? (

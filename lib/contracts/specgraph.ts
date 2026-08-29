@@ -1,6 +1,7 @@
 export type ChangeFilter = "open" | "all";
 export type ChangeStatus =
   | "open"
+  | "scheduled"
   | "processing"
   | "resolved"
   | "dismissed"
@@ -83,6 +84,7 @@ export type ChangeListResponse = {
   items: ChangeItem[];
   counts: {
     open: number;
+    scheduled: number;
     total: number;
   };
   lastCheckedAt: string | null;
@@ -111,6 +113,7 @@ export type SourceItem = {
   name: string;
   detail: string;
   status: SourceStatus;
+  lastError: string | null;
   lastSyncedAt: string | null;
   artifactCount: number;
   codeArtifactCount: number;
@@ -240,7 +243,7 @@ export type DashboardSnapshot = {
 export const emptyDashboardSnapshot: DashboardSnapshot = {
   changes: {
     items: [],
-    counts: { open: 0, total: 0 },
+    counts: { open: 0, scheduled: 0, total: 0 },
     lastCheckedAt: null,
   },
   runs: { items: [] },

@@ -265,6 +265,7 @@ const githubSource = {
   name: "acme/platform-api",
   detail: "main",
   status: "connected" as const,
+  lastError: null,
   lastSyncedAt: "2026-08-15T14:12:00.000Z",
   artifactCount: 24,
   codeArtifactCount: 16,
@@ -278,6 +279,7 @@ const confluenceSource = {
   name: "Engineering",
   detail: "Acme / API",
   status: "connected" as const,
+  lastError: null,
   lastSyncedAt: "2026-08-15T14:00:00.000Z",
   artifactCount: 12,
   codeArtifactCount: 0,
@@ -288,7 +290,7 @@ const confluenceSource = {
 export const dashboardFixture: DashboardSnapshot = {
   changes: {
     items: changes.filter((change) => change.status === "open"),
-    counts: { open: 3, total: 6 },
+    counts: { open: 3, scheduled: 0, total: 6 },
     lastCheckedAt: "2026-08-15T14:12:00.000Z",
   },
   runs: { items: runs },
@@ -313,6 +315,7 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
           : [...currentChanges],
       counts: {
         open: currentChanges.filter((change) => change.status === "open").length,
+        scheduled: currentChanges.filter((change) => change.status === "scheduled").length,
         total: currentChanges.length,
       },
       lastCheckedAt: snapshot.changes.lastCheckedAt,
