@@ -5,10 +5,10 @@ import { analysisRuns } from "../db/schema";
 import { executeManualAnalysis } from "../lib/analysis/manual";
 import type { StartRunInput } from "../lib/contracts/specgraph";
 import {
-  ANALYSIS_RUN_TIMEOUT_DURATION,
   bindAnalysisWorkflowStep,
   timeoutAnalysisRunStep,
 } from "./analysis-guard";
+import { ANALYSIS_RUN_TIMEOUT_DURATION } from "./constants";
 
 export async function manualAnalysisWorkflow(
   workspaceId: string,

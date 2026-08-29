@@ -6,10 +6,10 @@ import { executeManualAnalysis } from "../lib/analysis/manual";
 import { analyzePendingConfluenceChanges } from "../lib/confluence/scheduled";
 import { processQueuedGitHubRun } from "../lib/github/webhook";
 import {
-  ANALYSIS_RUN_TIMEOUT_DURATION,
   bindAnalysisWorkflowStep,
   timeoutAnalysisRunStep,
 } from "./analysis-guard";
+import { ANALYSIS_RUN_TIMEOUT_DURATION } from "./constants";
 
 export async function retryAnalysisWorkflow(
   workspaceId: string,

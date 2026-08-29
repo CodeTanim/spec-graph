@@ -8,7 +8,6 @@ import {
 import { structuredLog } from "../observability/structured-log";
 import { ApiError } from "../server/http";
 
-export const ANALYSIS_RUN_TIMEOUT_DURATION = "10m";
 export const ANALYSIS_RUN_TIMEOUT_MS = 10 * 60 * 1_000;
 
 type RunLogContext = {

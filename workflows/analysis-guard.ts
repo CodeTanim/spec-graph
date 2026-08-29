@@ -7,8 +7,6 @@ import {
 } from "../lib/analysis/run-lifecycle";
 import { structuredLog } from "../lib/observability/structured-log";
 
-export { ANALYSIS_RUN_TIMEOUT_DURATION } from "../lib/analysis/run-lifecycle";
-
 export async function bindAnalysisWorkflowStep(
   workspaceId: string,
   runId: string,
