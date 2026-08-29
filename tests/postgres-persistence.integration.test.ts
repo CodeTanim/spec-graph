@@ -33,6 +33,7 @@ import { resolveGitHubChangedNodes } from "../lib/openapi/changes";
 import {
   beginRunAttempt,
   completeRunAttempt,
+  expireStaleAnalysisRuns,
   failRunAttempt,
 } from "../lib/analysis/run-lifecycle";
 import { connectSources, ensureSourceGroup } from "../lib/providers/source-groups";
@@ -642,6 +643,91 @@ components:
       .from(analysisRuns)
       .where(eq(analysisRuns.id, created.run.id));
     expect(storedRun).toEqual({ attempts: 5, maxAttempts: 6 });
+  });
+
+  it("times out a stuck attempt and recovers on the next automatic attempt", async () => {
+    const context = await workspace();
+    const createdAt = new Date().toISOString();
+    await db.insert(sources).values({
+      id: "src_retry_recovery",
+      workspaceId: context.workspace.id,
+      provider: "github",
+      externalId: "retry-recovery-repo",
+      name: "acme/retry-recovery",
+      detail: "main",
+      defaultBranch: "main",
+      status: "connected",
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const created = await createManualRun(
+      context.workspace.id,
+      context.user.databaseId,
+      { sourceId: "src_retry_recovery", target: "#42" },
+      db,
+    );
+
+    const firstAttempt = await beginRunAttempt(
+      created.run.id,
+      "github_pull_request",
+      db,
+    );
+    expect(firstAttempt).toBeTruthy();
+    expect(
+      await expireStaleAnalysisRuns(
+        { workspaceId: context.workspace.id, timeoutMs: 60_000 },
+        db,
+      ),
+    ).toBe(0);
+
+    const afterDeadline = new Date(Date.now() + 61_000);
+    expect(
+      await expireStaleAnalysisRuns(
+        {
+          workspaceId: context.workspace.id,
+          timeoutMs: 60_000,
+          now: afterDeadline,
+        },
+        db,
+      ),
+    ).toBe(1);
+    expect((await listRuns(context.workspace.id, db)).items[0]).toMatchObject({
+      status: "failed",
+      errorMessage: "Analysis timed out after 1 minute. Retry the check.",
+    });
+
+    // A worker returning after its deadline cannot overwrite the timeout.
+    await completeRunAttempt(created.run.id, firstAttempt!, db);
+    expect((await listRuns(context.workspace.id, db)).items[0]).toMatchObject({
+      status: "failed",
+    });
+
+    // This is the same claim path used by the workflow's next automatic retry.
+    const secondAttempt = await beginRunAttempt(
+      created.run.id,
+      "github_pull_request",
+      db,
+    );
+    expect(secondAttempt).toBeTruthy();
+    await completeRunAttempt(created.run.id, secondAttempt!, db);
+
+    expect((await listRuns(context.workspace.id, db)).items[0]).toMatchObject({
+      status: "succeeded",
+      errorMessage: null,
+    });
+    expect(await db.select().from(runAttempts)).toEqual([
+      expect.objectContaining({
+        id: firstAttempt,
+        attempt: 1,
+        status: "failed",
+        errorCode: "ANALYSIS_TIMEOUT",
+      }),
+      expect.objectContaining({
+        id: secondAttempt,
+        attempt: 2,
+        status: "succeeded",
+      }),
+    ]);
   });
 
   it("groups sources as equal peers regardless of provider or connection order", async () => {

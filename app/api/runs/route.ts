@@ -3,6 +3,7 @@ import { start } from "workflow/api";
 import { getDb } from "../../../db";
 import { analysisRuns } from "../../../db/schema";
 import { failRunAttempt } from "../../../lib/analysis/run-lifecycle";
+import { structuredLog } from "../../../lib/observability/structured-log";
 import { getRequestWorkspace } from "../../../lib/server/current-workspace";
 import { ApiError, apiErrorResponse, readJsonObject } from "../../../lib/server/http";
 import {
@@ -62,6 +63,13 @@ export async function POST(request: Request) {
       .update(analysisRuns)
       .set({ workflowRunId: workflowRun.runId })
       .where(eq(analysisRuns.id, result.run.id));
+    structuredLog("info", "analysis.workflow.dispatched", {
+      runId: result.run.id,
+      workspaceId: workspace.id,
+      sourceId,
+      workflowRunId: workflowRun.runId,
+      trigger: "manual",
+    });
     return Response.json(result, { status: 202 });
   } catch (error) {
     return apiErrorResponse(error);

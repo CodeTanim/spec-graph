@@ -8,6 +8,7 @@ import {
   webhookDeliveries,
 } from "../../db/schema";
 import { failRunAttempt } from "../analysis/run-lifecycle";
+import { structuredLog } from "../observability/structured-log";
 import { ApiError } from "../server/http";
 import { GitHubClient } from "./client";
 import { getGitHubAppConfig } from "./config";
@@ -450,6 +451,13 @@ export async function acceptGitHubWebhook(
     })
     .returning({ id: webhookDeliveries.id });
   const duplicate = inserted.length === 0;
+  structuredLog("info", "github.webhook.received", {
+    providerDeliveryId: deliveryId,
+    eventType,
+    duplicate,
+    sourceId: source?.id || null,
+    workspaceId: source?.workspaceId || null,
+  });
   if (duplicate) {
     const [existing] = await db
       .select()
@@ -480,6 +488,13 @@ export async function acceptGitHubWebhook(
   if (eventType !== "push" && eventType !== "pull_request") {
     const reason = `Ignored unsupported GitHub event ${eventType}.`;
     await markDelivery(deliveryId, "ignored", reason, db);
+    structuredLog("info", "github.webhook.ignored", {
+      providerDeliveryId: deliveryId,
+      eventType,
+      reasonCode: "UNSUPPORTED_EVENT",
+      sourceId: source?.id || null,
+      workspaceId: source?.workspaceId || null,
+    });
     return {
       status: 202,
       body: { accepted: true, duplicate, deliveryId, status: "ignored", reason },
@@ -488,6 +503,11 @@ export async function acceptGitHubWebhook(
   if (!source) {
     const reason = "Ignored event for a repository that is not connected.";
     await markDelivery(deliveryId, "ignored", reason, db);
+    structuredLog("info", "github.webhook.ignored", {
+      providerDeliveryId: deliveryId,
+      eventType,
+      reasonCode: "SOURCE_NOT_CONNECTED",
+    });
     return {
       status: 202,
       body: { accepted: true, duplicate, deliveryId, status: "ignored", reason },
@@ -506,10 +526,24 @@ export async function acceptGitHubWebhook(
       error instanceof Error ? error.message : "Invalid GitHub event.",
       db,
     );
+    structuredLog("error", "github.webhook.failed", {
+      providerDeliveryId: deliveryId,
+      eventType,
+      sourceId: source.id,
+      workspaceId: source.workspaceId,
+      errorCode: error instanceof ApiError ? error.code : "INVALID_EVENT",
+    });
     throw error;
   }
   if (typeof normalized === "string") {
     await markDelivery(deliveryId, "ignored", normalized, db);
+    structuredLog("info", "github.webhook.ignored", {
+      providerDeliveryId: deliveryId,
+      eventType,
+      sourceId: source.id,
+      workspaceId: source.workspaceId,
+      reasonCode: "UNTRACKED_CHANGE",
+    });
     return {
       status: 202,
       body: {
@@ -574,6 +608,13 @@ export async function acceptGitHubWebhook(
         eq(webhookDeliveries.providerDeliveryId, deliveryId),
       ),
     );
+  structuredLog("info", "github.webhook.queued", {
+    providerDeliveryId: deliveryId,
+    eventType,
+    runId,
+    sourceId: source.id,
+    workspaceId: source.workspaceId,
+  });
   return {
     status: 202,
     body: {

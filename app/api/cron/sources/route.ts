@@ -1,5 +1,6 @@
 import { start } from "workflow/api";
 import { ApiError, apiErrorResponse } from "../../../../lib/server/http";
+import { structuredLog } from "../../../../lib/observability/structured-log";
 import { sourceCadenceWorkflow } from "../../../../workflows/source-cadence";
 
 function authorizeCron(request: Request): void {
@@ -16,6 +17,10 @@ export async function GET(request: Request) {
   try {
     authorizeCron(request);
     const run = await start(sourceCadenceWorkflow, []);
+    structuredLog("info", "cadence.workflow.dispatched", {
+      workflowRunId: run.runId,
+      trigger: "scheduled",
+    });
     return Response.json({ accepted: true, workflowRunId: run.runId }, { status: 202 });
   } catch (error) {
     return apiErrorResponse(error);

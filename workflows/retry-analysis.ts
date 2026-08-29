@@ -1,9 +1,15 @@
 import { and, eq } from "drizzle-orm";
+import { sleep } from "workflow";
 import { getDb } from "../db";
 import { analysisRuns } from "../db/schema";
 import { executeManualAnalysis } from "../lib/analysis/manual";
 import { analyzePendingConfluenceChanges } from "../lib/confluence/scheduled";
 import { processQueuedGitHubRun } from "../lib/github/webhook";
+import {
+  ANALYSIS_RUN_TIMEOUT_DURATION,
+  bindAnalysisWorkflowStep,
+  timeoutAnalysisRunStep,
+} from "./analysis-guard";
 
 export async function retryAnalysisWorkflow(
   workspaceId: string,
@@ -11,7 +17,16 @@ export async function retryAnalysisWorkflow(
 ) {
   "use workflow";
 
-  await retryAnalysisStep(workspaceId, analysisRunId);
+  await bindAnalysisWorkflowStep(workspaceId, analysisRunId);
+  const outcome = await Promise.race([
+    retryAnalysisStep(workspaceId, analysisRunId).then(
+      () => "completed" as const,
+    ),
+    sleep(ANALYSIS_RUN_TIMEOUT_DURATION).then(() => "timed_out" as const),
+  ]);
+  if (outcome === "timed_out") {
+    await timeoutAnalysisRunStep(workspaceId, analysisRunId);
+  }
 }
 
 export async function retryAnalysisStep(

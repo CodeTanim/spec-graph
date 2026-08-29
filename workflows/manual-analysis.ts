@@ -1,8 +1,14 @@
 import { and, eq } from "drizzle-orm";
+import { sleep } from "workflow";
 import { getDb } from "../db";
 import { analysisRuns } from "../db/schema";
 import { executeManualAnalysis } from "../lib/analysis/manual";
 import type { StartRunInput } from "../lib/contracts/specgraph";
+import {
+  ANALYSIS_RUN_TIMEOUT_DURATION,
+  bindAnalysisWorkflowStep,
+  timeoutAnalysisRunStep,
+} from "./analysis-guard";
 
 export async function manualAnalysisWorkflow(
   workspaceId: string,
@@ -11,7 +17,16 @@ export async function manualAnalysisWorkflow(
 ) {
   "use workflow";
 
-  await executeManualAnalysisStep(workspaceId, analysisRunId, input);
+  await bindAnalysisWorkflowStep(workspaceId, analysisRunId);
+  const outcome = await Promise.race([
+    executeManualAnalysisStep(workspaceId, analysisRunId, input).then(
+      () => "completed" as const,
+    ),
+    sleep(ANALYSIS_RUN_TIMEOUT_DURATION).then(() => "timed_out" as const),
+  ]);
+  if (outcome === "timed_out") {
+    await timeoutAnalysisRunStep(workspaceId, analysisRunId);
+  }
 }
 
 export async function executeManualAnalysisStep(

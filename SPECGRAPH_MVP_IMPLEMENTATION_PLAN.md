@@ -408,7 +408,7 @@ Initial ranking inputs:
 | M5 — Automatic GitHub feed | Complete — live push processed exactly once and produced persistent findings | M4 | Pushes and pull requests trigger the same pipeline |
 | M6 — Confluence documentation connection | In progress (live connection and both directions implemented; live edit smoke pending) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
 | M7 — Semantic ranking and evidence | Foundation complete; live model adapter and comparative evaluation pending | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
-| M8 — Review lifecycle and resilience | In progress — persisted review actions, bounded durable retries, stale-attempt protection, and explicit user retry are implemented; timeout/cancellation and structured operational logs remain | M5, M7 | Actions persist; failures retry safely |
+| M8 — Review lifecycle and resilience | In progress — review actions, bounded retries, ten-minute execution deadlines, stale-worker cancellation, recovery coverage, and correlation logs are implemented; the materially-new-change review policy remains | M5, M7 | Actions persist; failures retry safely |
 | M9 — Evaluation and production hardening | Not started | M8 | Quality, security, and reliability are measured |
 | M10 — Portfolio and resume readiness | Not started | M6, M9 | Recruiters can inspect the complete cross-source product |
 
@@ -663,17 +663,17 @@ Goal: make the product usable over repeated runs and credible under failure.
 - [ ] Decide how a previously dismissed relationship behaves after a materially new change.
 - [x] Add durable retry policies with capped attempts and backoff.
 - [x] Prevent two workers from completing the same run concurrently.
-- [ ] Add timeout and cancellation handling.
+- [x] Add timeout and cancellation handling.
 - [x] Surface safe failure details and an explicit retry action.
 - [x] Record terminal failures for investigation.
-- [ ] Add structured logs with run, source, workspace, and provider-delivery correlation IDs.
+- [x] Add structured logs with run, source, workspace, and provider-delivery correlation IDs.
 - [x] Display real source synchronization health and last-checked time.
 
 Exit criteria:
 
 - [x] Review actions survive reload and future sessions.
 - [x] Duplicate jobs and webhooks do not duplicate findings.
-- [ ] Transient failures retry and recover in an integration test.
+- [x] Transient failures retry and recover in an integration test.
 - [x] Permanent failures are visible without exposing secrets.
 
 ### M9 — Evaluation and Production Hardening
@@ -1195,3 +1195,10 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Verified the authenticated production workspace and source chooser load without browser errors, and confirmed the unauthenticated Sources API returns `401`. Production is restored with an intentionally empty workspace; GitHub and Confluence sources must now be reconnected and indexed.
 - Added a seventh provider-portable security migration that enables default-deny row-level security on all 23 application tables and revokes current plus future Supabase Data API grants. SpecGraph continues to use its trusted server-side Postgres connection; no browser client receives database credentials.
 - Hardened analysis failures with a persisted three-attempt ceiling, three additional attempts per explicit user retry, workspace-scoped retry authorization, stale-attempt completion protection, safe dispatch-failure recording, and a clear Retry analysis action in Recent activity.
+
+### 2026-08-29
+
+- Added a ten-minute durable workflow deadline for manual, retried, and queued GitHub analyses. Timed-out attempts fail with a safe retry message, and attempt-number guards logically cancel late workers so they cannot overwrite a newer result.
+- Added stale-run reconciliation to scheduled processing and active-run polling, covering workers that disappear before their workflow timeout handler can report back.
+- Added one-line structured operational logs for workflow dispatch, webhook intake, and the full analysis-attempt lifecycle, correlated by run, workflow, workspace, source, and provider delivery IDs without logging source content or credentials.
+- Added integration coverage proving that a transient timeout fails cleanly, rejects late completion, and succeeds on the next attempt. Serialized PGlite integration files so the complete 17-test database suite is reliable on constrained developer and CI machines.

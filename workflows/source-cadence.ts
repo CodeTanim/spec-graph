@@ -1,18 +1,33 @@
 import { and, asc, eq, inArray, lt } from "drizzle-orm";
+import { sleep } from "workflow";
 import { getDb } from "../db";
 import { analysisRuns, sources } from "../db/schema";
 import { ConfluenceClient } from "../lib/confluence/client";
 import { getConfluenceConfig } from "../lib/confluence/config";
 import { checkConfluenceSource } from "../lib/confluence/scheduled";
 import { processQueuedGitHubRun } from "../lib/github/webhook";
+import {
+  ANALYSIS_RUN_TIMEOUT_DURATION,
+  bindAnalysisWorkflowStep,
+  expireStaleAnalysisRunsStep,
+  timeoutAnalysisRunStep,
+} from "./analysis-guard";
 
 export async function sourceCadenceWorkflow() {
   "use workflow";
 
-  const queuedGitHubRunIds = await listQueuedGitHubRunsStep();
-  for (const runId of queuedGitHubRunIds) {
+  await expireStaleAnalysisRunsStep();
+  const queuedGitHubRuns = await listQueuedGitHubRunsStep();
+  for (const run of queuedGitHubRuns) {
     try {
-      await processQueuedGitHubRunStep(runId);
+      await bindAnalysisWorkflowStep(run.workspaceId, run.id);
+      const outcome = await Promise.race([
+        processQueuedGitHubRunStep(run.id).then(() => "completed" as const),
+        sleep(ANALYSIS_RUN_TIMEOUT_DURATION).then(() => "timed_out" as const),
+      ]);
+      if (outcome === "timed_out") {
+        await timeoutAnalysisRunStep(run.workspaceId, run.id);
+      }
     } catch {
       // The run stores its own error state. Other queued changes should continue.
     }
@@ -28,11 +43,13 @@ export async function sourceCadenceWorkflow() {
   }
 }
 
-export async function listQueuedGitHubRunsStep(): Promise<string[]> {
+export async function listQueuedGitHubRunsStep(): Promise<
+  Array<{ id: string; workspaceId: string }>
+> {
   "use step";
 
   const runs = await getDb()
-    .select({ id: analysisRuns.id })
+    .select({ id: analysisRuns.id, workspaceId: analysisRuns.workspaceId })
     .from(analysisRuns)
     .where(
       and(
@@ -42,7 +59,7 @@ export async function listQueuedGitHubRunsStep(): Promise<string[]> {
       ),
     )
     .orderBy(asc(analysisRuns.createdAt));
-  return runs.map((run) => run.id);
+  return runs;
 }
 
 export async function processQueuedGitHubRunStep(runId: string) {

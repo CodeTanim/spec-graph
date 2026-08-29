@@ -33,6 +33,7 @@ import type {
   StartRunResponse,
 } from "../contracts/specgraph";
 import { relationshipReason } from "../analysis/deterministic";
+import { expireStaleAnalysisRuns } from "../analysis/run-lifecycle";
 import {
   ensureSourceGroup,
   removeEmptySourceGroups,
@@ -572,6 +573,9 @@ export async function listRuns(
   workspaceId: string,
   db: SpecGraphDb = getDb(),
 ): Promise<RunListResponse> {
+  // Polling this endpoint also reconciles a worker that disappeared before it
+  // could report failure, so the UI never displays "Analyzing" indefinitely.
+  await expireStaleAnalysisRuns({ workspaceId }, db);
   const rows = await db
     .select()
     .from(analysisRuns)
