@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { start } from "workflow/api";
 import { getDb } from "../../../db";
 import { analysisRuns } from "../../../db/schema";
+import { failRunAttempt } from "../../../lib/analysis/run-lifecycle";
 import { getRequestWorkspace } from "../../../lib/server/current-workspace";
 import { ApiError, apiErrorResponse, readJsonObject } from "../../../lib/server/http";
 import {
@@ -32,11 +33,31 @@ export async function POST(request: Request) {
 
     const input = { target, sourceId };
     const result = await createManualRun(workspace.id, user.databaseId, input);
-    const workflowRun = await start(manualAnalysisWorkflow, [
-      workspace.id,
-      result.run.id,
-      input,
-    ]);
+    let workflowRun;
+    try {
+      workflowRun = await start(manualAnalysisWorkflow, [
+        workspace.id,
+        result.run.id,
+        input,
+      ]);
+    } catch {
+      await failRunAttempt(
+        result.run.id,
+        null,
+        new ApiError(
+          503,
+          "ANALYSIS_DISPATCH_FAILED",
+          "The analysis could not be started.",
+        ),
+        "ANALYSIS_DISPATCH_FAILED",
+        "The analysis could not be started.",
+      );
+      throw new ApiError(
+        503,
+        "ANALYSIS_DISPATCH_FAILED",
+        "The analysis could not be started. Try again from Recent activity.",
+      );
+    }
     await getDb()
       .update(analysisRuns)
       .set({ workflowRunId: workflowRun.runId })

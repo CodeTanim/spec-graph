@@ -211,7 +211,6 @@ export async function analyzePendingConfluenceChanges(
   if (run?.status === "running") {
     return { changedPages: changedPages.length, runId };
   }
-
   let attemptId: string | null = null;
   try {
     attemptId = await beginRunAttempt(runId, "scheduled_confluence", db);

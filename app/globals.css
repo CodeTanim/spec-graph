@@ -473,6 +473,40 @@ button:disabled {
   font-weight: 700;
 }
 
+.run-result {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 7px;
+  text-align: right;
+}
+
+.run-result > small {
+  max-width: 360px;
+  white-space: normal;
+}
+
+.retry-action {
+  border: 2px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.retry-action:hover,
+.retry-action:focus-visible {
+  background: var(--accent);
+  color: white;
+}
+
+.retry-action:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .source-graph {
   border: 0;
 }
@@ -1526,6 +1560,11 @@ a.provider-option:hover {
   .simple-row {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  .run-result {
+    align-items: flex-start;
+    text-align: left;
   }
 
   .source-node {

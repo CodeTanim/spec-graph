@@ -408,7 +408,7 @@ Initial ranking inputs:
 | M5 — Automatic GitHub feed | Complete — live push processed exactly once and produced persistent findings | M4 | Pushes and pull requests trigger the same pipeline |
 | M6 — Confluence documentation connection | In progress (live connection and both directions implemented; live edit smoke pending) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
 | M7 — Semantic ranking and evidence | Foundation complete; live model adapter and comparative evaluation pending | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
-| M8 — Review lifecycle and resilience | Not started | M5, M7 | Actions persist; failures retry safely |
+| M8 — Review lifecycle and resilience | In progress — persisted review actions, bounded durable retries, stale-attempt protection, and explicit user retry are implemented; timeout/cancellation and structured operational logs remain | M5, M7 | Actions persist; failures retry safely |
 | M9 — Evaluation and production hardening | Not started | M8 | Quality, security, and reliability are measured |
 | M10 — Portfolio and resume readiness | Not started | M6, M9 | Recruiters can inspect the complete cross-source product |
 
@@ -657,24 +657,24 @@ Exit criteria:
 
 Goal: make the product usable over repeated runs and credible under failure.
 
-- [ ] Persist dismiss, resolve, and reopen actions.
-- [ ] Record the actor and timestamp for every action.
-- [ ] Make Open and All filters query real persisted states.
+- [x] Persist dismiss, resolve, and reopen actions.
+- [x] Record the actor and timestamp for every action.
+- [x] Make Open and All filters query real persisted states.
 - [ ] Decide how a previously dismissed relationship behaves after a materially new change.
-- [ ] Add durable retry policies with capped attempts and backoff.
-- [ ] Prevent two workers from completing the same run concurrently.
+- [x] Add durable retry policies with capped attempts and backoff.
+- [x] Prevent two workers from completing the same run concurrently.
 - [ ] Add timeout and cancellation handling.
-- [ ] Surface safe failure details and an explicit retry action.
-- [ ] Record terminal failures for investigation.
+- [x] Surface safe failure details and an explicit retry action.
+- [x] Record terminal failures for investigation.
 - [ ] Add structured logs with run, source, workspace, and provider-delivery correlation IDs.
-- [ ] Display real source synchronization health and last-checked time.
+- [x] Display real source synchronization health and last-checked time.
 
 Exit criteria:
 
-- [ ] Review actions survive reload and future sessions.
-- [ ] Duplicate jobs and webhooks do not duplicate findings.
+- [x] Review actions survive reload and future sessions.
+- [x] Duplicate jobs and webhooks do not duplicate findings.
 - [ ] Transient failures retry and recover in an integration test.
-- [ ] Permanent failures are visible without exposing secrets.
+- [x] Permanent failures are visible without exposing secrets.
 
 ### M9 — Evaluation and Production Hardening
 
@@ -1194,3 +1194,4 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Applied and verified all six migrations against the fresh Supabase database (23 public tables), then redeployed the existing production artifact so the stable `https://spec-graph.vercel.app` alias received the new database variables.
 - Verified the authenticated production workspace and source chooser load without browser errors, and confirmed the unauthenticated Sources API returns `401`. Production is restored with an intentionally empty workspace; GitHub and Confluence sources must now be reconnected and indexed.
 - Added a seventh provider-portable security migration that enables default-deny row-level security on all 23 application tables and revokes current plus future Supabase Data API grants. SpecGraph continues to use its trusted server-side Postgres connection; no browser client receives database credentials.
+- Hardened analysis failures with a persisted three-attempt ceiling, three additional attempts per explicit user retry, workspace-scoped retry authorization, stale-attempt completion protection, safe dispatch-failure recording, and a clear Retry analysis action in Recent activity.

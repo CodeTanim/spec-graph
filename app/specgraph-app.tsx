@@ -60,7 +60,7 @@ function statusText(change: ChangeItem) {
 
 function runResult(run: RunItem) {
   if (run.status === "queued") {
-    return run.trigger === "github" ? "Scheduled for daily check" : "Starting…";
+    return run.execution === "daily" ? "Scheduled for daily check" : "Starting…";
   }
   if (run.status === "running") return `Analyzing… ${run.progress}%`;
   if (run.status === "failed") return "Failed";
@@ -199,6 +199,7 @@ export function SpecGraphApp({
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null);
   const [savingAction, setSavingAction] = useState(false);
   const [savingFindingId, setSavingFindingId] = useState("");
+  const [retryingRunId, setRetryingRunId] = useState("");
   const [toast, setToast] = useState("");
   const [githubConfigured, setGitHubConfigured] = useState<boolean | null>(null);
   const [confluenceConfigured, setConfluenceConfigured] = useState<boolean | null>(null);
@@ -375,7 +376,7 @@ export function SpecGraphApp({
     if (!activeRuns.length) return;
 
     const pollQuickly = activeRuns.some(
-      (run) => run.status === "running" || run.trigger !== "github",
+      (run) => run.status === "running" || run.execution === "immediate",
     );
 
     let cancelled = false;
@@ -657,6 +658,26 @@ export function SpecGraphApp({
             }
           : current,
       );
+    }
+  }
+
+  async function retryAnalysis(run: RunItem) {
+    if (retryingRunId) return;
+    setRetryingRunId(run.id);
+    try {
+      const result = await api.retryRun(run.id);
+      setRuns((current) =>
+        current.map((item) => (item.id === result.run.id ? result.run : item)),
+      );
+      setToast(`${run.title} retry started`);
+    } catch (retryError) {
+      setToast(
+        retryError instanceof Error
+          ? retryError.message
+          : "The analysis could not be retried.",
+      );
+    } finally {
+      setRetryingRunId("");
     }
   }
 
@@ -1138,10 +1159,20 @@ export function SpecGraphApp({
                       <i aria-hidden="true">·</i> {relativeTime(run.createdAt)}
                     </small>
                   </span>
-                  <span>
-                    {runResult(run)}
+                  <span className="run-result">
+                    <strong>{runResult(run)}</strong>
                     {run.status === "failed" && run.errorMessage && (
                       <small>{run.errorMessage}</small>
+                    )}
+                    {run.status === "failed" && (
+                      <button
+                        type="button"
+                        className="retry-action"
+                        disabled={Boolean(retryingRunId)}
+                        onClick={() => void retryAnalysis(run)}
+                      >
+                        {retryingRunId === run.id ? "Starting retry…" : "Retry analysis"}
+                      </button>
                     )}
                   </span>
                 </div>

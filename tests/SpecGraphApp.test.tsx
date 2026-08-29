@@ -308,6 +308,7 @@ describe("SpecGraphApp", () => {
       title: "Checking #842",
       target: "#842",
       trigger: "manual" as const,
+      execution: "immediate" as const,
       status: "queued" as const,
       progress: 0,
       findingsCount: 0,
@@ -355,6 +356,7 @@ describe("SpecGraphApp", () => {
       ...dashboardFixture.runs.items[0],
       id: scheduledChange.runId,
       trigger: "github" as const,
+      execution: "daily" as const,
       status: "queued" as const,
       progress: 0,
       completedAt: null,
@@ -376,6 +378,42 @@ describe("SpecGraphApp", () => {
     expect(screen.getByText("Scheduled for daily check")).toBeInTheDocument();
     expect(screen.getByText(/Next daily analysis/)).toBeInTheDocument();
     expect(screen.queryByText("Analyzing…")).not.toBeInTheDocument();
+  });
+
+  it("shows a failed analysis and lets the user retry it immediately", async () => {
+    const user = userEvent.setup();
+    const failedRun = {
+      ...dashboardFixture.runs.items[0],
+      id: "run-failed",
+      title: "Check API documentation",
+      execution: "daily" as const,
+      status: "failed" as const,
+      progress: 0,
+      findingsCount: 0,
+      errorMessage: "GitHub was temporarily unavailable.",
+    };
+    const snapshot = {
+      ...dashboardFixture,
+      runs: { items: [failedRun] },
+    };
+    const api = createFakeApi(snapshot);
+    const retryRun = api.retryRun;
+    api.retryRun = vi.fn(retryRun);
+
+    render(
+      <SpecGraphApp api={api} initialData={snapshot} loadOnMount={false} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Runs" }));
+
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("GitHub was temporarily unavailable.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry analysis" }));
+
+    expect(api.retryRun).toHaveBeenCalledWith("run-failed");
+    expect(screen.getByText("Starting…")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Check API documentation retry started",
+    );
   });
 
   it("does not repeatedly reload the full workspace while the page is idle", async () => {

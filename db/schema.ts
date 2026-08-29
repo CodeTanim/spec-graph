@@ -477,6 +477,7 @@ export const analysisRuns = pgTable(
       .default("queued"),
     progress: integer("progress").notNull().default(0),
     attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),
     workflowRunId: text("workflow_run_id"),

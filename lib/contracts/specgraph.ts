@@ -10,6 +10,7 @@ export type FindingReviewStatus = "open" | "resolved" | "dismissed";
 export type FindingAction = "dismiss" | "resolve" | "reopen";
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
 export type RunTrigger = "manual" | "github" | "confluence" | "scheduled";
+export type RunExecution = "daily" | "immediate";
 export type SourceProvider = "github" | "confluence";
 export type SourceStatus =
   | "pending"
@@ -94,6 +95,7 @@ export type RunItem = {
   id: string;
   title: string;
   trigger: RunTrigger;
+  execution: RunExecution;
   target: string;
   status: RunStatus;
   progress: number;
@@ -137,6 +139,10 @@ export type StartRunInput = {
 };
 
 export type StartRunResponse = {
+  run: RunItem;
+};
+
+export type RetryRunResponse = {
   run: RunItem;
 };
 

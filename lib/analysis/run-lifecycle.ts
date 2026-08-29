@@ -26,7 +26,7 @@ export async function beginRunAttempt(
       and(
         eq(analysisRuns.id, runId),
         inArray(analysisRuns.status, ["queued", "failed"]),
-        lt(analysisRuns.attempts, 3),
+        lt(analysisRuns.attempts, analysisRuns.maxAttempts),
       ),
     )
     .returning({ id: analysisRuns.id, attempt: analysisRuns.attempts });
@@ -48,14 +48,28 @@ export async function completeRunAttempt(
   db: SpecGraphDb = getDb(),
 ): Promise<void> {
   const completedAt = new Date().toISOString();
-  await db
+  const [attempt] = await db
+    .select({ attempt: runAttempts.attempt })
+    .from(runAttempts)
+    .where(and(eq(runAttempts.id, attemptId), eq(runAttempts.runId, runId)))
+    .limit(1);
+  if (!attempt) return;
+  const completed = await db
     .update(analysisRuns)
     .set({ status: "succeeded", progress: 100, completedAt, updatedAt: completedAt })
-    .where(eq(analysisRuns.id, runId));
+    .where(
+      and(
+        eq(analysisRuns.id, runId),
+        eq(analysisRuns.status, "running"),
+        eq(analysisRuns.attempts, attempt.attempt),
+      ),
+    )
+    .returning({ id: analysisRuns.id });
+  if (!completed.length) return;
   await db
     .update(runAttempts)
     .set({ status: "succeeded", finishedAt: completedAt })
-    .where(eq(runAttempts.id, attemptId));
+    .where(and(eq(runAttempts.id, attemptId), eq(runAttempts.status, "running")));
 }
 
 export async function failRunAttempt(
@@ -67,8 +81,15 @@ export async function failRunAttempt(
   db: SpecGraphDb = getDb(),
 ): Promise<void> {
   const failedAt = new Date().toISOString();
-  const message = error instanceof Error ? error.message : fallbackMessage;
+  const message = error instanceof ApiError ? error.message : fallbackMessage;
   const code = error instanceof ApiError ? error.code : fallbackCode;
+  const [attempt] = attemptId
+    ? await db
+        .select({ attempt: runAttempts.attempt })
+        .from(runAttempts)
+        .where(and(eq(runAttempts.id, attemptId), eq(runAttempts.runId, runId)))
+        .limit(1)
+    : [];
   await db
     .update(analysisRuns)
     .set({
@@ -78,11 +99,22 @@ export async function failRunAttempt(
       completedAt: failedAt,
       updatedAt: failedAt,
     })
-    .where(eq(analysisRuns.id, runId));
+    .where(
+      attempt
+        ? and(
+            eq(analysisRuns.id, runId),
+            eq(analysisRuns.status, "running"),
+            eq(analysisRuns.attempts, attempt.attempt),
+          )
+        : and(
+            eq(analysisRuns.id, runId),
+            inArray(analysisRuns.status, ["queued", "running", "failed"]),
+          ),
+    );
   if (attemptId) {
     await db
       .update(runAttempts)
       .set({ status: "failed", errorCode: code, errorMessage: message, finishedAt: failedAt })
-      .where(eq(runAttempts.id, attemptId));
+      .where(and(eq(runAttempts.id, attemptId), eq(runAttempts.status, "running")));
   }
 }

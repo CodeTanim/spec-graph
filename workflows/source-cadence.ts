@@ -38,7 +38,7 @@ export async function listQueuedGitHubRunsStep(): Promise<string[]> {
       and(
         eq(analysisRuns.trigger, "github"),
         inArray(analysisRuns.status, ["queued", "failed"]),
-        lt(analysisRuns.attempts, 3),
+        lt(analysisRuns.attempts, analysisRuns.maxAttempts),
       ),
     )
     .orderBy(asc(analysisRuns.createdAt));

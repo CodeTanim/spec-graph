@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb, type SpecGraphDb } from "../../db";
 import {
@@ -25,6 +25,7 @@ import type {
   FindingAction,
   RunItem,
   RunListResponse,
+  RetryRunResponse,
   SourceItem,
   SourceGroup,
   SourceListResponse,
@@ -355,6 +356,7 @@ export async function listChanges(
       runStatus: analysisRuns.status,
       runCreatedAt: analysisRuns.createdAt,
       runCompletedAt: analysisRuns.completedAt,
+      runRequestedByUserId: analysisRuns.requestedByUserId,
       changeId: changeEvents.id,
       title: changeEvents.title,
       sourceLabel: changeEvents.sourceLabel,
@@ -386,7 +388,9 @@ export async function listChanges(
       );
       const status =
         row.runStatus === "queued"
-          ? "scheduled"
+          ? row.runRequestedByUserId
+            ? "processing"
+            : "scheduled"
           : row.runStatus === "running"
             ? "processing"
             : reviewedChangeStatus(affected);
@@ -553,6 +557,7 @@ function toRunItem(
     id: row.id,
     title: row.title,
     trigger: row.trigger,
+    execution: row.requestedByUserId ? "immediate" : "daily",
     target: row.target,
     status: row.status,
     progress: row.progress,
@@ -594,6 +599,60 @@ export async function getRun(
 
   if (!row) throw new ApiError(404, "RUN_NOT_FOUND", "That analysis run was not found.");
   return toRunItem(row, await findingCount(row.id, db));
+}
+
+export async function retryFailedRun(
+  workspaceId: string,
+  runId: string,
+  userId: string,
+  db: SpecGraphDb = getDb(),
+): Promise<RetryRunResponse> {
+  const now = new Date().toISOString();
+  const [run] = await db
+    .update(analysisRuns)
+    .set({
+      requestedByUserId: userId,
+      status: "queued",
+      progress: 0,
+      maxAttempts: sql`${analysisRuns.attempts} + 3`,
+      errorCode: null,
+      errorMessage: null,
+      workflowRunId: null,
+      startedAt: null,
+      completedAt: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(analysisRuns.id, runId),
+        eq(analysisRuns.workspaceId, workspaceId),
+        eq(analysisRuns.status, "failed"),
+      ),
+    )
+    .returning();
+
+  if (!run) {
+    const [existing] = await db
+      .select({ status: analysisRuns.status })
+      .from(analysisRuns)
+      .where(
+        and(
+          eq(analysisRuns.id, runId),
+          eq(analysisRuns.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+    if (!existing) {
+      throw new ApiError(404, "RUN_NOT_FOUND", "That analysis run was not found.");
+    }
+    throw new ApiError(
+      409,
+      "RUN_NOT_FAILED",
+      "Only a failed analysis can be retried.",
+    );
+  }
+
+  return { run: toRunItem(run, await findingCount(run.id, db)) };
 }
 
 export async function createManualRun(
@@ -644,6 +703,7 @@ export async function createManualRun(
     status: "queued" as const,
     progress: 0,
     attempts: 0,
+    maxAttempts: 3,
     createdAt: now,
     updatedAt: now,
   };

@@ -50,6 +50,13 @@
       "when": 1787945480327,
       "tag": "0006_secure_supabase_data_api",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787974441478,
+      "tag": "0007_careless_ulik",
+      "breakpoints": true
     }
   ]
 }

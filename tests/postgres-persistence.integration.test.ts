@@ -18,6 +18,7 @@ import {
   graphNodes,
   providerConnectionSessions,
   relationships,
+  runAttempts,
   sourceGroupMembers,
   sourceGroups,
   sources,
@@ -41,6 +42,7 @@ import {
   createManualRun,
   listChanges,
   listRuns,
+  retryFailedRun,
   updateChange,
   updateFinding,
 } from "../lib/server/specgraph-repository";
@@ -536,33 +538,110 @@ components:
       { sourceId: "src_repo", target: "#7" },
       db,
     );
-    const attemptOne = await beginRunAttempt(
+    for (let index = 0; index < 3; index += 1) {
+      const attempt = await beginRunAttempt(
+        created.run.id,
+        "github_pull_request",
+        db,
+      );
+      expect(attempt).toBeTruthy();
+      await failRunAttempt(
+        created.run.id,
+        attempt,
+        new Error("temporary GitHub failure"),
+        "TEST_FAILURE",
+        "temporary failure",
+        db,
+      );
+    }
+    expect(
+      await beginRunAttempt(created.run.id, "github_pull_request", db),
+    ).toBeNull();
+    const [terminalFailure] = await db
+      .select({ errorCode: analysisRuns.errorCode, errorMessage: analysisRuns.errorMessage })
+      .from(analysisRuns)
+      .where(eq(analysisRuns.id, created.run.id));
+    expect(terminalFailure).toEqual({
+      errorCode: "TEST_FAILURE",
+      errorMessage: "temporary failure",
+    });
+
+    const otherWorkspace = await ensureWorkspaceForUser(
+      {
+        id: "github-user-without-access",
+        email: "other@example.com",
+        displayName: "Other Engineer",
+        fullName: "Other Engineer",
+      },
+      db,
+    );
+    await expect(
+      retryFailedRun(
+        otherWorkspace.workspace.id,
+        created.run.id,
+        otherWorkspace.user.databaseId,
+        db,
+      ),
+    ).rejects.toMatchObject({ code: "RUN_NOT_FOUND" });
+
+    const retried = await retryFailedRun(
+      first.workspace.id,
+      created.run.id,
+      first.user.databaseId,
+      db,
+    );
+    expect(retried.run).toMatchObject({
+      status: "queued",
+      execution: "immediate",
+      errorMessage: null,
+    });
+    await expect(
+      retryFailedRun(
+        first.workspace.id,
+        created.run.id,
+        first.user.databaseId,
+        db,
+      ),
+    ).rejects.toMatchObject({ code: "RUN_NOT_FAILED" });
+
+    const attemptFour = await beginRunAttempt(
       created.run.id,
       "github_pull_request",
       db,
     );
-    expect(attemptOne).toBeTruthy();
+    expect(attemptFour).toBeTruthy();
     await failRunAttempt(
       created.run.id,
-      attemptOne,
-      new Error("temporary GitHub failure"),
+      attemptFour,
+      new Error("one more temporary failure"),
       "TEST_FAILURE",
       "temporary failure",
       db,
     );
-    const attemptTwo = await beginRunAttempt(
+    const attemptFive = await beginRunAttempt(
       created.run.id,
       "github_pull_request",
       db,
     );
-    expect(attemptTwo).toBeTruthy();
-    await completeRunAttempt(created.run.id, attemptTwo!, db);
+    expect(attemptFive).toBeTruthy();
+
+    await completeRunAttempt(created.run.id, attemptFour!, db);
+    expect(
+      (await listRuns(first.workspace.id, db)).items[0],
+    ).toMatchObject({ status: "running" });
+    await completeRunAttempt(created.run.id, attemptFive!, db);
 
     const runs = await listRuns(first.workspace.id, db);
     expect(runs.items[0]).toMatchObject({
       id: created.run.id,
       status: "succeeded",
     });
+    expect(await db.select().from(runAttempts)).toHaveLength(5);
+    const [storedRun] = await db
+      .select({ attempts: analysisRuns.attempts, maxAttempts: analysisRuns.maxAttempts })
+      .from(analysisRuns)
+      .where(eq(analysisRuns.id, created.run.id));
+    expect(storedRun).toEqual({ attempts: 5, maxAttempts: 6 });
   });
 
   it("groups sources as equal peers regardless of provider or connection order", async () => {

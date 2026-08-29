@@ -14,6 +14,7 @@ import type {
   RunItem,
   RunListResponse,
   RemoveSourceResponse,
+  RetryRunResponse,
   SourceListResponse,
   StartRunInput,
   StartRunResponse,
@@ -32,6 +33,7 @@ export type SpecGraphApi = {
   loadRuns(): Promise<RunListResponse>;
   loadRun(id: string): Promise<RunItem>;
   startRun(input: StartRunInput): Promise<StartRunResponse>;
+  retryRun(id: string): Promise<RetryRunResponse>;
   loadSources(): Promise<SourceListResponse>;
   loadGitHubStatus(): Promise<GitHubStatusResponse>;
   loadGitHubConnectionSession(state: string): Promise<GitHubConnectionSessionResponse>;
@@ -100,6 +102,11 @@ export const httpSpecGraphApi: SpecGraphApi = {
     return requestJson<StartRunResponse>("/api/runs", {
       method: "POST",
       body: JSON.stringify(input),
+    });
+  },
+  retryRun(id) {
+    return requestJson<RetryRunResponse>(`/api/runs/${id}/retry`, {
+      method: "POST",
     });
   },
   loadSources() {

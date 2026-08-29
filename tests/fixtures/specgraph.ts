@@ -247,6 +247,7 @@ const runs: RunItem[] = changes.map((change) => ({
   id: change.runId,
   title: change.title,
   trigger: change.source.startsWith("Confluence") ? "confluence" : "github",
+  execution: change.status === "processing" ? "immediate" : "daily",
   target: change.source,
   status:
     change.status === "processing"
@@ -383,6 +384,7 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
         id: `run-manual-${currentRuns.length}`,
         title: `Checking ${input.target}`,
         trigger: "manual",
+        execution: "immediate",
         target: input.target,
         status: "queued",
         progress: 0,
@@ -392,6 +394,21 @@ export function createFakeApi(snapshot = dashboardFixture): SpecGraphApi {
         errorMessage: null,
       };
       currentRuns = [run, ...currentRuns];
+      return { run };
+    },
+    async retryRun(id) {
+      const failed = currentRuns.find((run) => run.id === id);
+      if (!failed) throw new Error("Run not found");
+      if (failed.status !== "failed") throw new Error("Only failed analyses can be retried");
+      const run: RunItem = {
+        ...failed,
+        execution: "immediate",
+        status: "queued",
+        progress: 0,
+        completedAt: null,
+        errorMessage: null,
+      };
+      currentRuns = currentRuns.map((item) => (item.id === id ? run : item));
       return { run };
     },
     async loadSources() {
