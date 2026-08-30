@@ -20,6 +20,33 @@ type RunLogContext = {
   maxAttempts: number;
 };
 
+export type RunFailureDiagnostics = {
+  stage?: string;
+};
+
+function safeFailureFields(error: unknown): Record<string, string | undefined> {
+  if (error instanceof ApiError) {
+    return {
+      causeCode: error.code,
+      causeMessage: error.message.slice(0, 300),
+    };
+  }
+
+  if (!error || typeof error !== "object") return {};
+  const record = error as Record<string, unknown>;
+  const safeIdentifier = (value: unknown) =>
+    typeof value === "string" && /^[A-Za-z0-9_.-]{1,128}$/.test(value)
+      ? value
+      : undefined;
+
+  return {
+    causeCode: safeIdentifier(record.code),
+    databaseConstraint: safeIdentifier(record.constraint_name),
+    databaseTable: safeIdentifier(record.table_name),
+    databaseColumn: safeIdentifier(record.column_name),
+  };
+}
+
 async function runLogContext(
   runId: string,
   db: SpecGraphDb,
@@ -177,6 +204,7 @@ export async function failRunAttempt(
   fallbackCode: string,
   fallbackMessage: string,
   db: SpecGraphDb = getDb(),
+  diagnostics: RunFailureDiagnostics = {},
 ): Promise<void> {
   const failedAt = new Date().toISOString();
   const message = error instanceof ApiError ? error.message : fallbackMessage;
@@ -223,6 +251,8 @@ export async function failRunAttempt(
       attemptId,
       errorCode: code,
       errorType: error instanceof Error ? error.name : "UnknownError",
+      failureStage: diagnostics.stage,
+      ...safeFailureFields(error),
       durationMs: attempt?.startedAt
         ? Math.max(
             0,

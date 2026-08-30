@@ -172,9 +172,11 @@ export async function executeGitHubPushAnalysis(
   db: SpecGraphDb = getDb(),
 ): Promise<void> {
   let attemptId: string | null = null;
+  let failureStage = "claim_run";
   try {
     attemptId = await beginRunAttempt(runId, "github_push", db);
     if (!attemptId) return;
+    failureStage = "load_source";
     const [selectedSource] = await db
       .select({
         id: sources.id,
@@ -205,6 +207,7 @@ export async function executeGitHubPushAnalysis(
       throw new ApiError(409, "GITHUB_SOURCE_REQUIRED", "Choose a connected GitHub source.");
     }
 
+    failureStage = "sync_source";
     const sync = await syncGitHubSource(
       workspaceId,
       selectedSource.id,
@@ -213,13 +216,16 @@ export async function executeGitHubPushAnalysis(
       input.afterRevision,
     );
     if (sync.changed) {
+      failureStage = "rebuild_relationships";
       await rebuildCrossSourceRelationships(workspaceId, selectedSource.id, db);
     }
+    failureStage = "update_progress";
     const now = new Date().toISOString();
     await db
       .update(analysisRuns)
       .set({ progress: 55, updatedAt: now })
       .where(eq(analysisRuns.id, runId));
+    failureStage = "resolve_changes";
     const resolvedChanges = await resolveGitHubChangedNodes(
       selectedSource.id,
       input.changedPaths,
@@ -228,6 +234,7 @@ export async function executeGitHubPushAnalysis(
       db,
     );
     if (resolvedChanges.openApiArtifacts.size) {
+      failureStage = "enrich_change";
       const [event] = await db
         .select({ changedArtifactsJson: changeEvents.changedArtifactsJson })
         .from(changeEvents)
@@ -245,12 +252,14 @@ export async function executeGitHubPushAnalysis(
           .where(eq(changeEvents.id, selectedSource.changeEventId));
       }
     }
+    failureStage = "persist_findings";
     await persistDeterministicFindings(
       workspaceId,
       runId,
       resolvedChanges.changedNodes,
       db,
     );
+    failureStage = "complete_run";
     await completeRunAttempt(runId, attemptId, db);
   } catch (error) {
     await failRunAttempt(
@@ -260,6 +269,7 @@ export async function executeGitHubPushAnalysis(
       "GITHUB_PUSH_ANALYSIS_FAILED",
       "GitHub push analysis failed.",
       db,
+      { stage: failureStage },
     );
   }
 }
