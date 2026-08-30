@@ -625,7 +625,7 @@ Exit criteria:
 - [x] Connecting Confluence first and GitHub second produces the same normalized membership as GitHub-first setup.
 - [x] Repeating either order does not duplicate sources or group memberships.
 - [x] An attempted duplicate clearly identifies that the source is already in the selected group.
-- [ ] A Confluence page edit can create findings against linked code, schemas, or tests.
+- [ ] A Confluence page edit can create findings against linked primary code, schemas, or peer documentation; related tests remain supporting review context rather than separate suggestions.
 - [x] A code change can identify an affected Confluence page.
 - [ ] Every cross-source finding opens the correct GitHub revision or Confluence page/version.
 - [ ] Users who select Not now can use the GitHub-only workflow without warnings or fake source rows.
@@ -678,9 +678,9 @@ Exit criteria:
 
 ### M9 — Evaluation and Production Hardening
 
-**Status:** The 25-case local corpus and candidate-retrieval baseline are
-complete; final analyzer comparison, latency measurement, and remaining
-production hardening are pending.
+**Status:** The 25-case local corpus, retrieval baseline, live analyzer
+comparison, latency measurement, and decision diagnostics are complete;
+remaining production hardening is pending.
 
 Goal: measure analysis quality and demonstrate secure, production-style engineering.
 
@@ -688,8 +688,9 @@ Goal: measure analysis quality and demonstrate secure, production-style engineer
 - [x] Include code-first, documentation-first, OpenAPI, test, unrelated, and ambiguous changes.
 - [x] Record expected affected artifacts for every case.
 - [x] Build a repeatable evaluation command.
-- [ ] Report precision, recall, F1, false-positive rate, evidence coverage, and latency.
-- [ ] Compare deterministic-only and hybrid analyzer results.
+- [x] Report precision, recall, F1, false-positive rate, evidence coverage, and latency.
+- [x] Compare deterministic-only and hybrid analyzer results.
+- [x] Trace each evaluated candidate through model classification, exact-evidence verification, combined confidence, and final disposition without logging source content.
 - [x] Add candidate-retrieval regression thresholds that fail when reviewed-target recall drops, candidate sets grow beyond the bound, or unrelated retrieval expands; final analyzer thresholds remain pending.
 - [ ] Add repository size and incremental-index timing measurements.
 - [ ] Enforce request and webhook rate limits.
@@ -727,7 +728,7 @@ Goal: make the implementation independently verifiable by recruiters and intervi
 - [x] Document local setup, tests, migrations, and deployment; add evaluation commands when the harness exists.
 - [x] Document the Vercel, Neon, Auth.js, and Workflow replacement architecture and remaining Sites retirement gate.
 - [ ] Include screenshots or a short demo recording.
-- [ ] Publish measured evaluation and latency results.
+- [x] Publish measured evaluation and latency results.
 - [ ] Document security choices and known limitations.
 - [ ] Provide a safe demo repository with representative changes.
 - [ ] Make the application public or recruiter-accessible.
@@ -1019,7 +1020,7 @@ Package 5 is complete when the live GitHub App delivery is marked processed, exa
 - [x] Delete stale relationships when a reference disappears or an artifact is removed.
 - [x] Traverse at most two relationship steps, cap the candidate set, and rank by evidence type, confidence, and distance.
 - [x] Stop code- and OpenAPI-driven traversal at the first documentation boundary to prevent documentation fan-out.
-- [x] Keep indirect code/test candidates out of documentation-first findings while preserving direct code/test and peer-documentation impacts.
+- [x] Keep test candidates out of documentation-first findings, prefer primary production owners over secondary helpers, preserve peer-documentation impacts, and remind reviewers to check related tests.
 - [x] Add five reviewed golden directions: code-to-doc, indirect code-to-doc, doc-to-code/doc, OpenAPI-to-exact-doc, and unrelated change.
 - [x] Add a repeatable evaluation command and metric calculation for precision, recall, F1, and false-positive rate.
 
@@ -1027,7 +1028,7 @@ Package 6 is complete when the reviewed starter set has exact expected outputs, 
 
 ### Package 7 — Multi-signal relationships and semantic safety
 
-**Status:** Analysis and persistence foundation complete; live model selection and comparative evaluation remain deferred.
+**Status:** Live adapter, comparative harness, and first measured baseline complete; production enablement remains gated on quality selection.
 
 - [x] Persist addressable code symbols and OpenAPI endpoints, including file-to-entity containment edges.
 - [x] Match exact documented identifiers and operations to their defining code or contract nodes.
@@ -1043,8 +1044,9 @@ Package 6 is complete when the reviewed starter set has exact expected outputs, 
 - [x] Persist semantic/hybrid findings and analyzer telemetry through a provider-neutral adapter.
 - [x] Preserve deterministic operation when no semantic adapter is configured or a provider fails.
 - [x] Cover exact entities, peer documentation, multi-signal ranking, hallucinated evidence, fallback, telemetry, and stale symbol removal.
-- [ ] Select and configure a live structured-output model only after expanding the labeled evaluation set.
-- [ ] Compare deterministic-only and hybrid precision/recall before enabling semantic findings in the deployed app.
+- [x] Add an opt-in Vercel AI Gateway structured-output adapter after expanding the labeled evaluation set.
+- [x] Run deterministic-only and hybrid variants through the same precision/recall harness; the current `google/gemini-2.5-flash-lite` baseline measured 94.4% precision, 60.7% recall, and 73.9% F1 with zero provider fallbacks.
+- [ ] Select the production model and quality threshold from measured live evaluation results before enabling semantic findings in the deployed app.
 
 Package 7 is ready for provider evaluation when every accepted semantic finding has exact source evidence, provider failures cannot fail deterministic runs, and token/cost telemetry is captured. It is complete only after the hybrid analyzer improves recall without crossing the agreed precision threshold.
 
@@ -1115,13 +1117,14 @@ Add entries when a default above changes.
 | 2026-08-17 | Use one provider-neutral deterministic finding writer | GitHub and external documentation must produce the same evidence model and feed behavior | Changed graph nodes traverse group-scoped relationships; provider adapters only normalize the changed source |
 | 2026-08-17 | Detach staging analysis with Workers `waitUntil`, but do not call it the production queue | It lets the current Sites staging app return queued runs and continue work after the response without pretending to be crash-safe | D1 remains the source of run truth; the replacement deployment must claim and retry jobs through a durable worker |
 | 2026-08-23 | Use Vercel Hobby, Neon Postgres, Auth.js, and Vercel Workflow for the noncommercial MVP | The stack fits standard Next.js, provides portable SQL identity and state, and removes request-lifetime coupling without requiring commercial infrastructure | The pre-release database starts clean; GitHub and Confluence callbacks must move to `spec-graph.vercel.app` before Sites can be retired |
-| 2026-08-23 | Make deterministic impact eligibility directional and documentation-centered | Symmetric import traversal produced noisy code-to-code findings that did not represent documentation drift | Code or test changes can flag linked documentation; documentation changes can flag linked code, tests, or other documentation; artifacts changed in the same event are excluded; findings never edit sources automatically |
+| 2026-08-23 | Make deterministic impact eligibility directional and documentation-centered | Symmetric import traversal produced noisy code-to-code findings that did not represent documentation drift | Code or test changes can flag linked documentation; documentation changes can flag primary code, schemas, or other documentation while tests remain supporting context; artifacts changed in the same event are excluded; findings never edit sources automatically |
 | 2026-08-23 | Run automatic checks once per day while keeping manual Analyze immediate | A daily cadence is simpler, reduces feed noise, and avoids running analysis on every edit without making the user wait when they explicitly request a check | GitHub webhooks persist queued changes and one daily Vercel workflow processes them while polling Confluence page versions |
 | 2026-08-23 | Parse OpenAPI changes deterministically before semantic review | The contract already states exact operations, schemas, and required fields, so a model should not rediscover those facts | JSON and YAML versions produce structured facts; `$ref` usage carries schema changes to operations; only matching Markdown or Confluence documentation becomes an affected candidate |
 | 2026-08-25 | Model connected sources as provider-neutral groups | GitHub, Confluence, and future documentation providers are equal peers; connection order must not define ownership | Every source receives one group membership, group-level Connect source supports any provider, and membership scopes relationship discovery without becoming evidence |
 | 2026-08-25 | Keep semantic analysis behind a provider-neutral, evidence-verifying adapter | The MVP should not pay for or display model guesses until quality can be measured against deterministic results | Production remains deterministic-only; any future model receives bounded candidates, must return exact excerpts, and records usage/cost/failure telemetry |
 | 2026-08-28 | Move production Postgres from Neon to Supabase and eliminate idle workspace polling | Neon's free public-network-transfer quota was exhausted by frequent whole-workspace refreshes; a provider-neutral driver and quieter refresh policy prevent recurrence and preserve portability | Vercel now injects Supabase pooled and direct connection URLs; production starts from a clean migrated database, source connections must be re-created, and the old Neon resource remains disconnected for rollback reference rather than active use |
 | 2026-08-29 | Treat review decisions as impact-specific, not permanent relationship suppression | A dismissal or resolution answers whether one affected resource needs attention for one concrete source revision and body of evidence; it should survive exact reruns without hiding genuinely new drift | Findings receive a revision-and-evidence fingerprint unique across runs; exact reruns create no duplicate, materially new impacts start open, and earlier findings plus action audit records remain unchanged |
+| 2026-08-30 | Keep tests as supporting context in documentation-first semantic review | Separate test suggestions clutter the feed when a primary production implementation already owns the behavior | Documentation changes surface primary implementation targets; test candidates are omitted as separate impacts, and expanded code suggestions remind reviewers that related tests may also need review |
 
 ---
 
@@ -1181,7 +1184,11 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Added connected-component migration coverage, order-independent and documentation-to-documentation membership tests, and a nontechnical README with the live Vercel link.
 - Added persisted symbol and endpoint nodes, structural containment, exact identifier and API relationships, and conservative cross-provider documentation links for strong shared entities.
 - Added multi-signal confidence ranking plus persisted provenance/analyzer versions, shown as one compact explanation inside expanded finding evidence.
-- Completed the provider-neutral semantic safety layer: bounded candidate retrieval, frozen structured I/O, combined confidence, byte-exact evidence verification, semantic/hybrid persistence, usage/cost/failure telemetry, deterministic fallback, and adversarial tests. A paid model remains unconfigured pending comparative evaluation.
+- Completed the provider-neutral semantic safety layer: bounded candidate retrieval, frozen structured I/O, combined confidence, byte-exact evidence verification, semantic/hybrid persistence, usage/cost/failure telemetry, deterministic fallback, and adversarial tests. The model remains disconnected from production findings pending quality selection.
+- Added an opt-in Vercel AI Gateway structured-output analyzer and a 25-case live comparison command. The adapter treats source content as untrusted data, requires exact excerpts, records token usage, and remains disconnected from production runs until its measured precision and recall justify enablement.
+- Calibrated semantic decisions around potential human review rather than certainty that an edit is required, corrected lexical similarity so it cannot silently veto verified model evidence, and recorded the current paid-tier live baseline: 94.4% precision, 60.7% recall, 73.9% F1, 39.7 seconds, and zero fallbacks across 25 cases.
+- Limited documentation-first semantic suggestions to primary production implementation files, kept tests as supporting context, and added a concise reminder to review related tests inside expanded code suggestions.
+- Added privacy-safe, evaluation-only candidate decision traces. The latest unchanged 25-case run attributed 9 of 11 misses to model-negative decisions, 1 to combined confidence below the display threshold, and 1 to a non-exact evidence excerpt; retrieval still contained every expected target.
 
 ### 2026-08-26
 

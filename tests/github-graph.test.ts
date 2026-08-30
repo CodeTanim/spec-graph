@@ -324,9 +324,9 @@ describe("directional impact policy", () => {
     expect(shouldCreateImpactFinding("code", "confluence")).toBe(true);
   });
 
-  it("allows documentation changes to flag code, tests, and other documentation", () => {
+  it("allows documentation changes to flag primary code and other documentation", () => {
     expect(shouldCreateImpactFinding("confluence", "code")).toBe(true);
-    expect(shouldCreateImpactFinding("markdown", "test")).toBe(true);
+    expect(shouldCreateImpactFinding("markdown", "test")).toBe(false);
     expect(shouldCreateImpactFinding("confluence", "markdown")).toBe(true);
     expect(shouldCreateImpactFinding("markdown", "confluence")).toBe(true);
   });

@@ -170,7 +170,7 @@ export async function analyzePendingConfluenceChanges(
         })),
       ),
       evidenceSummary:
-        "SpecGraph checked linked code, tests, and other documentation without changing any connected source.",
+        "SpecGraph checked linked primary code, schemas, and other documentation. Related tests may also need review. No connected source was changed.",
       sourceLabel: `Confluence / ${source.name}`,
       sourceUrl: onePage?.canonicalUrl || null,
       beforeRevision: onePage?.previousRevision || null,

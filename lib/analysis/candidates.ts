@@ -98,7 +98,10 @@ export function shouldCreateImpactFinding(
   if (changedKind === "openapi") {
     return affectedKind === "markdown" || affectedKind === "confluence";
   }
-  return isDocumentation(changedKind) || isDocumentation(affectedKind);
+  if (isDocumentation(changedKind)) {
+    return affectedKind !== "test";
+  }
+  return isDocumentation(affectedKind);
 }
 
 function pathMatchesOpenApiChange(

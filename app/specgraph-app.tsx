@@ -1595,6 +1595,11 @@ export function SpecGraphApp({
                               <strong>{artifact.name}</strong> may need updating because{" "}
                               <strong>{changedItemLabel}</strong> changed.
                             </p>
+                            {artifact.kind === "Code" && (
+                              <p className="related-tests-note">
+                                Related tests may also need review.
+                              </p>
+                            )}
                             <div className="artifact-preview-links">
                               {artifact.externalUrl && (
                                 <a href={artifact.externalUrl} target="_blank" rel="noreferrer">

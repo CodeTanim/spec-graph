@@ -1160,6 +1160,13 @@ a.changed-artifact-row:hover {
   line-height: 1.55;
 }
 
+.artifact-preview > .related-tests-note {
+  margin-top: -8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .artifact-evidence {
   margin-top: 22px;
   overflow: hidden;

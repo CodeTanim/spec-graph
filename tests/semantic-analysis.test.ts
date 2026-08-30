@@ -96,6 +96,35 @@ describe("bounded semantic candidate retrieval", () => {
     );
     expect(combinedSemanticConfidence(0.82, candidate)).toBeGreaterThan(0.82);
   });
+
+  it("does not turn a verified model decision into a rejection just because lexical overlap is low", () => {
+    const [candidate] = generateSemanticCandidates(changed, [related]);
+    const lowLexicalCandidate = { ...candidate, lexicalScore: 0.2 };
+
+    expect(combinedSemanticConfidence(0.85, lowLexicalCandidate)).toBe(0.8175);
+  });
+
+  it("keeps tests as supporting context for documentation-first review", () => {
+    const productionImplementation = {
+      ...related,
+      nodeId: "implementation",
+      artifactId: "a-implementation",
+      kind: "code" as const,
+      path: "src/payment-retries.ts",
+    };
+    const supportingTest = {
+      ...related,
+      nodeId: "supporting-test",
+      artifactId: "a-supporting-test",
+      kind: "test" as const,
+      path: "tests/payment-retries.test.ts",
+    };
+
+    expect(
+      generateSemanticCandidates(changed, [productionImplementation, supportingTest])
+        .map((candidate) => candidate.id),
+    ).toEqual(["implementation"]);
+  });
 });
 
 describe("semantic evidence verification", () => {
@@ -172,6 +201,119 @@ describe("semantic evidence verification", () => {
     expect(verified.accepted).toEqual([]);
     expect(verified.rejected).toEqual([]);
   });
+
+  it.each([
+    {
+      name: "model negative",
+      decision: {
+        candidateId: "related",
+        impact: false,
+        confidence: 0.96,
+        summary: "The sources describe different behavior.",
+        changedExcerpt: null,
+        candidateExcerpt: null,
+      },
+      disposition: "MODEL_NEGATIVE",
+      evidenceStatus: "NOT_REQUESTED",
+    },
+    {
+      name: "model confidence below threshold",
+      decision: {
+        candidateId: "related",
+        impact: true,
+        confidence: 0.5,
+        summary: "The connection is too weak for review.",
+        changedExcerpt: "retries three times",
+        candidateExcerpt: "retry three times",
+      },
+      disposition: "MODEL_CONFIDENCE_BELOW_THRESHOLD",
+      evidenceStatus: "NOT_REQUESTED",
+    },
+    {
+      name: "missing evidence",
+      decision: {
+        candidateId: "related",
+        impact: true,
+        confidence: 0.95,
+        summary: "The sources describe the same retry behavior.",
+        changedExcerpt: null,
+        candidateExcerpt: null,
+      },
+      disposition: "EVIDENCE_REQUIRED",
+      evidenceStatus: "MISSING",
+    },
+    {
+      name: "unverified evidence",
+      decision: {
+        candidateId: "related",
+        impact: true,
+        confidence: 0.95,
+        summary: "The sources describe the same retry behavior.",
+        changedExcerpt: "retries forever",
+        candidateExcerpt: "retry three times",
+      },
+      disposition: "EVIDENCE_UNVERIFIED",
+      evidenceStatus: "UNVERIFIED",
+    },
+  ])("traces $name without storing source excerpts", ({
+    decision,
+    disposition,
+    evidenceStatus,
+  }) => {
+    const input = buildSemanticAnalysisInput(
+      "run-trace",
+      changed,
+      generateSemanticCandidates(changed, [related]),
+    );
+    const verified = verifySemanticOutput(input, {
+      schemaVersion: "1",
+      decisions: [decision],
+    }, { traceDecisions: true });
+
+    expect(verified.decisionTrace).toEqual([
+      expect.objectContaining({
+        candidateId: "related",
+        disposition,
+        evidenceStatus,
+      }),
+    ]);
+    expect(JSON.stringify(verified.decisionTrace)).not.toContain("retries three times");
+    expect(JSON.stringify(verified.decisionTrace)).not.toContain(decision.summary);
+  });
+
+  it("distinguishes missing, invalid, and invalid-output decisions", () => {
+    const input = buildSemanticAnalysisInput(
+      "run-trace",
+      changed,
+      generateSemanticCandidates(changed, [related]),
+    );
+
+    expect(verifySemanticOutput(input, {
+      schemaVersion: "1",
+      decisions: [],
+    }, { traceDecisions: true }).decisionTrace?.[0].disposition).toBe(
+      "MISSING_DECISION",
+    );
+    expect(verifySemanticOutput(input, {
+      schemaVersion: "1",
+      decisions: [{
+        candidateId: "related",
+        impact: "yes",
+        confidence: 0.9,
+        summary: "Invalid impact value.",
+        changedExcerpt: null,
+        candidateExcerpt: null,
+      }],
+    }, { traceDecisions: true }).decisionTrace?.[0].disposition).toBe(
+      "INVALID_DECISION",
+    );
+    expect(verifySemanticOutput(input, {
+      schemaVersion: "2",
+      decisions: [],
+    }, { traceDecisions: true }).decisionTrace?.[0].disposition).toBe(
+      "OUTPUT_SCHEMA_INVALID",
+    );
+  });
 });
 
 describe("semantic analyzer fallback", () => {
@@ -208,6 +350,72 @@ describe("semantic analyzer fallback", () => {
       accepted: [expect.objectContaining({ candidateId: "related" })],
       usage: { promptTokens: 120, completionTokens: 40, estimatedCostMicros: 35 },
     }));
+    expect(result.decisionTrace).toBeUndefined();
+  });
+
+  it("traces accepted and combined-confidence rejection outcomes when requested", async () => {
+    const input = buildSemanticAnalysisInput(
+      "run-trace",
+      changed,
+      generateSemanticCandidates(changed, [related]),
+    );
+    const analyzerOutput = (confidence: number) => ({
+      name: "test-analyzer",
+      model: "test-model",
+      analyze: async () => ({
+        output: {
+          schemaVersion: "1",
+          decisions: [{
+            candidateId: "related",
+            impact: true,
+            confidence,
+            summary: "Both sources specify the same retry behavior.",
+            changedExcerpt: "retries three times",
+            candidateExcerpt: "retry three times",
+          }],
+        },
+        usage: {
+          promptTokens: 1,
+          completionTokens: 1,
+          estimatedCostMicros: null,
+        },
+      }),
+    });
+
+    const accepted = await executeSemanticAnalysis(
+      input,
+      analyzerOutput(0.95),
+      { traceDecisions: true },
+    );
+    expect(accepted.decisionTrace).toEqual([
+      expect.objectContaining({
+        candidateId: "related",
+        disposition: "ACCEPTED",
+        evidenceStatus: "VERIFIED",
+        combinedConfidence: expect.any(Number),
+      }),
+    ]);
+
+    const lowSignalInput = {
+      ...input,
+      candidates: input.candidates.map((candidate) => ({
+        ...candidate,
+        lexicalScore: 0.12,
+      })),
+    };
+    const belowCombinedThreshold = await executeSemanticAnalysis(
+      lowSignalInput,
+      analyzerOutput(0.78),
+      { traceDecisions: true },
+    );
+    expect(belowCombinedThreshold.decisionTrace).toEqual([
+      expect.objectContaining({
+        candidateId: "related",
+        disposition: "COMBINED_CONFIDENCE_BELOW_THRESHOLD",
+        evidenceStatus: "VERIFIED",
+        combinedConfidence: expect.any(Number),
+      }),
+    ]);
   });
 
   it("preserves deterministic operation when no analyzer is configured", async () => {
@@ -223,6 +431,25 @@ describe("semantic analyzer fallback", () => {
         failureReason: "SEMANTIC_ANALYZER_NOT_CONFIGURED",
       }),
     );
+  });
+
+  it("marks every candidate as analyzer fallback in evaluation traces", async () => {
+    const input = buildSemanticAnalysisInput(
+      "run-trace",
+      changed,
+      generateSemanticCandidates(changed, [related]),
+    );
+    const result = await executeSemanticAnalysis(
+      input,
+      undefined,
+      { traceDecisions: true },
+    );
+    expect(result.decisionTrace).toEqual([
+      expect.objectContaining({
+        candidateId: "related",
+        disposition: "ANALYZER_FALLBACK",
+      }),
+    ]);
   });
 
   it("turns analyzer outages into a truthful fallback result", async () => {

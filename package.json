@@ -13,12 +13,14 @@
     "test:components": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:evaluation": "vitest run --config vitest.config.ts tests/deterministic-evaluation.test.ts tests/evaluation-package.test.ts --reporter=verbose",
+    "test:evaluation:semantic": "vitest run --config vitest.semantic.config.ts --reporter=verbose",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",
     "db:studio": "dotenv -e .env.local -- drizzle-kit studio"
   },
   "dependencies": {
+    "ai": "^7.0.85",
     "drizzle-orm": "0.45.2",
     "next": "16.3.2",
     "next-auth": "5.0.0-beta.32",

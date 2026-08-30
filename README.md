@@ -139,9 +139,11 @@ structured OpenAPI operations and schemas. Traversal is capped at two verified
 relationship steps and suppresses unrelated or weaker duplicates.
 
 The semantic layer now has a bounded, versioned interface, combined confidence
-ranking, exact-excerpt verification, safe fallback, and usage/cost telemetry.
-No paid model is configured yet, so the live app continues to show deterministic
-results only until a model and evaluation budget are deliberately selected.
+ranking, exact-excerpt verification, safe fallback, and token telemetry. An
+opt-in Vercel AI Gateway adapter can evaluate ambiguous candidates with strict
+structured output, but it is not wired into production runs. The live app
+therefore continues to show deterministic results until a model passes the same
+reviewed evaluation set without introducing too many false positives.
 
 ### Local analysis evaluation
 
@@ -159,9 +161,33 @@ without touching OAuth, the live Confluence space, or production data.
 
 The section-aware retrieval baseline is recorded in
 [`evaluation/BASELINE.md`](./evaluation/BASELINE.md). It retrieves all 28
-expected targets, with 27 in the top three and an average of 3.64 candidates per
-case. One unrelated dependency change still reaches a candidate page; that is
+expected targets, with all 28 in the top three and an average of 3.28
+candidates per case. Documentation-first review omits tests as separate targets; the UI gives
+one reminder to review related tests when it suggests a production code file.
+One unrelated dependency change still reaches a candidate page; that is
 work for the final analyzer to reject and is not counted as a displayed finding.
+
+To measure a real structured-output model without changing production behavior,
+set `SPECGRAPH_SEMANTIC_MODEL` to a current Vercel AI Gateway `provider/model`
+ID, set `AI_GATEWAY_API_KEY` for local use, and run
+`npm run test:evaluation:semantic`. This makes 25 sequential, bounded model
+calls and reports precision, recall, F1, false-positive rate, latency, and token
+usage. It also emits privacy-safe decision traces showing whether each missed
+target was rejected by the model, evidence verification, or the final combined
+confidence threshold. Traces contain IDs and numeric/status metadata only—not
+source text, prompts, excerpts, model summaries, or URLs. Each case makes one
+provider request without hidden SDK retries. A
+Gateway free tier may not admit the complete 25-case run; use paid credits for
+a comparable one-pass report or set `SPECGRAPH_SEMANTIC_EVAL_DELAY_MS` to match
+your account limit. The ordinary test and evaluation commands remain
+network-free.
+
+The current paid-tier baseline using `google/gemini-2.5-flash-lite` and the
+`review-triage-v3` calibration completed all 25 cases without fallback in 39.7
+seconds. It measured 94.4% precision, 60.7% recall, and 73.9% F1. These results
+are recorded in [`evaluation/BASELINE.md`](./evaluation/BASELINE.md). The model
+adapter remains disconnected from production findings until the team chooses
+an acceptable precision/recall threshold.
 
 ### Deployment
 

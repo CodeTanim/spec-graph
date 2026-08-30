@@ -89,7 +89,7 @@ export async function executeGitHubPullRequestAnalysis(
         ),
       ),
       evidenceSummary:
-        "SpecGraph checked unchanged linked documentation for code changes, and linked code, tests, or documentation for documentation changes.",
+        "SpecGraph checked unchanged linked documentation for code changes, and linked primary code, schemas, or documentation for documentation changes. Related tests may also need review.",
       sourceLabel: `${selectedSource.name}#${pull.number}`,
       sourceUrl: pull.htmlUrl,
       beforeRevision: pull.baseSha,

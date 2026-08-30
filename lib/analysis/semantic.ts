@@ -67,6 +67,31 @@ export type SemanticAnalyzerResult = {
   };
 };
 
+export type SemanticCandidateDisposition =
+  | "ACCEPTED"
+  | "MODEL_NEGATIVE"
+  | "MODEL_CONFIDENCE_BELOW_THRESHOLD"
+  | "EVIDENCE_REQUIRED"
+  | "EVIDENCE_UNVERIFIED"
+  | "COMBINED_CONFIDENCE_BELOW_THRESHOLD"
+  | "MISSING_DECISION"
+  | "INVALID_DECISION"
+  | "OUTPUT_SCHEMA_INVALID"
+  | "ANALYZER_FALLBACK";
+
+export type SemanticCandidateDecisionTrace = {
+  candidateId: string;
+  modelImpact: boolean | null;
+  modelConfidence: number | null;
+  evidenceStatus: "NOT_REQUESTED" | "VERIFIED" | "MISSING" | "UNVERIFIED";
+  combinedConfidence: number | null;
+  disposition: SemanticCandidateDisposition;
+};
+
+export type SemanticExecutionOptions = {
+  traceDecisions?: boolean;
+};
+
 export type SemanticExecution = {
   status: "succeeded" | "fallback";
   analyzerVersion: string;
@@ -77,9 +102,15 @@ export type SemanticExecution = {
   outputDecisionCount: number;
   accepted: VerifiedSemanticDecision[];
   rejected: Array<{ candidateId: string | null; reason: string }>;
+  decisionTrace?: SemanticCandidateDecisionTrace[];
   failureReason: string | null;
   usage: SemanticAnalyzerResult["usage"];
 };
+
+type SemanticVerificationResult = Pick<
+  SemanticExecution,
+  "accepted" | "rejected" | "outputDecisionCount" | "decisionTrace"
+>;
 
 const STOP_WORDS = new Set([
   "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has",
@@ -202,7 +233,14 @@ export function generateSemanticCandidates(
     .filter(
       (candidate) =>
         candidate.artifactId !== changed.artifactId &&
-        candidate.nodeId !== changed.nodeId,
+        candidate.nodeId !== changed.nodeId &&
+        // Documentation changes should point reviewers at the production
+        // implementation that owns the behavior. Tests remain supporting
+        // review context instead of becoming separate feed suggestions.
+        !(
+          ["markdown", "openapi", "confluence"].includes(changed.kind) &&
+          candidate.kind === "test"
+        ),
     )
     .map((candidate) => {
       const context = contexts.get(candidate.nodeId);
@@ -267,19 +305,55 @@ function exactExcerptLine(text: string, excerpt: string): number | null {
 export function verifySemanticOutput(
   input: SemanticAnalysisInput,
   output: unknown,
-): Pick<SemanticExecution, "accepted" | "rejected" | "outputDecisionCount"> {
+  options: SemanticExecutionOptions = {},
+): SemanticVerificationResult {
   const accepted: VerifiedSemanticDecision[] = [];
   const rejected: SemanticExecution["rejected"] = [];
+  const traceByCandidateId = options.traceDecisions
+    ? new Map<string, SemanticCandidateDecisionTrace>(
+        input.candidates.map((candidate) => [candidate.id, {
+          candidateId: candidate.id,
+          modelImpact: null,
+          modelConfidence: null,
+          evidenceStatus: "NOT_REQUESTED",
+          combinedConfidence: null,
+          disposition: "MISSING_DECISION",
+        }]),
+      )
+    : null;
+  const decisionTrace = (): SemanticCandidateDecisionTrace[] | undefined =>
+    traceByCandidateId
+      ? input.candidates.map((candidate) => traceByCandidateId.get(candidate.id)!)
+      : undefined;
+  const updateTrace = (
+    candidateId: string,
+    value: Omit<SemanticCandidateDecisionTrace, "candidateId">,
+  ): void => {
+    if (!traceByCandidateId?.has(candidateId)) return;
+    traceByCandidateId.set(candidateId, { candidateId, ...value });
+  };
   if (
     !isRecord(output) ||
     !hasOnlyKeys(output, ["schemaVersion", "decisions"]) ||
     output.schemaVersion !== "1" ||
     !Array.isArray(output.decisions)
   ) {
+    if (traceByCandidateId) {
+      for (const candidate of input.candidates) {
+        updateTrace(candidate.id, {
+          modelImpact: null,
+          modelConfidence: null,
+          evidenceStatus: "NOT_REQUESTED",
+          combinedConfidence: null,
+          disposition: "OUTPUT_SCHEMA_INVALID",
+        });
+      }
+    }
     return {
       accepted,
       rejected: [{ candidateId: null, reason: "INVALID_OUTPUT_SCHEMA" }],
       outputDecisionCount: 0,
+      decisionTrace: decisionTrace(),
     };
   }
 
@@ -297,6 +371,19 @@ export function verifySemanticOutput(
         "candidateExcerpt",
       ])
     ) {
+      const invalidCandidateId = isRecord(value) && typeof value.candidateId === "string"
+        ? value.candidateId
+        : null;
+      if (invalidCandidateId && candidates.has(invalidCandidateId) && !seen.has(invalidCandidateId)) {
+        seen.add(invalidCandidateId);
+        updateTrace(invalidCandidateId, {
+          modelImpact: null,
+          modelConfidence: null,
+          evidenceStatus: "NOT_REQUESTED",
+          combinedConfidence: null,
+          disposition: "INVALID_DECISION",
+        });
+      }
       rejected.push({ candidateId: null, reason: "INVALID_DECISION_SCHEMA" });
       continue;
     }
@@ -317,10 +404,38 @@ export function verifySemanticOutput(
       !value.summary.trim() ||
       value.summary.length > 400
     ) {
+      updateTrace(candidateId, {
+        modelImpact: typeof value.impact === "boolean" ? value.impact : null,
+        modelConfidence: typeof value.confidence === "number" && Number.isFinite(value.confidence)
+          ? value.confidence
+          : null,
+        evidenceStatus: "NOT_REQUESTED",
+        combinedConfidence: null,
+        disposition: "INVALID_DECISION",
+      });
       rejected.push({ candidateId, reason: "INVALID_DECISION_VALUES" });
       continue;
     }
-    if (!value.impact || value.confidence < MIN_SEMANTIC_DISPLAY_CONFIDENCE) continue;
+    if (!value.impact) {
+      updateTrace(candidateId, {
+        modelImpact: false,
+        modelConfidence: value.confidence,
+        evidenceStatus: "NOT_REQUESTED",
+        combinedConfidence: null,
+        disposition: "MODEL_NEGATIVE",
+      });
+      continue;
+    }
+    if (value.confidence < MIN_SEMANTIC_DISPLAY_CONFIDENCE) {
+      updateTrace(candidateId, {
+        modelImpact: true,
+        modelConfidence: value.confidence,
+        evidenceStatus: "NOT_REQUESTED",
+        combinedConfidence: null,
+        disposition: "MODEL_CONFIDENCE_BELOW_THRESHOLD",
+      });
+      continue;
+    }
     if (
       typeof value.changedExcerpt !== "string" ||
       typeof value.candidateExcerpt !== "string" ||
@@ -329,15 +444,36 @@ export function verifySemanticOutput(
       value.changedExcerpt.length > 800 ||
       value.candidateExcerpt.length > 800
     ) {
+      updateTrace(candidateId, {
+        modelImpact: true,
+        modelConfidence: value.confidence,
+        evidenceStatus: "MISSING",
+        combinedConfidence: null,
+        disposition: "EVIDENCE_REQUIRED",
+      });
       rejected.push({ candidateId, reason: "EVIDENCE_REQUIRED" });
       continue;
     }
     const changedStartLine = exactExcerptLine(input.changed.text, value.changedExcerpt);
     const candidateStartLine = exactExcerptLine(candidate.artifact.text, value.candidateExcerpt);
     if (changedStartLine === null || candidateStartLine === null) {
+      updateTrace(candidateId, {
+        modelImpact: true,
+        modelConfidence: value.confidence,
+        evidenceStatus: "UNVERIFIED",
+        combinedConfidence: null,
+        disposition: "EVIDENCE_UNVERIFIED",
+      });
       rejected.push({ candidateId, reason: "UNVERIFIED_EVIDENCE" });
       continue;
     }
+    updateTrace(candidateId, {
+      modelImpact: true,
+      modelConfidence: value.confidence,
+      evidenceStatus: "VERIFIED",
+      combinedConfidence: null,
+      disposition: "ACCEPTED",
+    });
     accepted.push({
       candidateId,
       impact: true,
@@ -349,7 +485,12 @@ export function verifySemanticOutput(
       candidateStartLine,
     });
   }
-  return { accepted, rejected, outputDecisionCount: output.decisions.length };
+  return {
+    accepted,
+    rejected,
+    outputDecisionCount: output.decisions.length,
+    decisionTrace: decisionTrace(),
+  };
 }
 
 export function combinedSemanticConfidence(
@@ -358,8 +499,11 @@ export function combinedSemanticConfidence(
 ): number {
   const boundedModel = Math.max(0, Math.min(1, modelConfidence));
   if (!candidate.relationshipContext.length || candidate.graphDistance === null) {
+    // Lexical similarity gets a candidate into the bounded review set; it is not
+    // negative evidence. Preserve a verified model decision while still using
+    // the retrieval score as a small ranking signal.
     return Number(
-      (boundedModel * 0.85 + candidate.lexicalScore * 0.15).toFixed(4),
+      (boundedModel * 0.95 + candidate.lexicalScore * 0.05).toFixed(4),
     );
   }
   const graphDistanceScore = candidate.graphDistance <= 1
@@ -392,28 +536,70 @@ function rankVerifiedDecisions(
   const candidateById = new Map(input.candidates.map((candidate) => [candidate.id, candidate]));
   const accepted: VerifiedSemanticDecision[] = [];
   const rejected = [...verified.rejected];
+  const traceByCandidateId = verified.decisionTrace
+    ? new Map(verified.decisionTrace.map((trace) => [trace.candidateId, trace]))
+    : null;
   for (const decision of verified.accepted) {
     const candidate = candidateById.get(decision.candidateId);
     if (!candidate) continue;
     const confidence = combinedSemanticConfidence(decision.confidence, candidate);
     if (confidence < MIN_SEMANTIC_DISPLAY_CONFIDENCE) {
+      const trace = traceByCandidateId?.get(decision.candidateId);
+      if (trace) {
+        traceByCandidateId!.set(decision.candidateId, {
+          ...trace,
+          combinedConfidence: confidence,
+          disposition: "COMBINED_CONFIDENCE_BELOW_THRESHOLD",
+        });
+      }
       rejected.push({
         candidateId: decision.candidateId,
         reason: "LOW_COMBINED_CONFIDENCE",
       });
       continue;
     }
+    const trace = traceByCandidateId?.get(decision.candidateId);
+    if (trace) {
+      traceByCandidateId!.set(decision.candidateId, {
+        ...trace,
+        combinedConfidence: confidence,
+        disposition: "ACCEPTED",
+      });
+    }
     accepted.push({ ...decision, confidence });
   }
   accepted.sort((left, right) =>
     right.confidence - left.confidence || left.candidateId.localeCompare(right.candidateId),
   );
-  return { ...verified, accepted, rejected };
+  return {
+    ...verified,
+    accepted,
+    rejected,
+    decisionTrace: traceByCandidateId
+      ? input.candidates.map((candidate) => traceByCandidateId.get(candidate.id)!)
+      : undefined,
+  };
+}
+
+function fallbackDecisionTrace(
+  input: SemanticAnalysisInput,
+  options: SemanticExecutionOptions,
+): SemanticCandidateDecisionTrace[] | undefined {
+  if (!options.traceDecisions) return undefined;
+  return input.candidates.map((candidate) => ({
+    candidateId: candidate.id,
+    modelImpact: null,
+    modelConfidence: null,
+    evidenceStatus: "NOT_REQUESTED",
+    combinedConfidence: null,
+    disposition: "ANALYZER_FALLBACK",
+  }));
 }
 
 export async function executeSemanticAnalysis(
   input: SemanticAnalysisInput,
   analyzer?: SemanticAnalyzer,
+  options: SemanticExecutionOptions = {},
 ): Promise<SemanticExecution> {
   const startedAt = Date.now();
   if (!analyzer) {
@@ -427,6 +613,7 @@ export async function executeSemanticAnalysis(
       outputDecisionCount: 0,
       accepted: [],
       rejected: [],
+      decisionTrace: fallbackDecisionTrace(input, options),
       failureReason: "SEMANTIC_ANALYZER_NOT_CONFIGURED",
       usage: {
         promptTokens: null,
@@ -439,7 +626,7 @@ export async function executeSemanticAnalysis(
     const result = await analyzer.analyze(input);
     const verified = rankVerifiedDecisions(
       input,
-      verifySemanticOutput(input, result.output),
+      verifySemanticOutput(input, result.output, options),
     );
     return {
       status: "succeeded",
@@ -463,6 +650,7 @@ export async function executeSemanticAnalysis(
       outputDecisionCount: 0,
       accepted: [],
       rejected: [],
+      decisionTrace: fallbackDecisionTrace(input, options),
       failureReason: error instanceof Error ? error.message : "SEMANTIC_ANALYZER_FAILED",
       usage: {
         promptTokens: null,

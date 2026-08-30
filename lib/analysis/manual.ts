@@ -129,7 +129,7 @@ async function executeConfluencePageAnalysis(
         },
       ]),
       evidenceSummary:
-        "SpecGraph checked linked code, tests, and other documentation without changing any connected source.",
+        "SpecGraph checked linked primary code, schemas, and other documentation. Related tests may also need review. No connected source was changed.",
       sourceLabel: `Confluence / ${page.title}`,
       sourceUrl: page.canonicalUrl,
       beforeRevision: previous?.revision || null,

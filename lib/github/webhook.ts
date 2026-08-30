@@ -560,7 +560,7 @@ export async function acceptGitHubWebhook(
   const changeId = `chg_wh_${idSuffix}`;
   const runId = `run_wh_${idSuffix}`;
   const evidenceSummary =
-    "SpecGraph checked unchanged linked documentation for code changes, and linked code, tests, or documentation for documentation changes.";
+    "SpecGraph checked unchanged linked documentation for code changes, and linked primary code, schemas, or documentation for documentation changes. Related tests may also need review.";
   await db
     .insert(changeEvents)
     .values({
