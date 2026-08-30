@@ -4,6 +4,7 @@ import {
   combinedSemanticConfidence,
   executeSemanticAnalysis,
   generateSemanticCandidates,
+  sectionAwareLexicalSimilarity,
   verifySemanticOutput,
   type SemanticArtifactSnapshot,
 } from "../lib/analysis/semantic";
@@ -42,6 +43,36 @@ describe("bounded semantic candidate retrieval", () => {
     ]);
     expect(candidates.map((candidate) => candidate.id)).toEqual(["related"]);
     expect(candidates[0].lexicalScore).toBeGreaterThan(0.5);
+  });
+
+  it("matches code-style identifiers to a relevant section in a longer product page", () => {
+    const score = sectionAwareLexicalSimilarity(
+      "export function shouldScheduleDailyAnalysis() { return 'daily'; }",
+      [
+        "# How the product works",
+        "The interface uses a simple source list and review feed.",
+        "## Keeping sources current",
+        "Automatic analysis runs on a daily cadence and checks newly captured changes.",
+        "## Reviewing suggestions",
+        "A reviewer can dismiss or resolve each suggestion.",
+      ].join("\n\n"),
+    );
+    expect(score).toBeGreaterThanOrEqual(0.12);
+  });
+
+  it("normalizes camel case, punctuation, plurals, and common inflections", () => {
+    expect(
+      sectionAwareLexicalSimilarity(
+        "addEqualSourceMember(sourceGroup)",
+        "Connected source-groups contain equal members.",
+      ),
+    ).toBeGreaterThan(0.5);
+    expect(
+      sectionAwareLexicalSimilarity(
+        "preserveReviewDecision('dismissed')",
+        "Review decisions persist when a suggestion is dismissed.",
+      ),
+    ).toBeGreaterThan(0.5);
   });
 
   it("combines model, lexical, graph-distance, and edge-origin signals", () => {

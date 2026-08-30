@@ -143,6 +143,26 @@ ranking, exact-excerpt verification, safe fallback, and usage/cost telemetry.
 No paid model is configured yet, so the live app continues to show deterministic
 results only until a model and evaluation budget are deliberately selected.
 
+### Local analysis evaluation
+
+The repository includes a network-free evaluation lab in
+[`evaluation`](./evaluation). Markdown files simulate natural-language
+Confluence pages, repository fixtures simulate the related implementation, and
+25 reviewed changes define what should or should not be flagged. It covers
+code-first, documentation-first, OpenAPI, test, unrelated, and ambiguous cases
+without touching OAuth, the live Confluence space, or production data.
+
+`npm run test:evaluation` reports two deliberately separate layers:
+
+- candidate retrieval — whether the correct artifact reaches the bounded review set;
+- final decisions — precision, recall, F1, and false-positive rate for a future analyzer using the same labels.
+
+The section-aware retrieval baseline is recorded in
+[`evaluation/BASELINE.md`](./evaluation/BASELINE.md). It retrieves all 28
+expected targets, with 27 in the top three and an average of 3.64 candidates per
+case. One unrelated dependency change still reaches a candidate page; that is
+work for the final analyzer to reject and is not counted as a displayed finding.
+
 ### Deployment
 
 The live non-commercial deployment is [spec-graph.vercel.app](https://spec-graph.vercel.app).

@@ -678,15 +678,19 @@ Exit criteria:
 
 ### M9 — Evaluation and Production Hardening
 
+**Status:** The 25-case local corpus and candidate-retrieval baseline are
+complete; final analyzer comparison, latency measurement, and remaining
+production hardening are pending.
+
 Goal: measure analysis quality and demonstrate secure, production-style engineering.
 
-- [ ] Create a labeled evaluation set of at least 25 representative changes.
-- [ ] Include code-first, documentation-first, OpenAPI, test, unrelated, and ambiguous changes.
-- [ ] Record expected affected artifacts for every case.
-- [ ] Build a repeatable evaluation command.
+- [x] Create a labeled evaluation set of at least 25 representative changes.
+- [x] Include code-first, documentation-first, OpenAPI, test, unrelated, and ambiguous changes.
+- [x] Record expected affected artifacts for every case.
+- [x] Build a repeatable evaluation command.
 - [ ] Report precision, recall, F1, false-positive rate, evidence coverage, and latency.
 - [ ] Compare deterministic-only and hybrid analyzer results.
-- [ ] Add regression thresholds that fail when quality drops materially.
+- [x] Add candidate-retrieval regression thresholds that fail when reviewed-target recall drops, candidate sets grow beyond the bound, or unrelated retrieval expands; final analyzer thresholds remain pending.
 - [ ] Add repository size and incremental-index timing measurements.
 - [ ] Enforce request and webhook rate limits.
 - [ ] Audit tenant isolation and repository authorization.

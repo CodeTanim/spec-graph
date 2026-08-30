@@ -1,0 +1,24 @@
+openapi: 3.1.0
+info:
+  title: SpecGraph Evaluation API
+  version: 1.0.0
+paths:
+  /analysis-runs:
+    post:
+      operationId: startAnalysisRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartAnalysisRun"
+components:
+  schemas:
+    StartAnalysisRun:
+      type: object
+      required: [sourceGroupId]
+      properties:
+        sourceGroupId:
+          type: string
+        requestedRevision:
+          type: string

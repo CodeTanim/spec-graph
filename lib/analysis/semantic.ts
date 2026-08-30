@@ -1,6 +1,7 @@
 import type { AnalysisArtifactKind, CandidateEdge } from "./candidates";
 
 export const SEMANTIC_ANALYZER_VERSION = "semantic-contract-v1";
+export const SEMANTIC_RETRIEVAL_VERSION = "section-aware-lexical-v1";
 export const MAX_SEMANTIC_CANDIDATES = 12;
 export const MAX_SEMANTIC_TEXT_CHARS = 6_000;
 export const MIN_SEMANTIC_DISPLAY_CONFIDENCE = 0.78;
@@ -86,23 +87,102 @@ const STOP_WORDS = new Set([
   "were", "will", "with",
 ]);
 
+function canonicalToken(token: string): string {
+  if (token.length > 5 && token.endsWith("ies")) {
+    return `${token.slice(0, -3)}y`;
+  }
+  if (token.length > 6 && token.endsWith("ation")) {
+    return token.slice(0, -5);
+  }
+  if (token.length > 5 && token.endsWith("ing")) {
+    return token.slice(0, -3);
+  }
+  if (token.length > 4 && token.endsWith("ed")) {
+    return token.slice(0, -2);
+  }
+  if (
+    token.length > 4 &&
+    (token.endsWith("ize") || token.endsWith("ve"))
+  ) {
+    return token.slice(0, -1);
+  }
+  if (
+    token.length > 4 &&
+    token.endsWith("s") &&
+    !token.endsWith("ss") &&
+    !token.endsWith("us") &&
+    !token.endsWith("is")
+  ) {
+    return token.slice(0, -1);
+  }
+  return token;
+}
+
 function tokens(text: string): Set<string> {
-  const expanded = text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  const expanded = text
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .toLowerCase();
   return new Set(
-    (expanded.match(/[a-z0-9_/.-]{3,}/g) || []).filter(
-      (token) => !STOP_WORDS.has(token),
-    ),
+    (expanded.match(/[a-z0-9]{3,}/g) || [])
+      .map(canonicalToken)
+      .filter((token) => !STOP_WORDS.has(token)),
   );
 }
 
-export function lexicalSimilarity(leftText: string, rightText: string): number {
-  const left = tokens(leftText);
-  const right = tokens(rightText);
+function tokenSetSimilarity(left: Set<string>, right: Set<string>): number {
   if (!left.size || !right.size) return 0;
   let shared = 0;
   for (const token of left) if (right.has(token)) shared += 1;
   if (!shared) return 0;
   return Number((shared / Math.sqrt(left.size * right.size)).toFixed(4));
+}
+
+export function lexicalSimilarity(leftText: string, rightText: string): number {
+  return tokenSetSimilarity(tokens(leftText), tokens(rightText));
+}
+
+function semanticSegments(text: string): Set<string>[] {
+  const bounded = text.slice(0, MAX_SEMANTIC_TEXT_CHARS);
+  const blocks = bounded
+    .split(/\n\s*\n/g)
+    .map((value) => value.trim())
+    .filter((value) => value.length >= 12);
+  const lines = bounded
+    .split("\n")
+    .map((value) => value.trim())
+    .filter((value) => value.length >= 20);
+  const combined: string[] = [bounded, ...blocks, ...lines];
+  for (let index = 0; index < blocks.length - 1; index += 1) {
+    if (/^#{1,6}\s/.test(blocks[index]!)) {
+      combined.push(`${blocks[index]}\n${blocks[index + 1]}`);
+    }
+  }
+  const unique = [...new Set(combined)].slice(0, 32);
+  return unique.map(tokens).filter((value) => value.size >= 3);
+}
+
+export function sectionAwareLexicalSimilarity(
+  leftText: string,
+  rightText: string,
+): number {
+  return sectionAwareTokenSimilarity(
+    semanticSegments(leftText),
+    semanticSegments(rightText),
+  );
+}
+
+function sectionAwareTokenSimilarity(
+  leftSegments: Set<string>[],
+  rightSegments: Set<string>[],
+): number {
+  let strongest = 0;
+  for (const left of leftSegments) {
+    for (const right of rightSegments) {
+      strongest = Math.max(strongest, tokenSetSimilarity(left, right));
+    }
+  }
+  return strongest;
 }
 
 function boundedSnapshot(snapshot: SemanticArtifactSnapshot): SemanticArtifactSnapshot {
@@ -117,6 +197,7 @@ export function generateSemanticCandidates(
   candidates: SemanticArtifactSnapshot[],
   contexts: Map<string, { graphDistance: number | null; edges: CandidateEdge[] }> = new Map(),
 ): SemanticCandidate[] {
+  const changedSegments = semanticSegments(changed.text);
   return candidates
     .filter(
       (candidate) =>
@@ -128,7 +209,10 @@ export function generateSemanticCandidates(
       return {
         id: candidate.nodeId,
         artifact: boundedSnapshot(candidate),
-        lexicalScore: lexicalSimilarity(changed.text, candidate.text),
+        lexicalScore: sectionAwareTokenSimilarity(
+          changedSegments,
+          semanticSegments(candidate.text),
+        ),
         graphDistance: context?.graphDistance ?? null,
         relationshipContext: (context?.edges || []).slice(0, 4).map((edge) => ({
           type: edge.type,

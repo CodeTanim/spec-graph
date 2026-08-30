@@ -12,7 +12,7 @@
     "test": "npm run test:components && npm run test:integration",
     "test:components": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:evaluation": "vitest run --config vitest.config.ts tests/deterministic-evaluation.test.ts",
+    "test:evaluation": "vitest run --config vitest.config.ts tests/deterministic-evaluation.test.ts tests/evaluation-package.test.ts --reporter=verbose",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",

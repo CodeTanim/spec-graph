@@ -1,0 +1,10 @@
+:root {
+  --canvas: #edf8ff;
+  --accent: #168fd5;
+  --ink: #092b45;
+}
+
+.primary-action {
+  border: 2px solid var(--ink);
+  background: var(--accent);
+}

@@ -1,0 +1,9 @@
+{
+  "name": "specgraph-evaluation-fixture",
+  "lockfileVersion": 3,
+  "packages": {
+    "node_modules/example": {
+      "version": "1.0.1"
+    }
+  }
+}
