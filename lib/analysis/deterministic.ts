@@ -27,6 +27,27 @@ export type ChangedGraphNode = {
   changeKeys?: string[];
 };
 
+class FindingPersistenceError extends Error {
+  readonly diagnosticStage: string;
+
+  constructor(stage: string, cause: unknown) {
+    super(`Finding persistence failed during ${stage}.`, { cause });
+    this.name = "FindingPersistenceError";
+    this.diagnosticStage = stage;
+  }
+}
+
+async function atFindingStage<T>(
+  stage: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw new FindingPersistenceError(stage, error);
+  }
+}
+
 function evidenceExcerpt(content: string, startLine: number): string {
   const lines = content.split("\n").slice(Math.max(0, startLine - 1), startLine + 3);
   const excerpt = lines.join("\n").trim();
@@ -84,8 +105,8 @@ export async function persistDeterministicFindings(
       node.changeSummary ? [[node.id, node.changeSummary] as const] : [],
     ),
   );
-  const allWorkspaceRecords = await db
-    .select({
+  const allWorkspaceRecords = await atFindingStage("load_workspace_graph", async () =>
+    db.select({
       nodeId: graphNodes.id,
       artifactId: artifacts.id,
       sourceId: artifacts.sourceId,
@@ -101,17 +122,18 @@ export async function persistDeterministicFindings(
     .from(graphNodes)
     .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
     .innerJoin(sources, eq(artifacts.sourceId, sources.id))
-    .where(
-      eq(sources.workspaceId, workspaceId),
-    );
+      .where(eq(sources.workspaceId, workspaceId)),
+  );
   const changedRecordsAcrossWorkspace = allWorkspaceRecords.filter((record) =>
     changedNodeIds.includes(record.nodeId),
   );
   const allowedSourceIds = new Set(
-    await sourceIdsConnectedTo(
-      workspaceId,
-      changedRecordsAcrossWorkspace.map((record) => record.sourceId),
-      db,
+    await atFindingStage("scope_source_group", () =>
+      sourceIdsConnectedTo(
+        workspaceId,
+        changedRecordsAcrossWorkspace.map((record) => record.sourceId),
+        db,
+      ),
     ),
   );
   const workspaceRecords = allWorkspaceRecords.filter((record) =>
@@ -133,10 +155,11 @@ export async function persistDeterministicFindings(
   const edges: CandidateEdge[] = [];
   const workspaceNodeIdList = [...workspaceNodeIds];
   for (let index = 0; index < workspaceNodeIdList.length; index += 40) {
-    const records = await db
-      .select()
-      .from(relationships)
-      .where(inArray(relationships.fromNodeId, workspaceNodeIdList.slice(index, index + 40)));
+    const records = await atFindingStage("load_relationships", async () =>
+      db.select()
+        .from(relationships)
+        .where(inArray(relationships.fromNodeId, workspaceNodeIdList.slice(index, index + 40))),
+    );
     for (const record of records) {
       if (workspaceNodeIds.has(record.toNodeId)) edges.push(record);
     }
@@ -178,19 +201,20 @@ export async function persistDeterministicFindings(
     const existing = evidenceVersionByKey.get(key);
     if (existing) return existing;
     const pending = (async () => {
-      const rows = await db
-        .select({ id: artifactVersions.id, text: artifactVersions.extractedText })
-        .from(artifactVersions)
-        .where(
-          revision
-            ? and(
-                eq(artifactVersions.artifactId, artifactId),
-                eq(artifactVersions.revision, revision),
-              )
-            : eq(artifactVersions.artifactId, artifactId),
-        )
-        .orderBy(desc(artifactVersions.createdAt))
-        .limit(1);
+      const rows = await atFindingStage("load_evidence_version", async () =>
+        db.select({ id: artifactVersions.id, text: artifactVersions.extractedText })
+          .from(artifactVersions)
+          .where(
+            revision
+              ? and(
+                  eq(artifactVersions.artifactId, artifactId),
+                  eq(artifactVersions.revision, revision),
+                )
+              : eq(artifactVersions.artifactId, artifactId),
+          )
+          .orderBy(desc(artifactVersions.createdAt))
+          .limit(1),
+      );
       return rows[0] || null;
     })();
     evidenceVersionByKey.set(key, pending);
@@ -238,7 +262,7 @@ export async function persistDeterministicFindings(
       : edge.evidence;
     const evidenceLocation = `${evidenceRecord?.path || affected.path}:${startLine}`;
     const changedRecord = changedRecordByNode.get(changedNodeId);
-    const impactFingerprint = await createImpactFingerprint({
+    const impactFingerprint = await atFindingStage("create_fingerprint", () => createImpactFingerprint({
       changed: {
         nodeId: changedNodeId,
         revision: changedRecord?.currentRevision || changedRecord?.contentHash || "unknown",
@@ -264,9 +288,12 @@ export async function persistDeterministicFindings(
         location: evidenceLocation,
         excerpt,
       },
-    });
-    const stableSuffix = (await sha256Hex(`${runId}:${deduplicationKey}`)).slice(0, 32);
-    const inserted = await db.insert(findings).values({
+    }));
+    const stableSuffix = (await atFindingStage("create_finding_id", () =>
+      sha256Hex(`${runId}:${deduplicationKey}`),
+    )).slice(0, 32);
+    const inserted = await atFindingStage("insert_finding", async () =>
+      db.insert(findings).values({
       id: `finding_${stableSuffix}`,
       runId,
       changedNodeId,
@@ -284,10 +311,12 @@ export async function persistDeterministicFindings(
       impactFingerprint,
       createdAt: now,
       updatedAt: now,
-    }).onConflictDoNothing().returning({ id: findings.id });
+      }).onConflictDoNothing().returning({ id: findings.id }),
+    );
     const insertedFinding = inserted[0];
     if (!insertedFinding) continue;
-    await db.insert(findingEvidence).values({
+    await atFindingStage("insert_finding_evidence", async () =>
+      db.insert(findingEvidence).values({
       id: `evidence_${stableSuffix}`,
       findingId: insertedFinding.id,
       artifactVersionId: version?.id || null,
@@ -303,7 +332,8 @@ export async function persistDeterministicFindings(
       ),
       type: "relationship",
       createdAt: now,
-    }).onConflictDoNothing({ target: findingEvidence.id });
+      }).onConflictDoNothing({ target: findingEvidence.id }),
+    );
     persistedFindings += 1;
   }
 

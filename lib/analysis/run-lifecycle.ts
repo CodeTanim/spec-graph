@@ -25,26 +25,26 @@ export type RunFailureDiagnostics = {
 };
 
 function safeFailureFields(error: unknown): Record<string, string | undefined> {
-  if (error instanceof ApiError) {
-    return {
-      causeCode: error.code,
-      causeMessage: error.message.slice(0, 300),
-    };
-  }
-
-  if (!error || typeof error !== "object") return {};
-  const record = error as Record<string, unknown>;
   const safeIdentifier = (value: unknown) =>
     typeof value === "string" && /^[A-Za-z0-9_.-]{1,128}$/.test(value)
       ? value
       : undefined;
-
-  return {
-    causeCode: safeIdentifier(record.code),
-    databaseConstraint: safeIdentifier(record.constraint_name),
-    databaseTable: safeIdentifier(record.table_name),
-    databaseColumn: safeIdentifier(record.column_name),
-  };
+  const fields: Record<string, string | undefined> = {};
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+    if (current instanceof ApiError) {
+      fields.causeCode ||= current.code;
+      fields.causeMessage ||= current.message.slice(0, 300);
+    }
+    const record = current as Record<string, unknown>;
+    fields.causeStage ||= safeIdentifier(record.diagnosticStage);
+    fields.causeCode ||= safeIdentifier(record.code);
+    fields.databaseConstraint ||= safeIdentifier(record.constraint_name);
+    fields.databaseTable ||= safeIdentifier(record.table_name);
+    fields.databaseColumn ||= safeIdentifier(record.column_name);
+    current = record.cause;
+  }
+  return fields;
 }
 
 async function runLogContext(
