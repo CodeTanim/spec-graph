@@ -6,8 +6,10 @@
   --canvas: #edf8ff;
   --muted: #526f86;
   --line: #9dcfed;
+  --line-muted: #d8e3ea;
   --line-strong: #176b9f;
   --soft: #e0f2ff;
+  --surface-muted: #f7fafc;
   --accent: #168fd5;
   --accent-strong: #0575b5;
   --accent-ink: #04527e;
@@ -819,8 +821,8 @@ button:disabled {
 
 .details-section {
   margin-top: 34px;
-  border-top: 2px solid var(--line);
-  padding-top: 16px;
+  border-top: 1px solid var(--line-muted);
+  padding-top: 20px;
 }
 
 .details-section h3 {
@@ -828,6 +830,9 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   margin: 0;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 13px 14px;
   font-size: 15px;
   font-weight: 800;
   letter-spacing: -0.01em;
@@ -850,7 +855,7 @@ button:disabled {
 }
 
 .changed-section {
-  padding-top: 0;
+  padding-top: 18px;
 }
 
 .details-section-toggle {
@@ -860,7 +865,7 @@ button:disabled {
   gap: 18px;
   width: 100%;
   border: 0;
-  background: transparent;
+  background: var(--surface-muted);
   min-height: 52px;
   border-radius: 7px;
   padding: 16px 12px;
@@ -894,8 +899,10 @@ button:disabled {
 }
 
 .changed-artifact-list {
-  margin-top: 12px;
-  border-bottom: 2px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .changed-artifact-row {
@@ -904,7 +911,9 @@ button:disabled {
   justify-content: space-between;
   gap: 18px;
   min-height: 58px;
-  border-top: 2px solid var(--line);
+  border: 1px solid var(--line-muted);
+  border-radius: 8px;
+  background: var(--surface-muted);
   padding: 11px 10px;
   color: var(--ink);
   text-decoration: none;
@@ -933,13 +942,28 @@ a.changed-artifact-row:hover strong {
   text-underline-offset: 4px;
 }
 
+a.changed-artifact-row:hover {
+  border-color: var(--line);
+  background: var(--soft);
+}
+
 .artifact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 12px;
-  border-bottom: 2px solid var(--line);
 }
 
 .artifact-item {
-  border-top: 2px solid var(--line);
+  overflow: hidden;
+  border: 1px solid var(--line-muted);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.artifact-item.expanded {
+  border: 2px solid var(--line-strong);
+  background: var(--paper);
 }
 
 .artifact-row {
@@ -950,7 +974,7 @@ a.changed-artifact-row:hover strong {
   width: 100%;
   min-height: 76px;
   border: 0;
-  background: transparent;
+  background: var(--surface-muted);
   padding: 14px 12px;
   text-align: left;
 }
@@ -962,8 +986,8 @@ a.changed-artifact-row:hover strong {
 }
 
 .artifact-row[aria-expanded="true"] {
-  border-left: 4px solid var(--accent-strong);
-  padding-left: 8px;
+  padding-right: 14px;
+  padding-left: 14px;
 }
 
 .artifact-row > span:first-child {
@@ -976,6 +1000,26 @@ a.changed-artifact-row:hover strong {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.artifact-expand-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border: 1px solid var(--line-muted);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--accent-ink);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.artifact-row[aria-expanded="true"] .artifact-expand-icon {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  color: var(--paper);
 }
 
 .review-status {
@@ -1009,12 +1053,29 @@ a.changed-artifact-row:hover strong {
 }
 
 .artifact-preview {
-  border-right: 2px solid var(--line);
-  border-bottom: 2px solid var(--line);
-  border-left: 4px solid var(--accent-strong);
-  border-radius: 0 0 8px 8px;
+  border-top: 1px solid var(--line-muted);
   background: var(--soft);
   padding: 22px;
+}
+
+.artifact-list-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line-muted);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.artifact-list-more:hover {
+  border-color: var(--line-strong);
+  background: var(--accent-soft);
 }
 
 .artifact-preview > span {
@@ -1101,8 +1162,10 @@ a.changed-artifact-row:hover strong {
 
 .artifact-evidence {
   margin-top: 22px;
-  border-top: 2px solid var(--line);
-  border-bottom: 2px solid var(--line);
+  overflow: hidden;
+  border: 1px solid var(--line-muted);
+  border-radius: 8px;
+  background: var(--paper);
 }
 
 .artifact-evidence summary {
@@ -1111,7 +1174,7 @@ a.changed-artifact-row:hover strong {
   justify-content: space-between;
   cursor: pointer;
   list-style: none;
-  padding: 16px 2px;
+  padding: 14px;
   color: var(--ink);
   min-height: 48px;
   font-size: 13px;
@@ -1133,7 +1196,7 @@ a.changed-artifact-row:hover strong {
 }
 
 .artifact-evidence-body {
-  padding: 2px 0 18px;
+  padding: 2px 14px 16px;
 }
 
 .artifact-evidence-body > p {
@@ -1150,7 +1213,7 @@ a.changed-artifact-row:hover strong {
   justify-content: flex-end;
   gap: 12px;
   margin-top: 20px;
-  border-top: 2px solid var(--line);
+  border-top: 1px solid var(--line-muted);
   padding-top: 16px;
 }
 
@@ -1170,9 +1233,10 @@ a.changed-artifact-row:hover strong {
   justify-content: space-between;
   width: 100%;
   margin-top: 24px;
-  border-top: 2px solid var(--line);
-  border-bottom: 2px solid var(--line);
-  padding: 16px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 16px 14px;
   text-align: left;
 }
 
@@ -1181,8 +1245,9 @@ a.changed-artifact-row:hover strong {
 }
 
 .evidence-copy {
-  margin: 0;
-  border-radius: 0 0 10px 10px;
+  margin: 8px 0 0;
+  border: 1px solid var(--line-muted);
+  border-radius: 8px;
   background: var(--accent-soft);
   padding: 15px;
   color: var(--muted);
@@ -1191,11 +1256,17 @@ a.changed-artifact-row:hover strong {
 }
 
 .details-actions {
+  position: sticky;
+  z-index: 2;
+  bottom: -34px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 22px;
-  margin-top: 34px;
+  margin: 34px -30px -34px;
+  border-top: 2px solid var(--line-strong);
+  background: var(--paper);
+  padding: 18px 30px 20px;
 }
 
 .dismiss-action {
@@ -1520,6 +1591,15 @@ a.provider-option:hover {
     width: 100%;
     border-left: 0;
     padding: 22px 20px 30px;
+  }
+
+  .details-actions {
+    bottom: -30px;
+    margin-right: -20px;
+    margin-bottom: -30px;
+    margin-left: -20px;
+    padding-right: 20px;
+    padding-left: 20px;
   }
 }
 

@@ -147,6 +147,7 @@ export function relativeTime(value: string | null, now = Date.now()) {
 }
 
 const DAILY_ANALYSIS_HOUR_UTC = 13;
+const INITIAL_VISIBLE_SUGGESTIONS = 5;
 const SOURCE_REFRESH_POLL_MS = 2_500;
 const SOURCE_REFRESH_TIMEOUT_MS = 90_000;
 const ACTIVE_RUN_POLL_DELAYS_MS = [2_000, 5_000, 10_000, 20_000, 30_000] as const;
@@ -194,6 +195,7 @@ export function SpecGraphApp({
   const [error, setError] = useState("");
   const [selectedChange, setSelectedChange] = useState<ChangeItem | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<AffectedArtifact | null>(null);
+  const [showAllArtifacts, setShowAllArtifacts] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
   const [showChangedArtifacts, setShowChangedArtifacts] = useState(false);
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
@@ -481,6 +483,7 @@ export function SpecGraphApp({
       setSourceSetupOpen(false);
       setSelectedChange(null);
       setSelectedArtifact(null);
+      setShowAllArtifacts(false);
       setShowEvidence(false);
       setShowChangedArtifacts(false);
       setAddSourceOpen(false);
@@ -512,11 +515,20 @@ export function SpecGraphApp({
   const selectedOpenSuggestions = selectedChange?.artifacts.filter(
     (artifact) => artifact.reviewStatus === "open",
   ).length ?? 0;
+  const visibleArtifacts = selectedChange
+    ? showAllArtifacts
+      ? selectedChange.artifacts
+      : selectedChange.artifacts.slice(0, INITIAL_VISIBLE_SUGGESTIONS)
+    : [];
+  const hiddenArtifactCount = selectedChange
+    ? Math.max(0, selectedChange.artifacts.length - INITIAL_VISIBLE_SUGGESTIONS)
+    : 0;
 
   function chooseView(nextView: View) {
     setView(nextView);
     setSelectedChange(null);
     setSelectedArtifact(null);
+    setShowAllArtifacts(false);
     setShowChangedArtifacts(false);
   }
 
@@ -539,6 +551,7 @@ export function SpecGraphApp({
   function openChange(change: ChangeItem) {
     setSelectedChange(change);
     setSelectedArtifact(null);
+    setShowAllArtifacts(false);
     setShowEvidence(false);
     setShowChangedArtifacts(false);
   }
@@ -546,6 +559,7 @@ export function SpecGraphApp({
   function closeChange() {
     setSelectedChange(null);
     setSelectedArtifact(null);
+    setShowAllArtifacts(false);
     setShowEvidence(false);
     setShowChangedArtifacts(false);
   }
@@ -1523,7 +1537,7 @@ export function SpecGraphApp({
               </h3>
               {selectedChange.artifacts.length ? (
                 <div className="artifact-list">
-                  {selectedChange.artifacts.map((artifact) => {
+                  {visibleArtifacts.map((artifact) => {
                     const expanded = selectedArtifact?.id === artifact.id;
                     const detailsId = `artifact-details-${artifact.id}`;
                     const changedArtifact =
@@ -1539,7 +1553,10 @@ export function SpecGraphApp({
                     const changedItemUrl = changedArtifact?.externalUrl || null;
 
                     return (
-                      <div className="artifact-item" key={artifact.id}>
+                      <div
+                        className={`artifact-item${expanded ? " expanded" : ""}`}
+                        key={artifact.id}
+                      >
                         <button
                           type="button"
                           className="artifact-row"
@@ -1566,7 +1583,9 @@ export function SpecGraphApp({
                                   : "Dismissed"}
                               </small>
                             )}
-                            <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                            <span className="artifact-expand-icon" aria-hidden="true">
+                              {expanded ? "−" : "+"}
+                            </span>
                           </span>
                         </button>
 
@@ -1647,6 +1666,31 @@ export function SpecGraphApp({
                       </div>
                     );
                   })}
+                  {hiddenArtifactCount > 0 && (
+                    <button
+                      type="button"
+                      className="artifact-list-more"
+                      aria-expanded={showAllArtifacts}
+                      onClick={() => {
+                        if (showAllArtifacts) {
+                          const selectedIndex = selectedChange.artifacts.findIndex(
+                            (artifact) => artifact.id === selectedArtifact?.id,
+                          );
+                          if (selectedIndex >= INITIAL_VISIBLE_SUGGESTIONS) {
+                            setSelectedArtifact(null);
+                          }
+                        }
+                        setShowAllArtifacts((current) => !current);
+                      }}
+                    >
+                      {showAllArtifacts
+                        ? "Show fewer suggestions"
+                        : `Show ${hiddenArtifactCount} more ${
+                            hiddenArtifactCount === 1 ? "suggestion" : "suggestions"
+                          }`}
+                      <span aria-hidden="true">{showAllArtifacts ? "↑" : "↓"}</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <p className="analysis-message">

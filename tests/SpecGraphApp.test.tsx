@@ -454,6 +454,61 @@ describe("SpecGraphApp", () => {
     vi.useRealTimers();
   });
 
+  it("keeps long suggestion lists scannable until the user asks for more", async () => {
+    const user = userEvent.setup();
+    const baseChange = dashboardFixture.changes.items[0];
+    const baseArtifact = baseChange.artifacts[0];
+    const artifacts = Array.from({ length: 7 }, (_, index) => ({
+      ...baseArtifact,
+      id: `finding-${index + 1}`,
+      name: `Affected item ${index + 1}`,
+      location: `docs/affected-${index + 1}.md`,
+    }));
+    const snapshot = {
+      ...dashboardFixture,
+      changes: {
+        ...dashboardFixture.changes,
+        items: [
+          { ...baseChange, affected: artifacts.length, artifacts },
+          ...dashboardFixture.changes.items.slice(1),
+        ],
+      },
+    };
+
+    render(
+      <SpecGraphApp
+        api={createFakeApi(snapshot)}
+        initialData={snapshot}
+        loadOnMount={false}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Refund validation window changed/ }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Affected item 5/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Affected item 6/ }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Show 2 more suggestions" }),
+    );
+    expect(
+      screen.getByRole("button", { name: /Affected item 7/ }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Show fewer suggestions" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: /Affected item 6/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("persists one suggestion review without silently closing the whole change", async () => {
     const user = userEvent.setup();
     renderApp();
