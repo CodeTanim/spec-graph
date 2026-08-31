@@ -1,44 +1,104 @@
-# Local retrieval baseline
+# Evaluation baselines
+
+## Current in-sample retrieval calibration
 
 Recorded on 2026-08-30 with `semantic-contract-v1`,
-`section-aware-lexical-v1`, and the 25-case local product evaluation package.
+`section-aware-lexical-v1`, and the adjudicated 25-case local product evaluation
+package.
 
 | Measurement | Result |
 | --- | ---: |
 | Reviewed cases | 25 |
-| Expected affected targets | 28 |
-| Expected targets retrieved | 28 |
+| Display-worthy expected targets | 23 |
+| Expected targets retrieved | 23 |
 | Retrieval recall | 100% |
-| Expected targets in the top three | 28 |
+| Expected targets in the top three | 23 |
 | Top-three recall | 100% |
 | Positive cases with every expected target retrieved | 100% |
-| Average candidates per case | 3.28 |
-| Unrelated cases that produced candidates | 1 of 2 |
+| Average candidates per case | 2.32 |
+| Explicitly unrelated cases that produced candidates | 0 of 2 |
 
 This is a **candidate-retrieval baseline**, not final finding precision. The
-fixtures intentionally use natural product documentation without planting code
-paths in the prose. Section-aware matching and code-word normalization retrieve
-every reviewed target while keeping the average candidate set below four.
+fixtures use natural product documentation without planting code paths in the
+prose. Code-first cases provide the atomic changed scope—the relevant function,
+constant, or diff-sized excerpt—instead of treating the whole current file as
+changed. Section-aware matching and code-word normalization retrieve every
+reviewed target inside the same top-three bound used by the semantic adapter.
 
-One routine dependency update retrieves the API-contract page because both
-contain a small amount of generic contract/version language. That page is only
-a candidate for review; a final analyzer should reject it rather than display a
-finding. This tradeoff is recorded so later model evaluation can measure the
-actual decision instead of pretending candidate retrieval is final precision.
+The corpus is an **in-sample calibration and regression set**, not an unseen
+holdout. Its adjudicated labels, retrieval behavior, and semantic prompt
+examples were refined against these same cases. The 100% retrieval and
+top-three figures demonstrate fit to the reviewed cases; they are not a claim
+of expected recall on unfamiliar repositories or documentation.
+
+Some related but zero-label UI or test scenarios still retrieve candidates.
+That is intentional: retrieval favors recall, while the final analyzer rejects
+relationships that do not justify a separate human-review suggestion. Neither
+case explicitly labeled unrelated produces a candidate.
 
 Documentation-first retrieval excludes tests as separate review targets. Tests
 remain indexed relationship context, and the product reminds reviewers to
 check related tests when a primary implementation file is suggested.
+
+The current cap of three semantic candidates is provisional. The calibration
+set does not yet include a representative change with more than three
+legitimate affected targets, so this baseline cannot establish that the cap is
+safe for broader use.
+
+Production ingestion now persists private, version-pinned, bounded change
+scopes for new and modified GitHub files and Confluence pages. The semantic
+adapter can consume a matching scope and fails closed when the scope is missing,
+unavailable, or belongs to another artifact. Live production AI findings remain
+disabled; the deployed product continues to use deterministic findings. Raw
+scope snippets are redacted when a source is removed and after 30 days.
 
 The regression test prevents this baseline from silently getting worse. A live
 semantic analyzer must still be evaluated on final decisions before SpecGraph
 claims the M9 precision, recall, F1, false-positive-rate, evidence, cost, or
 latency targets.
 
-## Live semantic baseline
+## Validation work still required
+
+- Freeze a versioned unseen holdout before using any of its results to change
+  prompts, thresholds, retrieval rules, or labels.
+- Include at least one realistic holdout case with more than three legitimate
+  impacts and use it to validate or revise the candidate cap.
+- Run the selected model repeatedly on that holdout and report minimum as well
+  as mean quality, critical-case coverage, evidence coverage, latency, token
+  usage, and fallbacks.
+- Run the unseen holdout through the same persisted change-scope contract used
+  by production ingestion before connecting the adapter to live findings.
+- Complete deleted-artifact tombstone handling and paginate Confluence spaces
+  beyond the current 100-page ingestion limit before claiming complete provider
+  change coverage.
+
+No full v5 result is recorded here yet. The v5 adapter and its prompt examples
+have been calibrated on the in-sample corpus, and production AI findings remain
+disabled.
+
+On 2026-08-30, a one-case v5 Gateway preflight stopped after the first request
+returned `Gateway request failed` before any model tokens were reported. The
+run was recorded as an analyzer fallback and is not a model-quality result. No
+broader live run was attempted, preventing a provider or account failure from
+consuming the remaining evaluation requests.
+
+A later diagnostic confirmed that Gateway authentication, credits, and both
+configured Google model routes were healthy, making the earlier transport
+failure transient. The same one-case preflight then reached the model but
+rejected its otherwise valid decision because the provider exceeded the
+180-character explanation limit. SpecGraph now deterministically bounds only
+that human-facing explanation while retaining strict confidence and exact
+evidence verification. The repeated one-case preflight completed with 1 true
+positive, 0 false positives, 0 false negatives, no fallback, 2,166 input
+tokens, and 145 output tokens. This targeted recovery check is not a full v5
+quality baseline and does not satisfy the release gate.
+
+## Historical v3 semantic baseline
 
 Recorded on 2026-08-30 with `google/gemini-2.5-flash-lite`,
-`review-triage-v3`, the 25-case package above, and no provider fallbacks.
+`review-triage-v3`, the superseded pre-adjudication 28-target label set, and no
+provider fallbacks. These results are retained as diagnostic history and are
+not directly comparable with the current 23-target corpus.
 
 | Measurement | Result |
 | --- | ---: |
@@ -55,7 +115,7 @@ Recorded on 2026-08-30 with `google/gemini-2.5-flash-lite`,
 | Input tokens | 37,233 |
 | Output tokens | 7,801 |
 
-The calibration treats tests as supporting context for documentation-first
+The v3 calibration treats tests as supporting context for documentation-first
 review and asks the model to select the narrowest production owner. This
 removed the two test-file false positives while improving recall. The one
 remaining false positive is `request-limits.ts`, which enforces workspace
@@ -63,7 +123,7 @@ authorization but is secondary to the benchmark's primary owner,
 `workspace-auth.ts`. Production semantic findings remain disabled: this is a
 useful experimental baseline, not yet the selected production threshold.
 
-### Decision-trace diagnostic run
+### Historical decision-trace diagnostic run
 
 A second live run on 2026-08-30 used the same model, calibration, fixtures, and
 threshold with evaluation-only candidate tracing enabled. The trace records

@@ -62,6 +62,7 @@ export type SemanticAnalyzerEvaluationReport = {
 
 export type SemanticAnalyzerEvaluationOptions = {
   delayBetweenCasesMs?: number;
+  stopOnFallback?: boolean;
   wait?: (durationMs: number) => Promise<void>;
 };
 
@@ -177,10 +178,12 @@ export async function runSemanticAnalyzerEvaluation(
         (trace) => trace.expected && trace.disposition !== "ACCEPTED",
       ),
     });
+    if (options.stopOnFallback && execution.status === "fallback") break;
   }
 
   const candidateTraces = results.flatMap((result) => result.candidateTraces);
   const falseNegatives = results.flatMap((result) => result.falseNegatives);
+  const evaluatedCases = cases.slice(0, results.length);
   return {
     analyzerName: analyzer.name,
     model: analyzer.model,
@@ -189,7 +192,7 @@ export async function runSemanticAnalyzerEvaluation(
     promptTokens: sumNullable(results.map((result) => result.promptTokens)),
     completionTokens: sumNullable(results.map((result) => result.completionTokens)),
     latencyMs: results.reduce((sum, result) => sum + result.latencyMs, 0),
-    metrics: evaluateFinalPredictions(predictions, cases),
+    metrics: evaluateFinalPredictions(predictions, evaluatedCases),
     candidateDispositionCounts: countDispositions(candidateTraces),
     falseNegativeDispositionCounts: countDispositions(falseNegatives),
     cases: results,

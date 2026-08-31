@@ -407,9 +407,9 @@ Initial ranking inputs:
 | M4 — Manual end-to-end analysis | Staging implementation complete; live smoke pending | M3, H1 | Analyze produces persistent real findings on the durable replacement runtime |
 | M5 — Automatic GitHub feed | Complete — live push processed exactly once and produced persistent findings | M4 | Pushes and pull requests trigger the same pipeline |
 | M6 — Confluence documentation connection | In progress (live connection and both directions implemented; live edit smoke pending) | M4, H1 | External documentation participates in the same product flow on the replacement domain |
-| M7 — Semantic ranking and evidence | Foundation complete; live model adapter and comparative evaluation pending | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
+| M7 — Semantic ranking and evidence | v5 in-sample adapter and production atomic change-scope capture complete; unseen holdout and live AI enablement remain gated | M4, M6 | Ambiguous cross-source impacts are ranked with verified evidence |
 | M8 — Review lifecycle and resilience | In progress — review actions, bounded retries, ten-minute execution deadlines, stale-worker cancellation, recovery coverage, and correlation logs are implemented; the materially-new-change review policy remains | M5, M7 | Actions persist; failures retry safely |
-| M9 — Evaluation and production hardening | Not started | M8 | Quality, security, and reliability are measured |
+| M9 — Evaluation and production hardening | In progress — in-sample 25-case/23-target calibration exists; unseen holdout validation remains | M8 | Quality, security, and reliability are measured |
 | M10 — Portfolio and resume readiness | Not started | M6, M9 | Recruiters can inspect the complete cross-source product |
 
 ### M0 — Contract and Test Seam
@@ -607,7 +607,9 @@ Goal: let users connect external documentation without making source setup feel 
 - [x] Persist Confluence source metadata without exposing credentials to the browser.
 - [x] Ingest page IDs, versions, titles, text, explicit links, and canonical URLs.
 - [x] Normalize Confluence pages through the same artifact and graph-node contracts used for repository documentation.
+- [ ] Paginate Confluence ingestion beyond the current first 100 pages.
 - [ ] Store durable external page snapshots when immutable provider retrieval is insufficient.
+- [ ] Define deletion tombstones so removed GitHub artifacts and Confluence pages retain enough version-pinned context for truthful downstream review.
 - [x] Create deterministic relationships when Confluence pages reference exact paths in a GitHub source from the same group.
 - [x] Poll for incremental page versions on a daily cadence and deduplicate them with per-artifact analysis cursors.
 - [x] Send Confluence changes through the same run and finding pipeline.
@@ -678,9 +680,11 @@ Exit criteria:
 
 ### M9 — Evaluation and Production Hardening
 
-**Status:** The 25-case local corpus, retrieval baseline, live analyzer
-comparison, latency measurement, and decision diagnostics are complete;
-remaining production hardening is pending.
+**Status:** The adjudicated 25-case/23-target in-sample calibration corpus,
+deterministic top-three retrieval baseline, historical live comparison, latency
+measurement, and decision diagnostics are complete. The corpus and prompt
+examples were calibrated together; unseen holdout validation, production
+semantic enablement, and remaining hardening are still gated.
 
 Goal: measure analysis quality and demonstrate secure, production-style engineering.
 
@@ -692,6 +696,16 @@ Goal: measure analysis quality and demonstrate secure, production-style engineer
 - [x] Compare deterministic-only and hybrid analyzer results.
 - [x] Trace each evaluated candidate through model classification, exact-evidence verification, combined confidence, and final disposition without logging source content.
 - [x] Add candidate-retrieval regression thresholds that fail when reviewed-target recall drops, candidate sets grow beyond the bound, or unrelated retrieval expands; final analyzer thresholds remain pending.
+- [x] Make code-first evaluation cases use atomic changed scopes rather than whole-file fixtures.
+- [x] Keep all 23 adjudicated targets inside the current provisional top-three retrieval bound.
+- [x] Classify relationship basis separately from primary, distinct, supporting, or irrelevant ownership.
+- [x] Capture private, version-pinned, bounded before/after scopes for new and modified GitHub and Confluence content during production ingestion.
+- [x] Let the semantic adapter consume only a matching persisted change scope and fail closed when it is unavailable or mismatched.
+- [x] Redact private change-scope snippets when a source is removed and after a 30-day retry/audit window.
+- [ ] Enable semantic findings in live production runs only after the unseen-holdout release gate passes; deterministic findings remain live until then.
+- [ ] Freeze a versioned unseen holdout before using its results to tune prompts, thresholds, retrieval, or labels.
+- [ ] Add at least one realistic unseen case with more than three legitimate impacts and validate or revise the candidate cap.
+- [ ] Pass repeated holdout runs with at least 95% precision, 85% recall, every critical relationship detected, and zero provider fallbacks before production enablement.
 - [ ] Add repository size and incremental-index timing measurements.
 - [ ] Enforce request and webhook rate limits.
 - [ ] Audit tenant isolation and repository authorization.
@@ -705,8 +719,8 @@ Initial quality targets, to be validated rather than claimed:
 | Metric | Initial target |
 | --- | --- |
 | Evidence coverage | 100% of displayed findings |
-| Precision | At least 80% on the labeled set |
-| Recall | At least 70% on the labeled set |
+| Precision | At least 95% on every repeated versioned-holdout release-gate run |
+| Recall | At least 85% on every repeated versioned-holdout release-gate run |
 | Duplicate findings after webhook replay | 0 |
 | Successful recovery from tested transient failures | 100% |
 | Median incremental analysis latency | Under 60 seconds for the demo repository |
@@ -1028,7 +1042,13 @@ Package 6 is complete when the reviewed starter set has exact expected outputs, 
 
 ### Package 7 — Multi-signal relationships and semantic safety
 
-**Status:** Live adapter, comparative harness, and first measured baseline complete; production enablement remains gated on quality selection.
+**Status:** The v3 run is retained as a historical baseline. The v5 adapter and
+its prompt examples are calibrated on the same 25-case/23-target in-sample set;
+no full v5 result or unseen holdout result is claimed. Production continues to
+use deterministic findings. Production ingestion now persists private,
+version-pinned atomic change scopes and the adapter consumes them fail closed.
+Completion still requires a versioned unseen holdout and the repeated holdout
+quality gate before live AI findings are enabled.
 
 - [x] Persist addressable code symbols and OpenAPI endpoints, including file-to-entity containment edges.
 - [x] Match exact documented identifiers and operations to their defining code or contract nodes.
@@ -1045,10 +1065,16 @@ Package 6 is complete when the reviewed starter set has exact expected outputs, 
 - [x] Preserve deterministic operation when no semantic adapter is configured or a provider fails.
 - [x] Cover exact entities, peer documentation, multi-signal ranking, hallucinated evidence, fallback, telemetry, and stale symbol removal.
 - [x] Add an opt-in Vercel AI Gateway structured-output adapter after expanding the labeled evaluation set.
-- [x] Run deterministic-only and hybrid variants through the same precision/recall harness; the current `google/gemini-2.5-flash-lite` baseline measured 94.4% precision, 60.7% recall, and 73.9% F1 with zero provider fallbacks.
+- [x] Run deterministic-only and hybrid variants through the same precision/recall harness; retain the `google/gemini-2.5-flash-lite` v3 result as historical rather than comparing its superseded 28-target labels with the current corpus.
+- [x] Make evaluation cases use atomic changed scopes and keep every adjudicated target inside the current provisional top-three semantic candidate limit.
+- [x] Separate why two sources are related from whether the candidate is a primary, distinct, supporting, or irrelevant owner.
+- [x] Persist bounded, version-pinned changed ranges or structured before/after facts from production GitHub and Confluence ingestion.
+- [x] Pass a matching persisted scope into the semantic adapter and reject missing, unavailable, or mismatched scope evidence.
+- [ ] Create and freeze an unseen versioned holdout that is not used to tune semantic prompts, thresholds, retrieval, or labels.
+- [ ] Add a holdout case with more than three legitimate affected targets and validate or revise the candidate limit before production use.
 - [ ] Select the production model and quality threshold from measured live evaluation results before enabling semantic findings in the deployed app.
 
-Package 7 is ready for provider evaluation when every accepted semantic finding has exact source evidence, provider failures cannot fail deterministic runs, and token/cost telemetry is captured. It is complete only after the hybrid analyzer improves recall without crossing the agreed precision threshold.
+Package 7 is ready for in-sample provider calibration when every accepted semantic finding has exact source evidence, provider failures cannot fail deterministic runs, and token/cost telemetry is captured. It is complete only after a versioned unseen holdout validates the candidate limit and the hybrid analyzer meets both the recall target and the agreed precision floor.
 
 ### Package 8 — Truthful first-run activation
 
@@ -1217,3 +1243,11 @@ Use this section for short dated updates. Keep detailed implementation notes in 
 - Completed the repeated-review policy with a provider-neutral impact fingerprint over changed revision, affected revision, relationship provenance, analyzer version, and exact evidence. Identical reruns preserve dismissed or resolved findings without duplicating evidence; materially new revisions produce a separate open finding while the earlier action history remains intact.
 - Reduced database egress throughout the main product path: graph discovery no longer repeats full artifact text per graph node, feed details reuse persisted evidence excerpts, repository dashboards batch counts and artifacts instead of issuing per-row queries, ingestion reads only current artifact versions, unchanged source revisions skip cross-source graph rebuilds, and active-run polling uses progressive backoff.
 - Added an optional `DATABASE_DEPLOYMENT_ENVIRONMENT` safety label that rejects Production/Preview/Development database mismatches. The Supabase production connection should now be scoped to Vercel Production; Preview and local Development need separate databases before their database variables are re-enabled.
+
+### 2026-08-30
+
+- Adjudicated the local evaluation package to 25 in-sample cases and 23 display-worthy targets, and recorded 100% deterministic retrieval and top-three recall with 2.32 candidates per case. These are calibration/regression results, not unseen-holdout evidence.
+- Added the v5 evaluation adapter, which classifies relationship basis separately from whether a candidate is a primary, distinct, supporting, or irrelevant review owner. Its prompt examples were calibrated on the same local corpus, and no full v5 metric is claimed yet.
+- Added private, version-pinned, bounded atomic change scopes for new and modified GitHub files and Confluence pages. The semantic adapter accepts a matching scope and fails closed when evidence is unavailable or mismatched; public feed payloads remain unchanged.
+- Kept production AI findings disabled pending the unseen holdout. Deterministic findings remain live, while deleted-artifact tombstones and Confluence pagination beyond 100 pages remain explicit ingestion limitations.
+- Gated production selection on a versioned unseen holdout, including a realistic case with more than three legitimate impacts to validate or revise the provisional three-candidate cap.

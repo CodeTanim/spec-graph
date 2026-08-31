@@ -73,6 +73,12 @@ describe("bounded semantic candidate retrieval", () => {
         "Review decisions persist when a suggestion is dismissed.",
       ),
     ).toBeGreaterThan(0.5);
+    expect(
+      sectionAwareLexicalSimilarity(
+        "maximumAutomaticAttempts",
+        "Work stops after the configured attempt limit.",
+      ),
+    ).toBeGreaterThanOrEqual(0.12);
   });
 
   it("combines model, lexical, graph-distance, and edge-origin signals", () => {
@@ -97,11 +103,11 @@ describe("bounded semantic candidate retrieval", () => {
     expect(combinedSemanticConfidence(0.82, candidate)).toBeGreaterThan(0.82);
   });
 
-  it("does not turn a verified model decision into a rejection just because lexical overlap is low", () => {
+  it("does not use retrieval similarity as negative evidence after verification", () => {
     const [candidate] = generateSemanticCandidates(changed, [related]);
     const lowLexicalCandidate = { ...candidate, lexicalScore: 0.2 };
 
-    expect(combinedSemanticConfidence(0.85, lowLexicalCandidate)).toBe(0.8175);
+    expect(combinedSemanticConfidence(0.8, lowLexicalCandidate)).toBe(0.8);
   });
 
   it("keeps tests as supporting context for documentation-first review", () => {
@@ -149,6 +155,50 @@ describe("semantic evidence verification", () => {
       expect.objectContaining({ candidateId: "related", candidateStartLine: 1 }),
     ]);
     expect(verified.rejected).toEqual([]);
+  });
+
+  it("recovers byte-exact source evidence when a model normalizes whitespace", () => {
+    const formattedChanged = {
+      ...changed,
+      text: [
+        "Retry behavior",
+        "Payment authorization retries\n  three times before entering the failure queue.",
+      ].join("\n"),
+    };
+    const formattedRelated = {
+      ...related,
+      text: [
+        "# Payment failures",
+        "Policy",
+        "Failed payment authorization requests\n\tretry three times before entering the failure queue.",
+      ].join("\n"),
+    };
+    const input = buildSemanticAnalysisInput(
+      "run-whitespace",
+      formattedChanged,
+      generateSemanticCandidates(formattedChanged, [formattedRelated]),
+    );
+
+    const verified = verifySemanticOutput(input, {
+      schemaVersion: "1",
+      decisions: [{
+        candidateId: "related",
+        impact: true,
+        confidence: 0.91,
+        summary: "Both sources specify the same retry behavior.",
+        changedExcerpt: "Payment authorization retries three times",
+        candidateExcerpt: "authorization requests retry three times",
+      }],
+    });
+
+    expect(verified.rejected).toEqual([]);
+    expect(verified.accepted).toEqual([expect.objectContaining({
+      candidateId: "related",
+      changedExcerpt: "Payment authorization retries\n  three times",
+      candidateExcerpt: "authorization requests\n\tretry three times",
+      changedStartLine: 2,
+      candidateStartLine: 3,
+    })]);
   });
 
   it("rejects hallucinated evidence and unknown output fields", () => {
@@ -353,7 +403,7 @@ describe("semantic analyzer fallback", () => {
     expect(result.decisionTrace).toBeUndefined();
   });
 
-  it("traces accepted and combined-confidence rejection outcomes when requested", async () => {
+  it("keeps verified threshold decisions accepted even when retrieval support is weak", async () => {
     const input = buildSemanticAnalysisInput(
       "run-trace",
       changed,
@@ -403,17 +453,17 @@ describe("semantic analyzer fallback", () => {
         lexicalScore: 0.12,
       })),
     };
-    const belowCombinedThreshold = await executeSemanticAnalysis(
+    const acceptedAtThreshold = await executeSemanticAnalysis(
       lowSignalInput,
       analyzerOutput(0.78),
       { traceDecisions: true },
     );
-    expect(belowCombinedThreshold.decisionTrace).toEqual([
+    expect(acceptedAtThreshold.decisionTrace).toEqual([
       expect.objectContaining({
         candidateId: "related",
-        disposition: "COMBINED_CONFIDENCE_BELOW_THRESHOLD",
+        disposition: "ACCEPTED",
         evidenceStatus: "VERIFIED",
-        combinedConfidence: expect.any(Number),
+        combinedConfidence: 0.78,
       }),
     ]);
   });

@@ -66,6 +66,7 @@ export function displayArtifactKind(kind: IndexedArtifactKind): ArtifactKind {
 export function changedArtifactSnapshot(
   path: string,
   externalUrl: string | null,
+  changeType?: ChangedArtifact["changeType"],
 ): ChangedArtifact {
   const indexedKind = classifyGitHubArtifact(path);
   return {
@@ -74,6 +75,7 @@ export function changedArtifactSnapshot(
     kind: indexedKind ? displayArtifactKind(indexedKind) : "File",
     location: path,
     externalUrl,
+    ...(changeType ? { changeType } : {}),
   };
 }
 

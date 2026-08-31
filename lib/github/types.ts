@@ -30,9 +30,11 @@ export type GitHubPullRequest = {
 
 export type GitHubPullFile = {
   filename: string;
+  previousFilename?: string | null;
   status: string;
   additions: number;
   deletions: number;
   changes: number;
   blobUrl: string;
+  patch?: string | null;
 };

@@ -75,12 +75,19 @@ function parseChangedArtifacts(value: string): ChangedArtifact[] {
     return parsed.filter((item): item is ChangedArtifact => {
       if (!item || typeof item !== "object") return false;
       const record = item as Partial<ChangedArtifact>;
+      const validChangeType =
+        record.changeType === undefined ||
+        record.changeType === "added" ||
+        record.changeType === "modified" ||
+        record.changeType === "deleted" ||
+        record.changeType === "renamed";
       return (
         typeof record.id === "string" &&
         typeof record.name === "string" &&
         typeof record.kind === "string" &&
         typeof record.location === "string" &&
-        (record.externalUrl === null || typeof record.externalUrl === "string")
+        (record.externalUrl === null || typeof record.externalUrl === "string") &&
+        validChangeType
       );
     });
   } catch {
@@ -829,6 +836,18 @@ export async function removeSource(
     throw new ApiError(404, "SOURCE_NOT_FOUND", "That source was not found.");
   }
 
+  // Change events intentionally outlive a disconnected source so the review
+  // history remains understandable. Their private before/after snippets must
+  // not: redact indexed content before the source foreign key becomes null.
+  await db
+    .update(changeEvents)
+    .set({ analysisScopeJson: "[]" })
+    .where(
+      and(
+        eq(changeEvents.workspaceId, workspaceId),
+        eq(changeEvents.sourceId, sourceId),
+      ),
+    );
   await db
     .delete(sources)
     .where(and(eq(sources.id, sourceId), eq(sources.workspaceId, workspaceId)));

@@ -427,6 +427,10 @@ export const changeEvents = pgTable(
     title: text("title").notNull(),
     summary: text("summary").notNull().default(""),
     changedArtifactsJson: text("changed_artifacts_json").notNull().default("[]"),
+    // Private, bounded before/after snippets used by analysis. This is kept
+    // separate from changedArtifactsJson because that metadata is returned by
+    // the feed API and must never leak indexed source content.
+    analysisScopeJson: text("analysis_scope_json").notNull().default("[]"),
     evidenceSummary: text("evidence_summary").notNull().default(""),
     sourceLabel: text("source_label").notNull(),
     sourceUrl: text("source_url"),

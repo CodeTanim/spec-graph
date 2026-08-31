@@ -5,6 +5,7 @@ import { analysisRuns, sources } from "../db/schema";
 import { ConfluenceClient } from "../lib/confluence/client";
 import { getConfluenceConfig } from "../lib/confluence/config";
 import { checkConfluenceSource } from "../lib/confluence/scheduled";
+import { pruneExpiredAnalysisScopes } from "../lib/analysis/change-scope-retention";
 import { processQueuedGitHubRun } from "../lib/github/webhook";
 import {
   bindAnalysisWorkflowStep,
@@ -17,6 +18,7 @@ export async function sourceCadenceWorkflow() {
   "use workflow";
 
   await expireStaleAnalysisRunsStep();
+  await pruneExpiredAnalysisScopesStep();
   const queuedGitHubRuns = await listQueuedGitHubRunsStep();
   for (const run of queuedGitHubRuns) {
     try {
@@ -42,6 +44,14 @@ export async function sourceCadenceWorkflow() {
     }
   }
 }
+
+export async function pruneExpiredAnalysisScopesStep(): Promise<number> {
+  "use step";
+
+  return pruneExpiredAnalysisScopes();
+}
+
+pruneExpiredAnalysisScopesStep.maxRetries = 2;
 
 export async function listQueuedGitHubRunsStep(): Promise<
   Array<{ id: string; workspaceId: string }>

@@ -214,16 +214,25 @@ export class GitHubClient implements GitHubSourceProvider {
       head: { sha: string };
       changed_files: number;
     }>(`${base}/pulls/${number}`, token);
-    const files = await this.request<
-      Array<{
-        filename: string;
-        status: string;
-        additions: number;
-        deletions: number;
-        changes: number;
-        blob_url: string;
-      }>
-    >(`${base}/pulls/${number}/files?per_page=100`, token);
+    type PullFileResponse = {
+      filename: string;
+      previous_filename?: string;
+      status: string;
+      additions: number;
+      deletions: number;
+      changes: number;
+      blob_url: string;
+      patch?: string;
+    };
+    const files: PullFileResponse[] = [];
+    for (let page = 1; page <= 30 && files.length < pull.changed_files; page += 1) {
+      const batch = await this.request<PullFileResponse[]>(
+        `${base}/pulls/${number}/files?per_page=100&page=${page}`,
+        token,
+      );
+      files.push(...batch);
+      if (batch.length < 100) break;
+    }
     return {
       pull: {
         number: pull.number,
@@ -236,11 +245,13 @@ export class GitHubClient implements GitHubSourceProvider {
       },
       files: files.map((file) => ({
         filename: file.filename,
+        previousFilename: file.previous_filename || null,
         status: file.status,
         additions: file.additions,
         deletions: file.deletions,
         changes: file.changes,
         blobUrl: file.blob_url,
+        patch: file.patch || null,
       })),
     };
   }

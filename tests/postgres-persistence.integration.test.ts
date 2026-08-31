@@ -25,10 +25,14 @@ import {
   webhookDeliveries,
 } from "../db/schema";
 import { persistDeterministicFindings } from "../lib/analysis/deterministic";
+import { parseAnalysisScopes } from "../lib/analysis/change-scope";
+import { pruneExpiredAnalysisScopes } from "../lib/analysis/change-scope-retention";
 import { analyzePendingConfluenceChanges } from "../lib/confluence/scheduled";
 import { createConfluenceConnectionSession } from "../lib/confluence/connection";
 import { createGitHubConnectionSession } from "../lib/github/connection";
 import { acceptGitHubWebhook } from "../lib/github/webhook";
+import { executeGitHubPushAnalysis } from "../lib/github/analysis";
+import type { GitHubSourceProvider } from "../lib/providers/source-provider";
 import { resolveGitHubChangedNodes } from "../lib/openapi/changes";
 import {
   beginRunAttempt,
@@ -43,6 +47,7 @@ import {
   createManualRun,
   listChanges,
   listRuns,
+  removeSource,
   retryFailedRun,
   updateChange,
   updateFinding,
@@ -144,6 +149,384 @@ describe("Neon-compatible Postgres persistence", () => {
     expect(scheduledChanges.lastCheckedAt).toBeNull();
   });
 
+  it("persists exact GitHub push scope once and reuses it on retry", async () => {
+    const context = await workspace();
+    const now = new Date().toISOString();
+    const beforeText = [
+      'export const cadence = "weekly";',
+      "export const stable = true;",
+    ].join("\n");
+    const afterText = [
+      'export const cadence = "daily";',
+      "export const stable = true;",
+    ].join("\n");
+    await db.insert(githubInstallations).values({
+      id: "installation-scope",
+      workspaceId: context.workspace.id,
+      externalInstallationId: "202",
+      accountLogin: "acme",
+      accountType: "Organization",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(sources).values({
+      id: "src_scope",
+      workspaceId: context.workspace.id,
+      githubInstallationId: "installation-scope",
+      provider: "github",
+      externalId: "502",
+      name: "acme/scope-test",
+      detail: "main",
+      defaultBranch: "main",
+      currentRevision: "before-sha",
+      status: "connected",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(artifacts).values({
+      id: "art_scope",
+      sourceId: "src_scope",
+      externalId: "app/page.tsx",
+      kind: "code",
+      path: "app/page.tsx",
+      title: "page.tsx",
+      canonicalUrl:
+        "https://github.com/acme/scope-test/blob/before-sha/app/page.tsx",
+      currentRevision: "before-sha",
+      contentHash: "before-hash",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(artifactVersions).values({
+      id: "ver_scope_before",
+      artifactId: "art_scope",
+      revision: "before-sha",
+      contentHash: "before-hash",
+      extractedText: beforeText,
+      createdAt: now,
+    });
+
+    const body = new TextEncoder().encode(JSON.stringify({
+      ref: "refs/heads/main",
+      before: "before-sha",
+      after: "after-sha",
+      compare:
+        "https://github.com/acme/scope-test/compare/before-sha...after-sha",
+      installation: { id: 202 },
+      repository: { full_name: "acme/scope-test" },
+      sender: { login: "octocat" },
+      commits: [{ added: [], modified: ["app/page.tsx"], removed: [] }],
+      head_commit: {
+        message: "Change the analysis cadence",
+        timestamp: now,
+        added: [],
+        modified: ["app/page.tsx"],
+        removed: [],
+      },
+    }));
+    const accepted = await acceptGitHubWebhook(
+      "delivery-scope",
+      "push",
+      body,
+      db,
+    );
+    const runId = accepted.body.runId!;
+    const provider: GitHubSourceProvider = {
+      provider: "github",
+      exchangeOAuthCode: async () => "unused",
+      listUserRepositories: async () => [],
+      branchRevision: async () => "after-sha",
+      repositoryTree: async () => ({
+        truncated: false,
+        token: "tree-token",
+        entries: [{
+          path: "app/page.tsx",
+          mode: "100644",
+          type: "blob",
+          sha: "blob-after",
+          size: afterText.length,
+        }],
+      }),
+      blob: async () => afterText,
+      pullRequest: async () => {
+        throw new Error("not used");
+      },
+    };
+
+    await executeGitHubPushAnalysis(
+      context.workspace.id,
+      runId,
+      {
+        branch: "main",
+        beforeRevision: "before-sha",
+        afterRevision: "after-sha",
+        changedPaths: ["app/page.tsx"],
+      },
+      provider,
+      db,
+    );
+
+    const [eventAfterFirstAttempt] = await db.select().from(changeEvents);
+    const firstScopes = parseAnalysisScopes(
+      eventAfterFirstAttempt.analysisScopeJson,
+    );
+    expect(firstScopes).toEqual([
+      expect.objectContaining({
+        path: "app/page.tsx",
+        status: "available",
+        changeType: "modified",
+        beforeRevision: "before-sha",
+        afterRevision: "after-sha",
+        beforeStartLine: 1,
+        beforeEndLine: 1,
+        afterStartLine: 1,
+        afterEndLine: 1,
+        beforeText: 'export const cadence = "weekly";',
+        afterText: 'export const cadence = "daily";',
+      }),
+    ]);
+    const publicFeed = await listChanges(context.workspace.id, "all", db);
+    expect(JSON.stringify(publicFeed)).not.toContain("weekly");
+    expect(publicFeed.items[0]).not.toHaveProperty("analysisScopeJson");
+    expect((await db.select().from(analysisRuns))[0]).toMatchObject({
+      id: runId,
+      status: "succeeded",
+      attempts: 1,
+    });
+
+    // A retry must use the scope captured for this event rather than depend on
+    // retained artifact versions still being present.
+    await db.delete(artifactVersions);
+    await db
+      .update(analysisRuns)
+      .set({ status: "failed", progress: 0, updatedAt: now })
+      .where(eq(analysisRuns.id, runId));
+    await executeGitHubPushAnalysis(
+      context.workspace.id,
+      runId,
+      {
+        branch: "main",
+        beforeRevision: "before-sha",
+        afterRevision: "after-sha",
+        changedPaths: ["app/page.tsx"],
+      },
+      provider,
+      db,
+    );
+
+    const [eventAfterRetry] = await db.select().from(changeEvents);
+    expect(parseAnalysisScopes(eventAfterRetry.analysisScopeJson)).toEqual(
+      firstScopes,
+    );
+    expect((await db.select().from(analysisRuns))[0]).toMatchObject({
+      id: runId,
+      status: "succeeded",
+      attempts: 2,
+    });
+  });
+
+  it("redacts private analysis scopes when a source is removed", async () => {
+    const context = await workspace();
+    const now = new Date().toISOString();
+    await db.insert(sources).values({
+      id: "src_private_scope",
+      workspaceId: context.workspace.id,
+      provider: "github",
+      externalId: "private-scope-repo",
+      name: "acme/private-scope",
+      detail: "main",
+      defaultBranch: "main",
+      status: "connected",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(changeEvents).values({
+      id: "chg_private_scope",
+      workspaceId: context.workspace.id,
+      sourceId: "src_private_scope",
+      trigger: "github",
+      title: "Private change",
+      analysisScopeJson: JSON.stringify([{ privateCode: "do not retain" }]),
+      sourceLabel: "acme/private-scope@abc1234",
+      occurredAt: now,
+      createdAt: now,
+    });
+
+    await removeSource(context.workspace.id, "src_private_scope", db);
+
+    expect(await db.select().from(changeEvents)).toEqual([
+      expect.objectContaining({
+        id: "chg_private_scope",
+        sourceId: null,
+        analysisScopeJson: "[]",
+      }),
+    ]);
+  });
+
+  it("fails closed instead of mislabeling an out-of-order GitHub diff", async () => {
+    const context = await workspace();
+    const now = new Date().toISOString();
+    await db.insert(githubInstallations).values({
+      id: "installation-out-of-order",
+      workspaceId: context.workspace.id,
+      externalInstallationId: "303",
+      accountLogin: "acme",
+      accountType: "Organization",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(sources).values({
+      id: "src_out_of_order",
+      workspaceId: context.workspace.id,
+      githubInstallationId: "installation-out-of-order",
+      provider: "github",
+      externalId: "503",
+      name: "acme/out-of-order",
+      detail: "main",
+      defaultBranch: "main",
+      currentRevision: "indexed-sha",
+      status: "connected",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(artifacts).values({
+      id: "art_out_of_order",
+      sourceId: "src_out_of_order",
+      externalId: "src/policy.ts",
+      kind: "code",
+      path: "src/policy.ts",
+      title: "policy.ts",
+      currentRevision: "indexed-sha",
+      contentHash: "indexed-hash",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(artifactVersions).values({
+      id: "ver_out_of_order",
+      artifactId: "art_out_of_order",
+      revision: "indexed-sha",
+      contentHash: "indexed-hash",
+      extractedText: "export const limit = 2;",
+      createdAt: now,
+    });
+    await db.insert(changeEvents).values({
+      id: "chg_out_of_order",
+      workspaceId: context.workspace.id,
+      sourceId: "src_out_of_order",
+      trigger: "github",
+      title: "Out-of-order push",
+      sourceLabel: "acme/out-of-order@after-s",
+      beforeRevision: "before-sha",
+      afterRevision: "after-sha",
+      occurredAt: now,
+      createdAt: now,
+    });
+    await db.insert(analysisRuns).values({
+      id: "run_out_of_order",
+      workspaceId: context.workspace.id,
+      sourceId: "src_out_of_order",
+      changeEventId: "chg_out_of_order",
+      trigger: "github",
+      title: "Out-of-order push",
+      target: "main",
+      status: "queued",
+      createdAt: now,
+      updatedAt: now,
+    });
+    const afterText = "export const limit = 3;";
+    const provider: GitHubSourceProvider = {
+      provider: "github",
+      exchangeOAuthCode: async () => "unused",
+      listUserRepositories: async () => [],
+      branchRevision: async () => "after-sha",
+      repositoryTree: async () => ({
+        truncated: false,
+        token: "tree-token",
+        entries: [{
+          path: "src/policy.ts",
+          mode: "100644",
+          type: "blob",
+          sha: "blob-after",
+          size: afterText.length,
+        }],
+      }),
+      blob: async () => afterText,
+      pullRequest: async () => {
+        throw new Error("not used");
+      },
+    };
+
+    await executeGitHubPushAnalysis(
+      context.workspace.id,
+      "run_out_of_order",
+      {
+        branch: "main",
+        beforeRevision: "before-sha",
+        afterRevision: "after-sha",
+        changedPaths: ["src/policy.ts"],
+        changeTypes: { "src/policy.ts": "modified" },
+      },
+      provider,
+      db,
+    );
+
+    const [event] = await db.select().from(changeEvents);
+    expect(parseAnalysisScopes(event.analysisScopeJson)).toEqual([
+      expect.objectContaining({
+        path: "src/policy.ts",
+        status: "unavailable",
+        reason: "missing_before_version",
+        beforeRevision: "before-sha",
+        afterRevision: "after-sha",
+        beforeText: "",
+        afterText: "",
+      }),
+    ]);
+  });
+
+  it("redacts private scopes after the bounded retry window", async () => {
+    const context = await workspace();
+    const now = new Date("2026-08-30T12:00:00.000Z");
+    await db.insert(changeEvents).values([
+      {
+        id: "chg_scope_expired",
+        workspaceId: context.workspace.id,
+        trigger: "manual",
+        title: "Expired private scope",
+        analysisScopeJson: JSON.stringify([{ privateCode: "old" }]),
+        sourceLabel: "Manual",
+        occurredAt: "2026-07-01T12:00:00.000Z",
+        createdAt: "2026-07-01T12:00:00.000Z",
+      },
+      {
+        id: "chg_scope_current",
+        workspaceId: context.workspace.id,
+        trigger: "manual",
+        title: "Current private scope",
+        analysisScopeJson: JSON.stringify([{ privateCode: "current" }]),
+        sourceLabel: "Manual",
+        occurredAt: "2026-08-29T12:00:00.000Z",
+        createdAt: "2026-08-29T12:00:00.000Z",
+      },
+    ]);
+
+    expect(await pruneExpiredAnalysisScopes(now, db)).toBe(1);
+    expect(
+      (await db.select().from(changeEvents)).map((event) => ({
+        id: event.id,
+        analysisScopeJson: event.analysisScopeJson,
+      })),
+    ).toEqual(expect.arrayContaining([
+      { id: "chg_scope_expired", analysisScopeJson: "[]" },
+      {
+        id: "chg_scope_current",
+        analysisScopeJson: JSON.stringify([{ privateCode: "current" }]),
+      },
+    ]));
+  });
+
   it("turns each new Confluence page version into one scheduled run", async () => {
     const context = await workspace();
     const now = new Date().toISOString();
@@ -204,14 +587,24 @@ describe("Neon-compatible Postgres persistence", () => {
         updatedAt: now,
       },
     ]);
-    await db.insert(artifactVersions).values({
-      id: "ver_page_2",
-      artifactId: "art_page",
-      revision: "2",
-      contentHash: "page-v2",
-      extractedText: "Related code: app/page.tsx",
-      createdAt: now,
-    });
+    await db.insert(artifactVersions).values([
+      {
+        id: "ver_page_1",
+        artifactId: "art_page",
+        revision: "1",
+        contentHash: "page-v1",
+        extractedText: "Related code: app/legacy-page.tsx",
+        createdAt: now,
+      },
+      {
+        id: "ver_page_2",
+        artifactId: "art_page",
+        revision: "2",
+        contentHash: "page-v2",
+        extractedText: "Related code: app/page.tsx",
+        createdAt: now,
+      },
+    ]);
     await db.insert(graphNodes).values([
       {
         id: "node_code",
@@ -265,11 +658,86 @@ describe("Neon-compatible Postgres persistence", () => {
     expect(first.runId).toMatch(/^run_cnf_/);
     expect(second).toEqual({ changedPages: 0, runId: null });
     expect(await db.select().from(analysisRuns)).toHaveLength(1);
-    expect(await db.select().from(changeEvents)).toHaveLength(1);
+    const persistedChanges = await db.select().from(changeEvents);
+    expect(persistedChanges).toHaveLength(1);
+    expect(parseAnalysisScopes(persistedChanges[0]?.analysisScopeJson)).toEqual([
+      expect.objectContaining({
+        path: "ENG/Architecture",
+        beforeRevision: "1",
+        afterRevision: "2",
+        beforeText: "Related code: app/legacy-page.tsx",
+        afterText: "Related code: app/page.tsx",
+      }),
+    ]);
     expect(await db.select().from(findings)).toHaveLength(1);
     expect(await db.select().from(findingEvidence)).toHaveLength(1);
     expect(await db.select().from(artifactAnalysisCursors)).toEqual([
       expect.objectContaining({ artifactId: "art_page", revision: "2" }),
+    ]);
+  });
+
+  it("advances a Confluence cursor without a run when only the version changed", async () => {
+    const context = await workspace();
+    const now = new Date().toISOString();
+    await db.insert(sources).values({
+      id: "src_same_body_docs",
+      workspaceId: context.workspace.id,
+      provider: "confluence",
+      externalId: "cloud-1:space:SAME",
+      name: "Same body",
+      detail: "Acme / SAME",
+      status: "connected",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(artifacts).values({
+      id: "art_same_body",
+      sourceId: "src_same_body_docs",
+      externalId: "page-same",
+      kind: "confluence",
+      path: "SAME/Policy",
+      title: "Policy",
+      currentRevision: "2",
+      contentHash: "same-hash",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(artifactVersions).values([
+      {
+        id: "ver_same_1",
+        artifactId: "art_same_body",
+        revision: "1",
+        contentHash: "same-hash",
+        extractedText: "The policy did not change.",
+        createdAt: now,
+      },
+      {
+        id: "ver_same_2",
+        artifactId: "art_same_body",
+        revision: "2",
+        contentHash: "same-hash",
+        extractedText: "The policy did not change.",
+        createdAt: now,
+      },
+    ]);
+    await db.insert(artifactAnalysisCursors).values({
+      artifactId: "art_same_body",
+      revision: "1",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(
+      await analyzePendingConfluenceChanges(
+        context.workspace.id,
+        "src_same_body_docs",
+        db,
+      ),
+    ).toEqual({ changedPages: 0, runId: null });
+    expect(await db.select().from(changeEvents)).toHaveLength(0);
+    expect(await db.select().from(analysisRuns)).toHaveLength(0);
+    expect(await db.select().from(artifactAnalysisCursors)).toEqual([
+      expect.objectContaining({ artifactId: "art_same_body", revision: "2" }),
     ]);
   });
 

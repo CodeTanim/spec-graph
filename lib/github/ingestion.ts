@@ -19,6 +19,7 @@ import { assertRepositoryWithinLimits } from "./limits";
 import type { GitHubSourceProvider } from "../providers/source-provider";
 import { pruneArtifactVersions } from "../providers/version-retention";
 import { parseOpenApiContract, type ParsedOpenApiContract } from "../openapi/parser";
+import type { ArtifactContentChange } from "../analysis/change-scope";
 
 const MAX_FILE_BYTES = 160_000;
 const FETCH_CONCURRENCY = 12;
@@ -33,6 +34,14 @@ type IndexedFile = {
   sha: string;
   content: string;
   hash: string;
+};
+
+export type GitHubSyncResult = {
+  artifactCount: number;
+  revision: string;
+  changed: boolean;
+  /** Exact pre-cleanup content snapshots for files whose indexed text changed. */
+  contentChanges: ArtifactContentChange[];
 };
 
 function githubUrl(repository: string, revision: string, path: string): string {
@@ -69,7 +78,7 @@ export async function syncGitHubSource(
   client: GitHubSourceProvider,
   db: SpecGraphDb = getDb(),
   revisionOverride?: string,
-): Promise<{ artifactCount: number; revision: string; changed: boolean }> {
+): Promise<GitHubSyncResult> {
   const [record] = await db
     .select({
       source: sources,
@@ -112,7 +121,12 @@ export async function syncGitHubSource(
         .update(sources)
         .set({ status: "connected", lastSyncedAt: now, updatedAt: now })
         .where(eq(sources.id, sourceId));
-      return { artifactCount: indexed?.value ?? 0, revision, changed: false };
+      return {
+        artifactCount: indexed?.value ?? 0,
+        revision,
+        changed: false,
+        contentChanges: [],
+      };
     }
     const tree = await client.repositoryTree(
       record.installationExternalId,
@@ -223,6 +237,41 @@ export async function syncGitHubSource(
         ids.set(node.stableKey, existingNode?.id || `node_${crypto.randomUUID()}`);
       }
       nodeIds.set(file.path, ids);
+    }
+
+    // Capture removed and modified content before stale artifacts cascade-delete
+    // their versions and graph nodes. The bounded analysis scopes are derived
+    // from these snapshots by the run that requested this sync.
+    const contentChanges: ArtifactContentChange[] = [];
+    for (const file of files) {
+      const existing = existingByPath.get(file.path);
+      const hasBefore = previousContentByPath.has(file.path);
+      const beforeText = hasBefore ? previousContentByPath.get(file.path)! : null;
+      if (!existing || beforeText !== file.content) {
+        contentChanges.push({
+          artifactId: artifactIds.get(file.path)!,
+          path: file.path,
+          kind: file.kind,
+          beforeRevision: existing?.currentRevision || null,
+          afterRevision: revision,
+          beforeText,
+          afterText: file.content,
+        });
+      }
+    }
+    for (const existing of existingArtifacts) {
+      if (knownPaths.has(existing.externalId)) continue;
+      contentChanges.push({
+        artifactId: existing.id,
+        path: existing.externalId,
+        kind: existing.kind,
+        beforeRevision: existing.currentRevision,
+        afterRevision: null,
+        beforeText: previousContentByPath.has(existing.externalId)
+          ? previousContentByPath.get(existing.externalId)!
+          : null,
+        afterText: null,
+      });
     }
 
     await executeInBatches(
@@ -426,7 +475,12 @@ export async function syncGitHubSource(
         updatedAt: now,
       })
       .where(eq(sources.id, sourceId));
-    return { artifactCount: files.length, revision, changed: true };
+    return {
+      artifactCount: files.length,
+      revision,
+      changed: true,
+      contentChanges,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "GitHub synchronization failed.";
     await db

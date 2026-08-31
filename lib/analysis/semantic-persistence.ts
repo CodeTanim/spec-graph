@@ -11,6 +11,10 @@ import { sha256Hex } from "../github/crypto";
 import { shouldCreateImpactFinding, type CandidateEdge } from "./candidates";
 import { createImpactFingerprint } from "./impact-fingerprint";
 import {
+  semanticSnapshotForScope,
+  type AnalysisChangeScope,
+} from "./change-scope";
+import {
   buildSemanticAnalysisInput,
   executeSemanticAnalysis,
   generateSemanticCandidates,
@@ -65,27 +69,39 @@ export async function executeAndPersistSemanticAnalysis(
   input: {
     runId: string;
     changed: SemanticArtifactSnapshot;
+    /**
+     * Exact, version-pinned change evidence. When supplied, retrieval and the
+     * model see this bounded scope instead of treating the full artifact as the
+     * change. Unavailable or mismatched scopes fail closed.
+     */
+    changedScope?: AnalysisChangeScope;
     candidates: SemanticArtifactSnapshot[];
     contexts?: SemanticContext;
     analyzer?: SemanticAnalyzer;
   },
   db: SpecGraphDb = getDb(),
 ): Promise<SemanticPersistenceResult> {
+  const changed = input.changedScope
+    ? semanticSnapshotForScope(input.changed, input.changedScope)
+    : input.changed;
+  if (!changed) {
+    throw new Error("Exact changed scope is unavailable for semantic analysis.");
+  }
   const eligibleSnapshots = input.candidates.filter((candidate) =>
-    shouldCreateImpactFinding(input.changed.kind, candidate.kind),
+    shouldCreateImpactFinding(changed.kind, candidate.kind),
   );
   const candidates = generateSemanticCandidates(
-    input.changed,
+    changed,
     eligibleSnapshots,
     input.contexts,
   );
   const semanticInput = buildSemanticAnalysisInput(
     input.runId,
-    input.changed,
+    changed,
     candidates,
   );
   const execution = await executeSemanticAnalysis(semanticInput, input.analyzer);
-  await recordAttempt(input.runId, input.changed.nodeId, execution, db);
+  await recordAttempt(input.runId, changed.nodeId, execution, db);
 
   const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
   let persistedFindings = 0;
@@ -94,11 +110,11 @@ export async function executeAndPersistSemanticAnalysis(
     const candidate = candidateById.get(decision.candidateId);
     if (!candidate) continue;
     const origin = candidate.relationshipContext.length ? "hybrid" : "semantic";
-    const deduplicationKey = `${input.changed.nodeId}:${candidate.artifact.artifactId}:semantic:${execution.analyzerVersion}`;
+    const deduplicationKey = `${changed.nodeId}:${candidate.artifact.artifactId}:semantic:${execution.analyzerVersion}`;
     const impactFingerprint = await createImpactFingerprint({
       changed: {
-        nodeId: input.changed.nodeId,
-        revision: input.changed.revision,
+        nodeId: changed.nodeId,
+        revision: changed.revision,
       },
       affected: {
         artifactId: candidate.artifact.artifactId,
@@ -127,7 +143,7 @@ export async function executeAndPersistSemanticAnalysis(
 
     await db.insert(relationships).values({
       id: relationshipId,
-      fromNodeId: input.changed.nodeId,
+      fromNodeId: changed.nodeId,
       toNodeId: candidate.artifact.nodeId,
       type: "semantic_impact",
       origin,
@@ -157,7 +173,7 @@ export async function executeAndPersistSemanticAnalysis(
     const inserted = await db.insert(findings).values({
       id: `finding_${stableSuffix}`,
       runId: input.runId,
-      changedNodeId: input.changed.nodeId,
+      changedNodeId: changed.nodeId,
       affectedNodeId: candidate.artifact.nodeId,
       title: candidate.artifact.path,
       summary: decision.summary,

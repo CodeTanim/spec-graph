@@ -2,7 +2,10 @@ import type { AnalysisArtifactKind, CandidateEdge } from "./candidates";
 
 export const SEMANTIC_ANALYZER_VERSION = "semantic-contract-v1";
 export const SEMANTIC_RETRIEVAL_VERSION = "section-aware-lexical-v1";
-export const MAX_SEMANTIC_CANDIDATES = 12;
+// Retrieval is deliberately narrow: the reviewed evaluation package keeps
+// every expected target in the top three, so sending lower-ranked lexical
+// neighbors only adds cost and false-positive opportunities.
+export const MAX_SEMANTIC_CANDIDATES = 3;
 export const MAX_SEMANTIC_TEXT_CHARS = 6_000;
 export const MIN_SEMANTIC_DISPLAY_CONFIDENCE = 0.78;
 
@@ -43,6 +46,7 @@ export type SemanticDecision = {
   impact: boolean;
   confidence: number;
   summary: string;
+  decisionBasis?: string;
   changedExcerpt: string | null;
   candidateExcerpt: string | null;
 };
@@ -55,6 +59,8 @@ export type VerifiedSemanticDecision = SemanticDecision & {
 export type SemanticAnalyzer = {
   name: string;
   model: string;
+  /** Version of the provider-specific prompt/calibration layered on the contract. */
+  version?: string;
   analyze(input: SemanticAnalysisInput): Promise<SemanticAnalyzerResult>;
 };
 
@@ -83,6 +89,7 @@ export type SemanticCandidateDecisionTrace = {
   candidateId: string;
   modelImpact: boolean | null;
   modelConfidence: number | null;
+  modelDecisionBasis?: string | null;
   evidenceStatus: "NOT_REQUESTED" | "VERIFIED" | "MISSING" | "UNVERIFIED";
   combinedConfidence: number | null;
   disposition: SemanticCandidateDisposition;
@@ -119,6 +126,9 @@ const STOP_WORDS = new Set([
 ]);
 
 function canonicalToken(token: string): string {
+  if (token === "max" || token === "maximum") {
+    return "limit";
+  }
   if (token.length > 5 && token.endsWith("ies")) {
     return `${token.slice(0, -3)}y`;
   }
@@ -296,10 +306,38 @@ function hasOnlyKeys(record: Record<string, unknown>, keys: string[]): boolean {
   return Object.keys(record).every((key) => allowed.has(key));
 }
 
-function exactExcerptLine(text: string, excerpt: string): number | null {
-  const index = text.indexOf(excerpt);
-  if (index < 0) return null;
-  return text.slice(0, index).split("\n").length;
+type VerifiedExcerpt = {
+  excerpt: string;
+  startLine: number;
+};
+
+function excerptAt(text: string, index: number, length: number): VerifiedExcerpt {
+  return {
+    excerpt: text.slice(index, index + length),
+    startLine: text.slice(0, index).split("\n").length,
+  };
+}
+
+function escapeRegularExpression(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function verifiedExcerpt(text: string, excerpt: string): VerifiedExcerpt | null {
+  const exactIndex = text.indexOf(excerpt);
+  if (exactIndex >= 0) return excerptAt(text, exactIndex, excerpt.length);
+
+  // Structured-output models occasionally normalize a copied line break,
+  // indentation, or tab to a regular space. Permit only that formatting
+  // difference, then recover the byte-exact slice from the indexed revision
+  // so persisted and displayed evidence still comes from the source itself.
+  const fragments = excerpt.trim().split(/\s+/u).filter(Boolean);
+  if (!fragments.length) return null;
+  const match = new RegExp(
+    fragments.map(escapeRegularExpression).join("\\s+"),
+    "u",
+  ).exec(text);
+  if (!match || match.index === undefined) return null;
+  return excerptAt(text, match.index, match[0].length);
 }
 
 export function verifySemanticOutput(
@@ -367,6 +405,7 @@ export function verifySemanticOutput(
         "impact",
         "confidence",
         "summary",
+        "decisionBasis",
         "changedExcerpt",
         "candidateExcerpt",
       ])
@@ -402,7 +441,7 @@ export function verifySemanticOutput(
       value.confidence > 1 ||
       typeof value.summary !== "string" ||
       !value.summary.trim() ||
-      value.summary.length > 400
+      value.summary.length > 180
     ) {
       updateTrace(candidateId, {
         modelImpact: typeof value.impact === "boolean" ? value.impact : null,
@@ -420,6 +459,9 @@ export function verifySemanticOutput(
       updateTrace(candidateId, {
         modelImpact: false,
         modelConfidence: value.confidence,
+        modelDecisionBasis: typeof value.decisionBasis === "string"
+          ? value.decisionBasis
+          : null,
         evidenceStatus: "NOT_REQUESTED",
         combinedConfidence: null,
         disposition: "MODEL_NEGATIVE",
@@ -454,9 +496,12 @@ export function verifySemanticOutput(
       rejected.push({ candidateId, reason: "EVIDENCE_REQUIRED" });
       continue;
     }
-    const changedStartLine = exactExcerptLine(input.changed.text, value.changedExcerpt);
-    const candidateStartLine = exactExcerptLine(candidate.artifact.text, value.candidateExcerpt);
-    if (changedStartLine === null || candidateStartLine === null) {
+    const changedEvidence = verifiedExcerpt(input.changed.text, value.changedExcerpt);
+    const candidateEvidence = verifiedExcerpt(
+      candidate.artifact.text,
+      value.candidateExcerpt,
+    );
+    if (!changedEvidence || !candidateEvidence) {
       updateTrace(candidateId, {
         modelImpact: true,
         modelConfidence: value.confidence,
@@ -470,6 +515,9 @@ export function verifySemanticOutput(
     updateTrace(candidateId, {
       modelImpact: true,
       modelConfidence: value.confidence,
+      modelDecisionBasis: typeof value.decisionBasis === "string"
+        ? value.decisionBasis
+        : null,
       evidenceStatus: "VERIFIED",
       combinedConfidence: null,
       disposition: "ACCEPTED",
@@ -479,10 +527,13 @@ export function verifySemanticOutput(
       impact: true,
       confidence: value.confidence,
       summary: value.summary.trim(),
-      changedExcerpt: value.changedExcerpt,
-      candidateExcerpt: value.candidateExcerpt,
-      changedStartLine,
-      candidateStartLine,
+      decisionBasis: typeof value.decisionBasis === "string"
+        ? value.decisionBasis
+        : undefined,
+      changedExcerpt: changedEvidence.excerpt,
+      candidateExcerpt: candidateEvidence.excerpt,
+      changedStartLine: changedEvidence.startLine,
+      candidateStartLine: candidateEvidence.startLine,
     });
   }
   return {
@@ -499,12 +550,10 @@ export function combinedSemanticConfidence(
 ): number {
   const boundedModel = Math.max(0, Math.min(1, modelConfidence));
   if (!candidate.relationshipContext.length || candidate.graphDistance === null) {
-    // Lexical similarity gets a candidate into the bounded review set; it is not
-    // negative evidence. Preserve a verified model decision while still using
-    // the retrieval score as a small ranking signal.
-    return Number(
-      (boundedModel * 0.95 + candidate.lexicalScore * 0.05).toFixed(4),
-    );
+    // Lexical similarity has already done its job by retrieving this bounded
+    // candidate. Once the model has supplied verified source evidence, a weak
+    // lexical score must not veto that decision a second time.
+    return Number(boundedModel.toFixed(4));
   }
   const graphDistanceScore = candidate.graphDistance <= 1
     ? 1
@@ -521,12 +570,16 @@ export function combinedSemanticConfidence(
       return relationship.confidence * originWeight;
     }),
   );
-  return Number((
-    boundedModel * 0.7 +
-    candidate.lexicalScore * 0.1 +
-    graphDistanceScore * 0.1 +
-    relationshipScore * 0.1
-  ).toFixed(4));
+  // Retrieval and graph signals can strengthen or rank a verified model
+  // decision, but they cannot demote it. They are supporting evidence, not a
+  // second negative classifier.
+  const support = Math.min(
+    0.1,
+    Math.max(0, candidate.lexicalScore) * 0.04 +
+      graphDistanceScore * 0.03 +
+      relationshipScore * 0.03,
+  );
+  return Number((boundedModel + (1 - boundedModel) * support).toFixed(4));
 }
 
 function rankVerifiedDecisions(
@@ -622,6 +675,9 @@ export async function executeSemanticAnalysis(
       },
     };
   }
+  const executionAnalyzerVersion = analyzer.version
+    ? `${SEMANTIC_ANALYZER_VERSION}/${analyzer.version}`
+    : SEMANTIC_ANALYZER_VERSION;
   try {
     const result = await analyzer.analyze(input);
     const verified = rankVerifiedDecisions(
@@ -630,7 +686,7 @@ export async function executeSemanticAnalysis(
     );
     return {
       status: "succeeded",
-      analyzerVersion: SEMANTIC_ANALYZER_VERSION,
+      analyzerVersion: executionAnalyzerVersion,
       analyzerName: analyzer.name,
       model: analyzer.model,
       latencyMs: Date.now() - startedAt,
@@ -642,7 +698,7 @@ export async function executeSemanticAnalysis(
   } catch (error) {
     return {
       status: "fallback",
-      analyzerVersion: SEMANTIC_ANALYZER_VERSION,
+      analyzerVersion: executionAnalyzerVersion,
       analyzerName: analyzer.name,
       model: analyzer.model,
       latencyMs: Date.now() - startedAt,

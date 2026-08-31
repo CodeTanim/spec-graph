@@ -150,4 +150,27 @@ describe("semantic analyzer evaluation harness", () => {
     expect(serializedTrace).not.toContain("changedExcerpt");
     expect(serializedTrace).not.toContain("candidateExcerpt");
   });
+
+  it("can stop a paid live evaluation after the first provider fallback", async () => {
+    const analyzer: SemanticAnalyzer = {
+      name: "fixture-outage",
+      model: "local/outage",
+      async analyze() {
+        throw new Error("provider unavailable");
+      },
+    };
+
+    const report = await runSemanticAnalyzerEvaluation(
+      analyzer,
+      loadLocalEvaluationPackage().slice(0, 3),
+      { stopOnFallback: true },
+    );
+
+    expect(report.caseCount).toBe(1);
+    expect(report.fallbackCaseCount).toBe(1);
+    expect(report.cases[0]).toMatchObject({
+      status: "fallback",
+      failureReason: "provider unavailable",
+    });
+  });
 });

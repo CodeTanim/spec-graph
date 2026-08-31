@@ -68,6 +68,7 @@ export type RetrievalEvaluationReport = {
 
 const evaluationDirectory = dirname(fileURLToPath(import.meta.url));
 const fixtureDirectory = join(evaluationDirectory, "fixtures");
+export const PRODUCT_EVALUATION_VERSION = "local-evaluation-v2";
 
 function fixtureText(relativePath: string): string {
   return readFileSync(join(fixtureDirectory, relativePath), "utf8");
@@ -87,7 +88,7 @@ function artifact(relativePath: string, textOverride?: string): SemanticArtifact
     artifactId: relativePath,
     kind: artifactKind(relativePath),
     path: relativePath,
-    revision: "local-evaluation-v1",
+    revision: PRODUCT_EVALUATION_VERSION,
     sourceUrl: null,
     text: textOverride ?? fixtureText(relativePath),
   };
@@ -100,6 +101,7 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first"],
     direction: "repository-to-documentation",
     changedFixture: "repository/analysis-cadence.ts",
+    changedText: 'export const automaticAnalysisCadence = "daily";',
     candidateScope: "confluence",
     expectedAffected: ["confluence/how-specgraph-works.md"],
     rationale: "The product overview explains that automatic analysis runs daily.",
@@ -110,6 +112,8 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first"],
     direction: "repository-to-documentation",
     changedFixture: "repository/manual-analysis.ts",
+    changedText:
+      'export function startManualAnalysis(target: string) {\n  return { execution: "immediate" };\n}',
     candidateScope: "confluence",
     expectedAffected: ["confluence/how-specgraph-works.md"],
     rationale: "The product overview describes the immediate check and its progress experience.",
@@ -120,6 +124,8 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first"],
     direction: "repository-to-documentation",
     changedFixture: "repository/source-groups.ts",
+    changedText:
+      "export function addEqualSourceMember(group: LocalSourceGroup, sourceId: string)",
     candidateScope: "confluence",
     expectedAffected: ["confluence/how-specgraph-works.md"],
     rationale: "The overview states that every connected source is an equal group member.",
@@ -130,9 +136,11 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first"],
     direction: "repository-to-documentation",
     changedFixture: "repository/source-connections.ts",
+    changedText: 'presentation: "provider dialog"',
     candidateScope: "confluence",
-    expectedAffected: ["confluence/how-specgraph-works.md"],
-    rationale: "The overview explains how teams connect more sources to a group.",
+    expectedAffected: [],
+    rationale:
+      "The overview says teams can connect sources later, but it does not promise a particular provider-dialog presentation.",
   },
   {
     id: "code-review-decisions",
@@ -140,6 +148,8 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first"],
     direction: "repository-to-documentation",
     changedFixture: "repository/review-actions.ts",
+    changedText:
+      "export function preserveReviewDecision(fingerprint: string, decision: ReviewDecision) {\n  return { fingerprint, decision, persisted: true };\n}",
     candidateScope: "confluence",
     expectedAffected: ["confluence/how-specgraph-works.md"],
     rationale: "Resolve, dismiss, reopen, and persistence are user-visible product behavior.",
@@ -150,12 +160,11 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first", "ambiguous"],
     direction: "repository-to-documentation",
     changedFixture: "repository/run-retries.ts",
+    changedText: "export const maximumAutomaticAttempts = 3;",
     candidateScope: "confluence",
-    expectedAffected: [
-      "confluence/how-specgraph-works.md",
-      "confluence/operations-runbook.md",
-    ],
-    rationale: "The retry policy is described both to users and to operators.",
+    expectedAffected: ["confluence/operations-runbook.md"],
+    rationale:
+      "The operations runbook owns the configured retry behavior. The product overview promises only a bounded retry policy and remains accurate when the finite limit changes.",
   },
   {
     id: "code-evidence-verification",
@@ -163,6 +172,8 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first"],
     direction: "repository-to-documentation",
     changedFixture: "repository/evidence-verification.ts",
+    changedText:
+      "export function verifyEvidence(sourceText: string, excerpt: string) {\n  return sourceText.includes(excerpt)\n    ? { verified: true, displayConfidence: true }\n    : { verified: false, displayConfidence: false };\n}",
     candidateScope: "confluence",
     expectedAffected: ["confluence/how-specgraph-works.md"],
     rationale: "The overview promises exact supporting excerpts and rejection of unsupported evidence.",
@@ -173,22 +184,23 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first", "ambiguous"],
     direction: "repository-to-documentation",
     changedFixture: "repository/github-ingestion.ts",
+    changedText:
+      "export function ingestRepositoryChange(deliveryId: string, revision: string, signatureVerified: boolean) {\n  return {\n    deliveryId,\n    revision,\n    signatureVerified,\n    duplicateDelivery: false,\n  };\n}",
     candidateScope: "confluence",
-    expectedAffected: [
-      "confluence/how-specgraph-works.md",
-      "confluence/security-and-access.md",
-    ],
-    rationale: "Automatic analysis and duplicate event safety span product and security guidance.",
+    expectedAffected: ["confluence/security-and-access.md"],
+    rationale:
+      "The security guidance promises signature validation and duplicate-delivery safety; the overview only documents daily analysis, not provider-triggered ingestion.",
   },
   {
     id: "code-confluence-refresh",
-    title: "Confluence incremental refresh changes",
+    title: "Confluence refresh cadence changes",
     tags: ["code-first"],
     direction: "repository-to-documentation",
     changedFixture: "repository/confluence-sync.ts",
+    changedText: 'analysisCadence: "daily"',
     candidateScope: "confluence",
     expectedAffected: ["confluence/how-specgraph-works.md"],
-    rationale: "The overview explains source refresh and daily analysis.",
+    rationale: "The overview promises that source refresh and automatic analysis run daily.",
   },
   {
     id: "code-workspace-authorization",
@@ -196,6 +208,8 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first"],
     direction: "repository-to-documentation",
     changedFixture: "repository/workspace-auth.ts",
+    changedText:
+      "return sessionWorkspaceId === resourceWorkspaceId;",
     candidateScope: "confluence",
     expectedAffected: ["confluence/security-and-access.md"],
     rationale: "Workspace isolation is the central promise of the security page.",
@@ -206,6 +220,8 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first"],
     direction: "repository-to-documentation",
     changedFixture: "repository/source-retention.ts",
+    changedText:
+      "stopRefresh: true,\nremoveCurrentIndex: true,\npreserveSafeReviewHistory: true,",
     candidateScope: "confluence",
     expectedAffected: ["confluence/data-retention.md"],
     rationale: "The retention page defines what is removed or preserved on disconnect.",
@@ -216,12 +232,12 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first", "ambiguous"],
     direction: "repository-to-documentation",
     changedFixture: "repository/request-limits.ts",
+    changedText:
+      "export function authorizeBoundedRequest(input: { workspaceId: string; authenticatedWorkspaceId: string; recentRequestCount: number }) {\n  return {\n    authorized: authorizeWorkspaceResource(input.authenticatedWorkspaceId, input.workspaceId),\n    withinRateLimit: input.recentRequestCount < 20,\n  };\n}",
     candidateScope: "confluence",
-    expectedAffected: [
-      "confluence/security-and-access.md",
-      "confluence/operations-runbook.md",
-    ],
-    rationale: "Bounded authorized requests affect both security and operations guidance.",
+    expectedAffected: ["confluence/security-and-access.md"],
+    rationale:
+      "Bounded authorized requests are part of the security contract; the operations runbook covers queued jobs and workers rather than request rate limits.",
   },
   {
     id: "doc-source-groups",
@@ -251,7 +267,8 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["documentation-first", "ambiguous"],
     direction: "documentation-to-repository",
     changedFixture: "confluence/how-specgraph-works.md",
-    changedText: "Automatic analysis refreshes connected sources on a daily cadence and incrementally checks newly captured changes.",
+    changedText:
+      "Automatic analysis refreshes Confluence pages on a daily cadence and incrementally checks newly captured page changes.",
     candidateScope: "repository",
     expectedAffected: [
       "repository/analysis-cadence.ts",
@@ -298,7 +315,8 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["documentation-first", "ambiguous"],
     direction: "documentation-to-repository",
     changedFixture: "confluence/how-specgraph-works.md",
-    changedText: "A source group can connect GitHub repositories through the Add source provider dialog. Repository changes trigger automatic analysis without duplicate work.",
+    changedText:
+      "GitHub repositories are connected through the Add source provider dialog. GitHub repository events trigger automatic analysis without duplicate work.",
     candidateScope: "repository",
     expectedAffected: [
       "repository/source-connections.ts",
@@ -345,9 +363,12 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first", "test"],
     direction: "repository-to-documentation",
     changedFixture: "repository/manual-analysis.test.ts",
+    changedText:
+      'return startManualAnalysis("latest").progressPresentation === "centered dialog";',
     candidateScope: "confluence",
-    expectedAffected: ["confluence/how-specgraph-works.md"],
-    rationale: "The test protects a user-visible immediate analysis workflow.",
+    expectedAffected: [],
+    rationale:
+      "A supporting test change is not itself evidence that product documentation changed; the primary implementation remains the review target.",
   },
   {
     id: "unrelated-cache-key",
@@ -355,6 +376,8 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first", "unrelated"],
     direction: "repository-to-documentation",
     changedFixture: "repository/local-cache.ts",
+    changedText:
+      'return previousKey.replace("artifact-buffer", "artifact-cache");',
     candidateScope: "confluence",
     expectedAffected: [],
     rationale: "An internal variable rename has no product documentation impact.",
@@ -365,6 +388,7 @@ export const productEvaluationCases: ProductEvaluationCaseDefinition[] = [
     tags: ["code-first", "unrelated"],
     direction: "repository-to-documentation",
     changedFixture: "repository/dependency-lock.json",
+    changedText: '"version": "1.0.1"',
     candidateScope: "confluence",
     expectedAffected: [],
     rationale: "Routine dependency maintenance without behavior change needs no product update.",

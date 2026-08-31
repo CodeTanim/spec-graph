@@ -14,6 +14,7 @@ import { getGitHubAppConfig } from "../github/config";
 import { executeGitHubPullRequestAnalysis } from "../github/analysis";
 import { ApiError } from "../server/http";
 import { persistDeterministicFindings } from "./deterministic";
+import { deriveAnalysisScopes, serializeAnalysisScopes } from "./change-scope";
 import {
   beginRunAttempt,
   completeRunAttempt,
@@ -108,6 +109,15 @@ async function executeConfluencePageAnalysis(
     const current =
       versions.find((version) => version.revision === page.currentRevision) || versions[0];
     const previous = versions.find((version) => version.id !== current?.id);
+    const analysisScopes = deriveAnalysisScopes({
+      artifactId: page.id,
+      path: page.path,
+      kind: "confluence",
+      beforeRevision: previous?.revision || null,
+      afterRevision: current?.revision || page.currentRevision,
+      beforeText: previous?.extractedText ?? null,
+      afterText: current?.extractedText ?? null,
+    });
     const now = new Date().toISOString();
     const changeId = `chg_${crypto.randomUUID()}`;
     await db.insert(changeEvents).values({
@@ -128,6 +138,7 @@ async function executeConfluencePageAnalysis(
           externalUrl: page.canonicalUrl,
         },
       ]),
+      analysisScopeJson: serializeAnalysisScopes(analysisScopes),
       evidenceSummary:
         "SpecGraph checked linked primary code, schemas, and other documentation. Related tests may also need review. No connected source was changed.",
       sourceLabel: `Confluence / ${page.title}`,

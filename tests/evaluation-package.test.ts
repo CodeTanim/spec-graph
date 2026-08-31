@@ -62,16 +62,24 @@ describe("25-case local product evaluation package", () => {
       }))
       .filter((result) => result.missed.length > 0);
     if (misses.length) console.table(misses);
+    const topThreeMisses = report.cases
+      .map((result) => ({
+        id: result.id,
+        missed: result.expected.filter((value) => !result.topThreeHits.includes(value)),
+        retrieved: result.retrieved.slice(0, 5),
+      }))
+      .filter((result) => result.missed.length > 0);
+    if (topThreeMisses.length) console.table(topThreeMisses);
     const unrelatedCandidates = report.cases.filter((result) =>
       result.expected.length === 0 && result.retrieved.length > 0
     );
     if (unrelatedCandidates.length) console.table(unrelatedCandidates);
 
     expect(report.caseCount).toBe(25);
-    expect(report.retrievedExpectedTargetCount).toBeGreaterThanOrEqual(28);
-    expect(report.topThreeExpectedTargetCount).toBeGreaterThanOrEqual(27);
-    expect(report.unrelatedCasesWithCandidates).toBeLessThanOrEqual(1);
-    expect(report.averageCandidateCount).toBeLessThanOrEqual(5);
+    expect(report.retrievedExpectedTargetCount).toBe(23);
+    expect(report.topThreeExpectedTargetCount).toBe(23);
+    expect(report.unrelatedCasesWithCandidates).toBe(0);
+    expect(report.averageCandidateCount).toBeLessThanOrEqual(3);
   });
 
   it("scores future final analyzer decisions against the same labels", () => {

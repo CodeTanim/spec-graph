@@ -47,6 +47,8 @@ export type ChangedArtifact = {
   kind: ArtifactKind;
   location: string;
   externalUrl: string | null;
+  /** Provider-reported operation. Optional for older events and manual checks. */
+  changeType?: "added" | "modified" | "deleted" | "renamed";
 };
 
 export type AffectedArtifact = {

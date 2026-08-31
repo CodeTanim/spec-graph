@@ -110,6 +110,15 @@ describe("GitHub graph ingestion", () => {
       db,
     );
     expect(firstSync.changed).toBe(true);
+    expect(firstSync.contentChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: "src/refunds.ts",
+        beforeRevision: null,
+        afterRevision: "rev-1",
+        beforeText: null,
+        afterText: "export class RefundService {}\nexport const refundWindow = 30;",
+      }),
+    ]));
     expect(
       (await db.select().from(relationships)).filter(
         (relationship) => relationship.type === "links",
@@ -131,6 +140,15 @@ describe("GitHub graph ingestion", () => {
       db,
     );
     expect(secondSync.changed).toBe(true);
+    expect(secondSync.contentChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: "src/refunds.ts",
+        beforeRevision: "rev-1",
+        afterRevision: "rev-2",
+        beforeText: "export class RefundService {}\nexport const refundWindow = 30;",
+        afterText: "export const refundWindow = 45;",
+      }),
+    ]));
     expect(
       (await db.select().from(relationships)).filter(
         (relationship) => relationship.type === "links",
@@ -153,6 +171,7 @@ describe("GitHub graph ingestion", () => {
       changed: false,
       revision: "rev-2",
       artifactCount: 2,
+      contentChanges: [],
     });
   });
 });

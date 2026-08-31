@@ -64,6 +64,13 @@
       "when": 1788017365908,
       "tag": "0008_stormy_purifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788140818612,
+      "tag": "0009_add_analysis_scopes",
+      "breakpoints": true
     }
   ]
 }

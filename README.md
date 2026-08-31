@@ -141,9 +141,19 @@ relationship steps and suppresses unrelated or weaker duplicates.
 The semantic layer now has a bounded, versioned interface, combined confidence
 ranking, exact-excerpt verification, safe fallback, and token telemetry. An
 opt-in Vercel AI Gateway adapter can evaluate ambiguous candidates with strict
-structured output, but it is not wired into production runs. The live app
-therefore continues to show deterministic results until a model passes the same
-reviewed evaluation set without introducing too many false positives.
+structured output. Runtime ingestion now stores private, version-pinned,
+bounded change scopes for new and modified GitHub files and Confluence pages,
+separate from the public feed payload. The semantic adapter can consume only a
+matching scope and fails closed when that evidence is unavailable or belongs to
+a different artifact. Private snippets are redacted immediately when a source
+is removed and after 30 days during the daily maintenance workflow. Live
+production AI findings remain disabled until an
+unseen holdout validates quality plus the provisional candidate limit;
+deterministic findings remain live in the deployed app.
+
+Two ingestion limits remain explicit: deleted artifacts do not yet have a
+complete tombstone lifecycle for downstream findings, and Confluence sync does
+not yet paginate spaces containing more than 100 pages.
 
 ### Local analysis evaluation
 
@@ -154,40 +164,64 @@ Confluence pages, repository fixtures simulate the related implementation, and
 code-first, documentation-first, OpenAPI, test, unrelated, and ambiguous cases
 without touching OAuth, the live Confluence space, or production data.
 
+This 25-case/23-target corpus is an **in-sample calibration and regression
+set**, not an unseen holdout. Its labels, retrieval rules, and semantic prompt
+examples were refined against these cases. Results on it show that the current
+implementation fits the reviewed product policy; they do not by themselves
+measure generalization to unfamiliar repositories or documentation styles.
+
 `npm run test:evaluation` reports two deliberately separate layers:
 
 - candidate retrieval — whether the correct artifact reaches the bounded review set;
 - final decisions — precision, recall, F1, and false-positive rate for a future analyzer using the same labels.
 
 The section-aware retrieval baseline is recorded in
-[`evaluation/BASELINE.md`](./evaluation/BASELINE.md). It retrieves all 28
-expected targets, with all 28 in the top three and an average of 3.28
-candidates per case. Documentation-first review omits tests as separate targets; the UI gives
-one reminder to review related tests when it suggests a production code file.
-One unrelated dependency change still reaches a candidate page; that is
-work for the final analyzer to reject and is not counted as a displayed finding.
+[`evaluation/BASELINE.md`](./evaluation/BASELINE.md). The current adjudicated
+corpus contains 23 relationships worth showing to a user. All 23 reach the
+bounded review set and all 23 rank in its top three, with 2.32 candidates per
+case on average. Neither explicitly unrelated case produces a candidate.
+Documentation-first review omits tests as separate targets; the UI gives one
+reminder to review related tests when it suggests a production code file.
+The three-candidate cap is provisional: the calibration set does not yet
+contain a realistic change with more than three legitimate affected targets.
+
+Code-first evaluation cases provide an atomic changed scope—the relevant
+function, constant, or diff-sized excerpt—rather than claiming that every
+behavior in the current file changed. This is already enforced in the local
+evaluation lab. Production GitHub and Confluence ingestion now persists the
+equivalent private, version-pinned before/after scope, and the semantic adapter
+can consume it with fail-closed validation. That adapter is still deliberately
+disconnected from live production findings until the unseen-holdout release
+gate passes.
 
 To measure a real structured-output model without changing production behavior,
 set `SPECGRAPH_SEMANTIC_MODEL` to a current Vercel AI Gateway `provider/model`
-ID, set `AI_GATEWAY_API_KEY` for local use, and run
+ID, authenticate with either `AI_GATEWAY_API_KEY` or Vercel OIDC, and run
 `npm run test:evaluation:semantic`. This makes 25 sequential, bounded model
 calls and reports precision, recall, F1, false-positive rate, latency, and token
-usage. It also emits privacy-safe decision traces showing whether each missed
-target was rejected by the model, evidence verification, or the final combined
-confidence threshold. Traces contain IDs and numeric/status metadata only—not
-source text, prompts, excerpts, model summaries, or URLs. Each case makes one
-provider request without hidden SDK retries. A
-Gateway free tier may not admit the complete 25-case run; use paid credits for
-a comparable one-pass report or set `SPECGRAPH_SEMANTIC_EVAL_DELAY_MS` to match
-your account limit. The ordinary test and evaluation commands remain
+usage. `SPECGRAPH_SEMANTIC_EVAL_CASES` can select inexpensive diagnostic cases;
+targeted runs never satisfy the release gate. Set
+`SPECGRAPH_SEMANTIC_EVAL_RUNS=3` for an in-sample stability diagnostic; repeated
+runs on the calibrated corpus are not a substitute for an unseen holdout.
+
+The live adapter uses deterministic generation, separate relationship and
+ownership classifications, exact evidence passage IDs, and byte-exact evidence
+verification. Its privacy-safe traces contain IDs and numeric/status metadata
+only—not source text, prompts, excerpts, model summaries, or URLs. Each case
+makes one provider request without hidden SDK retries. A Gateway free tier may
+not admit the complete run; set `SPECGRAPH_SEMANTIC_EVAL_DELAY_MS` to match the
+account limit. The ordinary test and retrieval-evaluation commands remain
 network-free.
 
-The current paid-tier baseline using `google/gemini-2.5-flash-lite` and the
-`review-triage-v3` calibration completed all 25 cases without fallback in 39.7
-seconds. It measured 94.4% precision, 60.7% recall, and 73.9% F1. These results
-are recorded in [`evaluation/BASELINE.md`](./evaluation/BASELINE.md). The model
-adapter remains disconnected from production findings until the team chooses
-an acceptable precision/recall threshold.
+Historical live measurements and the current deterministic retrieval result are recorded in
+[`evaluation/BASELINE.md`](./evaluation/BASELINE.md). Production enablement
+requires a versioned unseen holdout that was not used to tune prompts,
+thresholds, retrieval, or labels. That holdout must include a case with more
+than three legitimate impacts so the candidate cap can be validated or revised.
+Repeated runs must also reach at least 95% precision and 85% recall, detect every
+critical relationship, use no provider fallback, and receive the same atomic
+changed-scope contract from the runtime pipeline. Until all of those conditions
+hold, the live product continues to show deterministic findings.
 
 ### Deployment
 

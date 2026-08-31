@@ -173,22 +173,42 @@ async function findSource(
   };
 }
 
-function changedPushPaths(payload: JsonObject): string[] {
+type PushPathChange = {
+  path: string;
+  changeType: "added" | "modified" | "deleted";
+};
+
+function changedPushPaths(payload: JsonObject): PushPathChange[] {
   const commits = Array.isArray(payload.commits) ? payload.commits : [];
   const headCommit = object(payload.head_commit);
-  const paths = new Set<string>();
-  for (const commit of [...commits, ...(headCommit ? [headCommit] : [])]) {
+  const pathChanges = new Map<string, PushPathChange["changeType"]>();
+  const reportedCommits = commits.length ? commits : headCommit ? [headCommit] : [];
+  for (const commit of reportedCommits) {
     const item = object(commit);
     if (!item) continue;
     for (const field of ["added", "modified", "removed"] as const) {
       const values = Array.isArray(item[field]) ? item[field] : [];
       for (const value of values) {
         const path = text(value);
-        if (path) paths.add(path);
+        if (!path) continue;
+        const previous = pathChanges.get(path);
+        if (field === "added") {
+          pathChanges.set(path, previous === "deleted" ? "modified" : "added");
+        } else if (field === "modified") {
+          if (previous !== "added") pathChanges.set(path, "modified");
+        } else if (previous === "added") {
+          // Added and then removed within the same push has no net artifact.
+          pathChanges.delete(path);
+        } else {
+          pathChanges.set(path, "deleted");
+        }
       }
     }
   }
-  return [...paths].slice(0, 5_000);
+  return [...pathChanges].slice(0, 5_000).map(([path, changeType]) => ({
+    path,
+    changeType,
+  }));
 }
 
 function normalizePush(
@@ -205,7 +225,8 @@ function normalizePush(
   const sender = object(payload.sender);
   const pusher = object(payload.pusher);
   const headCommit = object(payload.head_commit);
-  const changedPaths = changedPushPaths(payload);
+  const pathChanges = changedPushPaths(payload);
+  const changedPaths = pathChanges.map((change) => change.path);
   const commitMessage = text(headCommit?.message)?.split("\n")[0] || null;
   const actor = text(sender?.login) || text(pusher?.name);
   const occurredAt = text(headCommit?.timestamp) || new Date().toISOString();
@@ -222,14 +243,17 @@ function normalizePush(
     afterRevision,
     actor,
     occurredAt,
-    changedArtifacts: changedPaths.map((path) =>
-      changedArtifactSnapshot(path, sourceUrl),
+    changedArtifacts: pathChanges.map(({ path, changeType }) =>
+      changedArtifactSnapshot(path, sourceUrl, changeType),
     ),
     push: {
       branch: source.defaultBranch,
       beforeRevision,
       afterRevision,
       changedPaths,
+      changeTypes: Object.fromEntries(
+        pathChanges.map(({ path, changeType }) => [path, changeType]),
+      ),
     },
   };
 }
@@ -409,6 +433,16 @@ export async function processQueuedGitHubRun(
           beforeRevision: record.beforeRevision,
           afterRevision: record.afterRevision!,
           changedPaths: changedArtifacts.map((artifact) => artifact.location),
+          changeTypes: Object.fromEntries(
+            changedArtifacts.flatMap((artifact) => {
+              const changeType = artifact.changeType;
+              return changeType === "added" ||
+                changeType === "modified" ||
+                changeType === "deleted"
+                ? [[artifact.location, changeType]]
+                : [];
+            }),
+          ),
         },
   };
   await processGitHubWebhookJob(

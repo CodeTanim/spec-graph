@@ -3,6 +3,7 @@ import { getDb, type SpecGraphDb } from "../../db";
 import {
   analysisRuns,
   artifactAnalysisCursors,
+  artifactVersions,
   artifacts,
   changeEvents,
   graphNodes,
@@ -18,6 +19,11 @@ import { sha256Hex } from "../github/crypto";
 import { rebuildCrossSourceRelationships } from "../providers/cross-source-relationships";
 import type { ConfluenceSourceProvider } from "./client";
 import { syncConfluenceSource } from "./ingestion";
+import {
+  deriveAnalysisScopes,
+  serializeAnalysisScopes,
+  type AnalysisChangeScope,
+} from "../analysis/change-scope";
 
 type IndexedConfluencePage = {
   id: string;
@@ -116,6 +122,42 @@ async function advanceCursors(
   }
 }
 
+async function scopesForPendingPages(
+  pages: Array<IndexedConfluencePage & { previousRevision: string | null }>,
+  db: SpecGraphDb,
+): Promise<Map<string, AnalysisChangeScope[]>> {
+  if (!pages.length) return new Map();
+  const versions = await db
+    .select({
+      artifactId: artifactVersions.artifactId,
+      revision: artifactVersions.revision,
+      text: artifactVersions.extractedText,
+    })
+    .from(artifactVersions)
+    .where(inArray(artifactVersions.artifactId, pages.map((page) => page.id)));
+  const textByVersion = new Map(
+    versions.map((version) => [`${version.artifactId}\u0000${version.revision}`, version.text]),
+  );
+  return new Map(
+    pages.map((page) => [
+      page.id,
+      deriveAnalysisScopes({
+        artifactId: page.id,
+        path: page.path,
+        kind: "confluence",
+        beforeRevision: page.previousRevision,
+        afterRevision: page.currentRevision,
+        beforeText: page.previousRevision
+          ? textByVersion.get(`${page.id}\u0000${page.previousRevision}`) ?? null
+          : null,
+        afterText: page.currentRevision
+          ? textByVersion.get(`${page.id}\u0000${page.currentRevision}`) ?? null
+          : null,
+      }),
+    ]),
+  );
+}
+
 export async function analyzePendingConfluenceChanges(
   workspaceId: string,
   sourceId: string,
@@ -135,8 +177,14 @@ export async function analyzePendingConfluenceChanges(
     throw new Error("The scheduled Confluence source no longer exists.");
   }
 
-  const changedPages = await pendingPages(sourceId, db);
+  const pending = await pendingPages(sourceId, db);
+  if (!pending.length) return { changedPages: 0, runId: null };
+  const scopesByPage = await scopesForPendingPages(pending, db);
+  const unchangedPages = pending.filter((page) => !(scopesByPage.get(page.id) || []).length);
+  if (unchangedPages.length) await advanceCursors(unchangedPages, db);
+  const changedPages = pending.filter((page) => (scopesByPage.get(page.id) || []).length);
   if (!changedPages.length) return { changedPages: 0, runId: null };
+  const analysisScopes = changedPages.flatMap((page) => scopesByPage.get(page.id) || []);
 
   const fingerprint = changedPages
     .map((page) => `${page.id}:${page.currentRevision}`)
@@ -169,6 +217,7 @@ export async function analyzePendingConfluenceChanges(
           externalUrl: page.canonicalUrl,
         })),
       ),
+      analysisScopeJson: serializeAnalysisScopes(analysisScopes),
       evidenceSummary:
         "SpecGraph checked linked primary code, schemas, and other documentation. Related tests may also need review. No connected source was changed.",
       sourceLabel: `Confluence / ${source.name}`,

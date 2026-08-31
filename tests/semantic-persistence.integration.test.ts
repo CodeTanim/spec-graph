@@ -17,6 +17,7 @@ import {
   workspaces,
 } from "../db/schema";
 import { executeAndPersistSemanticAnalysis } from "../lib/analysis/semantic-persistence";
+import { deriveAnalysisScopes } from "../lib/analysis/change-scope";
 
 let client: PGlite;
 let db: SpecGraphDb;
@@ -128,6 +129,16 @@ describe("semantic finding persistence", () => {
       updatedAt: now,
     });
 
+    const [changedScope] = deriveAnalysisScopes({
+      artifactId: "artifact_changed",
+      path: "src/retry.ts",
+      kind: "code",
+      beforeRevision: "before-abc",
+      afterRevision: "abc",
+      beforeText: "Payment authorization retries two times before failing.",
+      afterText: "Payment authorization retries three times before failing.",
+    });
+    let analyzedChangedText: string | null = null;
     const result = await executeAndPersistSemanticAnalysis({
       runId: "run_semantic",
       changed: {
@@ -139,6 +150,7 @@ describe("semantic finding persistence", () => {
         sourceUrl: "https://github.com/acme/payments/blob/abc/src/retry.ts",
         text: "Payment authorization retries three times before failing.",
       },
+      changedScope,
       candidates: [{
         nodeId: "node_candidate",
         artifactId: "artifact_candidate",
@@ -151,8 +163,10 @@ describe("semantic finding persistence", () => {
       analyzer: {
         name: "fixture-analyzer",
         model: "fixture-model",
-        analyze: async () => ({
-          output: {
+        analyze: async (semanticInput) => {
+          analyzedChangedText = semanticInput.changed.text;
+          return {
+            output: {
             schemaVersion: "1",
             decisions: [{
               candidateId: "node_candidate",
@@ -163,16 +177,21 @@ describe("semantic finding persistence", () => {
               candidateExcerpt: "retry three times",
             }],
           },
-          usage: {
-            promptTokens: 100,
-            completionTokens: 30,
-            estimatedCostMicros: 20,
-          },
-        }),
+            usage: {
+              promptTokens: 100,
+              completionTokens: 30,
+              estimatedCostMicros: 20,
+            },
+          };
+        },
       },
     }, db);
 
     expect(result.persistedFindings).toBe(1);
+    expect(analyzedChangedText).toBe(
+      "Before:\nPayment authorization retries two times before failing.\n\n" +
+        "After:\nPayment authorization retries three times before failing.",
+    );
     const persistedFindingRows = await db.select().from(findings);
     expect(persistedFindingRows).toEqual([
       expect.objectContaining({
@@ -182,7 +201,9 @@ describe("semantic finding persistence", () => {
       }),
     ]);
     expect(persistedFindingRows[0]?.confidence).toBeGreaterThanOrEqual(0.78);
-    expect(persistedFindingRows[0]?.confidence).toBeLessThan(0.9);
+    // Retrieval similarity admits the bounded candidate; after exact evidence
+    // verification it must not silently demote the analyzer's confidence.
+    expect(persistedFindingRows[0]?.confidence).toBe(0.9);
     expect(await db.select().from(findingEvidence)).toEqual([
       expect.objectContaining({
         artifactVersionId: "version_candidate",
