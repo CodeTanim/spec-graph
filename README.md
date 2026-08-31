@@ -238,5 +238,5 @@ and progressively backs off active-run polling. Historical artifact bodies are
 retained according to the revision-retention policy rather than loaded into
 ordinary dashboard requests.
 
-See [SPECGRAPH_MVP_IMPLEMENTATION_PLAN.md](./SPECGRAPH_MVP_IMPLEMENTATION_PLAN.md)
-for scope, acceptance gates, current status, and remaining work.
+Current analysis quality and release-gate results are recorded in
+[evaluation/BASELINE.md](./evaluation/BASELINE.md).

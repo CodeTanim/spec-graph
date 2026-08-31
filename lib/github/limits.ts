@@ -1,6 +1,6 @@
 import { ApiError } from "../server/http";
 
-const MAX_FILES = 120;
+const MAX_FILES = 160;
 const MAX_TOTAL_BYTES = 4_000_000;
 
 export function assertRepositoryWithinLimits(

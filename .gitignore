@@ -43,3 +43,7 @@ next-env.d.ts
 /outputs/
 /work/
 /.swc
+
+# local project notes
+/RESUME_PROJECT_ASSESSMENT.md
+/SPECGRAPH_MVP_IMPLEMENTATION_PLAN.md

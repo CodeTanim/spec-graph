@@ -23,6 +23,7 @@ describe("GitHub artifact indexing", () => {
     expect(classifyGitHubArtifact("tests/refunds.test.ts")).toBe("test");
     expect(classifyGitHubArtifact("docs/refunds.mdx")).toBe("markdown");
     expect(classifyGitHubArtifact("api/openapi.yaml")).toBe("openapi");
+    expect(classifyGitHubArtifact(".agents/skills/supabase/SKILL.md")).toBeNull();
     expect(classifyGitHubArtifact("node_modules/pkg/index.ts")).toBeNull();
     expect(classifyGitHubArtifact("assets/logo.png")).toBeNull();
   });
@@ -213,9 +214,14 @@ components:
     ).not.toThrow();
     expect(() =>
       assertRepositoryWithinLimits(
-        Array.from({ length: 121 }, () => ({ size: 1 })),
+        Array.from({ length: 160 }, () => ({ size: 1 })),
       ),
-    ).toThrow("up to 120 supported files");
+    ).not.toThrow();
+    expect(() =>
+      assertRepositoryWithinLimits(
+        Array.from({ length: 161 }, () => ({ size: 1 })),
+      ),
+    ).toThrow("up to 160 supported files");
   });
 });
 

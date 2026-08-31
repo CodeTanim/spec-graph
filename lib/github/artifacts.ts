@@ -25,6 +25,7 @@ const OPENAPI_NAMES = [
   "swagger.yml",
 ];
 const IGNORED_SEGMENTS = new Set([
+  ".agents",
   ".git",
   ".next",
   "build",

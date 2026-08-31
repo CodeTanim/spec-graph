@@ -43,7 +43,7 @@ Keep the client secret, private key, and webhook secret out of source control. `
 
 ## Current indexing boundary
 
-The walking skeleton indexes up to 60 supported files and 4 MB total per repository. Individual files are capped at 160 KB. Supported artifacts are:
+The walking skeleton indexes up to 160 supported files and 4 MB total per repository. Individual files are capped at 160 KB. Supported artifacts are:
 
 - TypeScript and JavaScript code
 - TypeScript and JavaScript tests
