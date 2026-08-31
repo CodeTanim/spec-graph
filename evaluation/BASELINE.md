@@ -48,9 +48,13 @@ safe for broader use.
 Production ingestion now persists private, version-pinned, bounded change
 scopes for new and modified GitHub files and Confluence pages. The semantic
 adapter can consume a matching scope and fails closed when the scope is missing,
-unavailable, or belongs to another artifact. Live production AI findings remain
-disabled; the deployed product continues to use deterministic findings. Raw
-scope snippets are redacted when a source is removed and after 30 days.
+unavailable, or belongs to another artifact. The deployed manual Confluence
+path now exposes a deliberately narrow semantic beta when a Gateway model is
+configured: exactly one available atomic scope, at most three same-group
+candidates, and at most one provider request. Deterministic analysis still runs
+first, provider failures fall back without failing the run, and automatic
+GitHub/scheduled semantic findings remain disabled. Raw scope snippets are
+redacted when a source is removed and after 30 days.
 
 The regression test prevents this baseline from silently getting worse. A live
 semantic analyzer must still be evaluated on final decisions before SpecGraph
@@ -73,8 +77,8 @@ latency targets.
   change coverage.
 
 No full v5 result is recorded here yet. The v5 adapter and its prompt examples
-have been calibrated on the in-sample corpus, and production AI findings remain
-disabled.
+have been calibrated on the in-sample corpus. Its manual-only beta is not an
+unseen-holdout result and does not establish production-wide quality.
 
 On 2026-08-30, a one-case v5 Gateway preflight stopped after the first request
 returned `Gateway request failed` before any model tokens were reported. The

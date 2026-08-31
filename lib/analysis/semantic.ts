@@ -655,6 +655,28 @@ export async function executeSemanticAnalysis(
   options: SemanticExecutionOptions = {},
 ): Promise<SemanticExecution> {
   const startedAt = Date.now();
+  if (!input.candidates.length) {
+    return {
+      status: "succeeded",
+      analyzerVersion: analyzer?.version
+        ? `${SEMANTIC_ANALYZER_VERSION}/${analyzer.version}`
+        : SEMANTIC_ANALYZER_VERSION,
+      analyzerName: analyzer?.name || null,
+      model: analyzer?.model || null,
+      latencyMs: 0,
+      inputCandidateCount: 0,
+      outputDecisionCount: 0,
+      accepted: [],
+      rejected: [],
+      decisionTrace: [],
+      failureReason: null,
+      usage: {
+        promptTokens: 0,
+        completionTokens: 0,
+        estimatedCostMicros: 0,
+      },
+    };
+  }
   if (!analyzer) {
     return {
       status: "fallback",

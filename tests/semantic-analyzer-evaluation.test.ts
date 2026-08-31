@@ -54,8 +54,10 @@ describe("semantic analyzer evaluation harness", () => {
       model: "local/oracle",
       caseCount: 25,
       fallbackCaseCount: 0,
-      promptTokens: 2_500,
-      completionTokens: 625,
+      // Two unrelated cases retrieve no candidates, so the model is never
+      // called and those cases correctly contribute zero tokens.
+      promptTokens: 2_300,
+      completionTokens: 575,
       metrics: {
         precision: 1,
         recall: 1,

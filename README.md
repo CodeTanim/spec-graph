@@ -146,10 +146,14 @@ bounded change scopes for new and modified GitHub files and Confluence pages,
 separate from the public feed payload. The semantic adapter can consume only a
 matching scope and fails closed when that evidence is unavailable or belongs to
 a different artifact. Private snippets are redacted immediately when a source
-is removed and after 30 days during the daily maintenance workflow. Live
-production AI findings remain disabled until an
-unseen holdout validates quality plus the provisional candidate limit;
-deterministic findings remain live in the deployed app.
+is removed and after 30 days during the daily maintenance workflow. Manual
+Confluence checks now have a narrow, environment-gated semantic beta: only one
+available atomic change scope is eligible, retrieval stays inside the connected
+source group, at most three bounded candidates reach the model, and at most one
+Gateway request is made. Deterministic findings still run first and provider
+failures fall back safely. Automatic GitHub and scheduled analysis remain
+deterministic-only until an unseen holdout validates quality and the provisional
+candidate limit.
 
 Two ingestion limits remain explicit: deleted artifacts do not yet have a
 complete tombstone lifecycle for downstream findings, and Confluence sync does
@@ -190,9 +194,9 @@ function, constant, or diff-sized excerpt—rather than claiming that every
 behavior in the current file changed. This is already enforced in the local
 evaluation lab. Production GitHub and Confluence ingestion now persists the
 equivalent private, version-pinned before/after scope, and the semantic adapter
-can consume it with fail-closed validation. That adapter is still deliberately
-disconnected from live production findings until the unseen-holdout release
-gate passes.
+can consume it with fail-closed validation. The deployed manual Confluence beta
+uses that exact contract for a single atomic scope; broader automatic semantic
+enablement still waits for the unseen-holdout release gate.
 
 To measure a real structured-output model without changing production behavior,
 set `SPECGRAPH_SEMANTIC_MODEL` to a current Vercel AI Gateway `provider/model`
@@ -221,7 +225,8 @@ than three legitimate impacts so the candidate cap can be validated or revised.
 Repeated runs must also reach at least 95% precision and 85% recall, detect every
 critical relationship, use no provider fallback, and receive the same atomic
 changed-scope contract from the runtime pipeline. Until all of those conditions
-hold, the live product continues to show deterministic findings.
+hold, semantic findings remain limited to the manual Confluence beta; automatic
+GitHub and scheduled checks continue to show deterministic findings only.
 
 ### Deployment
 

@@ -13,8 +13,12 @@ import { GitHubClient } from "../github/client";
 import { getGitHubAppConfig } from "../github/config";
 import { executeGitHubPullRequestAnalysis } from "../github/analysis";
 import { ApiError } from "../server/http";
+import { structuredLog } from "../observability/structured-log";
 import { persistDeterministicFindings } from "./deterministic";
 import { deriveAnalysisScopes, serializeAnalysisScopes } from "./change-scope";
+import { createConfiguredSemanticAnalyzer } from "./ai-gateway-analyzer";
+import { executeScopedSemanticAnalysis } from "./semantic-runtime";
+import type { SemanticAnalyzer } from "./semantic";
 import {
   beginRunAttempt,
   completeRunAttempt,
@@ -53,6 +57,7 @@ async function executeConfluencePageAnalysis(
   runId: string,
   input: StartRunInput,
   db: SpecGraphDb,
+  analyzerOverride: SemanticAnalyzer | null | undefined,
 ): Promise<void> {
   let attemptId: string | null = null;
   try {
@@ -164,6 +169,33 @@ async function executeConfluencePageAnalysis(
       .innerJoin(artifacts, eq(graphNodes.artifactId, artifacts.id))
       .where(eq(artifacts.id, page.id));
     await persistDeterministicFindings(workspaceId, runId, changedNodes, db);
+    await db
+      .update(analysisRuns)
+      .set({ progress: 75, updatedAt: new Date().toISOString() })
+      .where(eq(analysisRuns.id, runId));
+    if (analyzerOverride !== null) {
+      const analyzer = analyzerOverride ?? createConfiguredSemanticAnalyzer();
+      if (analyzer) {
+        const semanticResult = await executeScopedSemanticAnalysis({
+          workspaceId,
+          runId,
+          changedSourceId: selectedSource.id,
+          changedArtifactId: page.id,
+          scopes: analysisScopes,
+          analyzer,
+        }, db);
+        structuredLog("info", "analysis.semantic.manual.completed", {
+          runId,
+          workspaceId,
+          sourceId: selectedSource.id,
+          availableScopes: semanticResult.availableScopes,
+          attemptedScopes: semanticResult.attemptedScopes,
+          persistedFindings: semanticResult.persistedFindings,
+          skippedReason: semanticResult.skippedReason,
+          status: semanticResult.executions[0]?.status || null,
+        });
+      }
+    }
     await completeRunAttempt(runId, attemptId, db);
   } catch (error) {
     await failRunAttempt(
@@ -182,6 +214,7 @@ export async function executeManualAnalysis(
   runId: string,
   input: StartRunInput,
   db: SpecGraphDb = getDb(),
+  analyzerOverride?: SemanticAnalyzer | null,
 ): Promise<void> {
   const [runSource] = await db
     .select({ provider: sources.provider })
@@ -216,5 +249,11 @@ export async function executeManualAnalysis(
     );
     return;
   }
-  await executeConfluencePageAnalysis(workspaceId, runId, input, db);
+  await executeConfluencePageAnalysis(
+    workspaceId,
+    runId,
+    input,
+    db,
+    analyzerOverride,
+  );
 }
