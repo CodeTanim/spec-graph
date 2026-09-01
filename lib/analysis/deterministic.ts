@@ -55,7 +55,7 @@ function evidenceExcerpt(content: string, startLine: number): string {
 }
 
 function evidenceUrl(
-  kind: "code" | "test" | "markdown" | "openapi" | "confluence",
+  kind: "code" | "config" | "test" | "markdown" | "openapi" | "confluence",
   url: string | null,
   startLine: number,
   endLine: number,

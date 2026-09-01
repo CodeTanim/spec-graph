@@ -20,6 +20,7 @@ export type SourceStatus =
   | "disconnected";
 export type ArtifactKind =
   | "Confluence"
+  | "Config"
   | "OpenAPI"
   | "Test"
   | "Markdown"

@@ -1,13 +1,17 @@
 import type { AnalysisArtifactKind, CandidateEdge } from "./candidates";
 
 export const SEMANTIC_ANALYZER_VERSION = "semantic-contract-v1";
-export const SEMANTIC_RETRIEVAL_VERSION = "section-aware-lexical-v1";
+export const SEMANTIC_RETRIEVAL_VERSION = "role-aware-full-file-v2";
 // Retrieval is deliberately narrow: the reviewed evaluation package keeps
 // every expected target in the top three, so sending lower-ranked lexical
 // neighbors only adds cost and false-positive opportunities.
 export const MAX_SEMANTIC_CANDIDATES = 3;
 export const MAX_SEMANTIC_TEXT_CHARS = 6_000;
 export const MIN_SEMANTIC_DISPLAY_CONFIDENCE = 0.78;
+const MAX_SEMANTIC_RETRIEVAL_CHARS = 160_000;
+const SEMANTIC_RETRIEVAL_WINDOW_CHARS = 1_200;
+const SEMANTIC_RETRIEVAL_WINDOW_OVERLAP = 200;
+const MAX_SEMANTIC_RETRIEVAL_SEGMENTS = 2_048;
 
 export type SemanticArtifactSnapshot = {
   nodeId: string;
@@ -17,6 +21,8 @@ export type SemanticArtifactSnapshot = {
   revision: string;
   sourceUrl: string | null;
   text: string;
+  /** First source line represented by `text`; omitted for a full snapshot. */
+  textStartLine?: number;
 };
 
 export type SemanticCandidate = {
@@ -125,7 +131,19 @@ const STOP_WORDS = new Set([
   "were", "will", "with",
 ]);
 
+const CADENCE_TOKENS = new Set([
+  "cadence",
+  "cron",
+  "crons",
+  "schedule",
+  "scheduled",
+  "scheduling",
+]);
+
 function canonicalToken(token: string): string {
+  if (CADENCE_TOKENS.has(token)) {
+    return "cadence";
+  }
   if (token === "max" || token === "maximum") {
     return "limit";
   }
@@ -183,24 +201,86 @@ export function lexicalSimilarity(leftText: string, rightText: string): number {
   return tokenSetSimilarity(tokens(leftText), tokens(rightText));
 }
 
-function semanticSegments(text: string): Set<string>[] {
-  const bounded = text.slice(0, MAX_SEMANTIC_TEXT_CHARS);
-  const blocks = bounded
-    .split(/\n\s*\n/g)
-    .map((value) => value.trim())
-    .filter((value) => value.length >= 12);
-  const lines = bounded
-    .split("\n")
-    .map((value) => value.trim())
-    .filter((value) => value.length >= 20);
-  const combined: string[] = [bounded, ...blocks, ...lines];
-  for (let index = 0; index < blocks.length - 1; index += 1) {
-    if (/^#{1,6}\s/.test(blocks[index]!)) {
-      combined.push(`${blocks[index]}\n${blocks[index + 1]}`);
-    }
+type SemanticSegment = {
+  start: number;
+  end: number;
+  tokens: Set<string>;
+};
+
+function semanticSegments(text: string): SemanticSegment[] {
+  const bounded = text.slice(0, MAX_SEMANTIC_RETRIEVAL_CHARS);
+  if (!bounded) return [];
+  const segments: SemanticSegment[] = [];
+  const seen = new Set<string>();
+  const add = (start: number, end: number) => {
+    if (segments.length >= MAX_SEMANTIC_RETRIEVAL_SEGMENTS) return;
+    const key = `${start}:${end}`;
+    if (seen.has(key)) return;
+    const tokenSet = tokens(bounded.slice(start, end));
+    if (tokenSet.size < 3) return;
+    seen.add(key);
+    segments.push({ start, end, tokens: tokenSet });
+  };
+  const step = SEMANTIC_RETRIEVAL_WINDOW_CHARS -
+    SEMANTIC_RETRIEVAL_WINDOW_OVERLAP;
+  for (let start = 0; start < bounded.length; start += step) {
+    const end = Math.min(start + SEMANTIC_RETRIEVAL_WINDOW_CHARS, bounded.length);
+    add(start, end);
+    if (end === bounded.length) break;
   }
-  const unique = [...new Set(combined)].slice(0, 32);
-  return unique.map(tokens).filter((value) => value.size >= 3);
+  // Windows guarantee whole-file coverage. Precise paragraphs and lines then
+  // recover the high-signal sections needed for accurate lexical ranking.
+  for (const match of bounded.matchAll(/\S[\s\S]*?(?=\n\s*\n|$)/gu)) {
+    const start = match.index ?? 0;
+    const value = match[0];
+    if (value.trim().length >= 12) add(start, start + value.length);
+  }
+  for (const match of bounded.matchAll(/[^\n]+/gu)) {
+    const start = match.index ?? 0;
+    const value = match[0];
+    if (value.trim().length >= 20) add(start, start + value.length);
+  }
+  return segments;
+}
+
+function cronCadenceFacts(schedule: string): string[] {
+  const fields = schedule.trim().split(/\s+/u);
+  if (fields.length !== 5) return ["scheduled cadence cron"];
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
+  const everyDay = dayOfMonth === "*" && month === "*" && dayOfWeek === "*";
+  if (!everyDay) return ["scheduled cadence cron"];
+  if (/^\d+$/u.test(minute) && /^\d+$/u.test(hour)) {
+    return ["automatic scheduled cadence once per day daily every 24 hours cron"];
+  }
+  const hourlyInterval = /^\*\/(\d+)$/u.exec(hour);
+  if (/^\d+$/u.test(minute) && hourlyInterval) {
+    return [
+      "automatic scheduled cadence interval cron",
+      `every ${hourlyInterval[1]} hours`,
+    ];
+  }
+  return ["automatic scheduled cadence cron"];
+}
+
+function configRetrievalFacts(snapshot: SemanticArtifactSnapshot): string {
+  if (snapshot.kind !== "config" || snapshot.path.toLowerCase() !== "vercel.json") {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(snapshot.text) as { crons?: unknown };
+    if (!Array.isArray(parsed.crons)) return "";
+    return parsed.crons
+      .flatMap((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+        const schedule = (entry as { schedule?: unknown }).schedule;
+        return typeof schedule === "string" ? cronCadenceFacts(schedule) : [];
+      })
+      .join(" ");
+  } catch {
+    // Retrieval hints are optional. Invalid configuration remains available as
+    // raw source evidence but receives no synthetic cadence hint.
+    return "";
+  }
 }
 
 export function sectionAwareLexicalSimilarity(
@@ -208,8 +288,8 @@ export function sectionAwareLexicalSimilarity(
   rightText: string,
 ): number {
   return sectionAwareTokenSimilarity(
-    semanticSegments(leftText),
-    semanticSegments(rightText),
+    semanticSegments(leftText).map((segment) => segment.tokens),
+    semanticSegments(rightText).map((segment) => segment.tokens),
   );
 }
 
@@ -226,11 +306,93 @@ function sectionAwareTokenSimilarity(
   return strongest;
 }
 
-function boundedSnapshot(snapshot: SemanticArtifactSnapshot): SemanticArtifactSnapshot {
+function boundedSnapshot(
+  snapshot: SemanticArtifactSnapshot,
+  focus?: Pick<SemanticSegment, "start" | "end">,
+): SemanticArtifactSnapshot {
+  if (snapshot.text.length <= MAX_SEMANTIC_TEXT_CHARS) return snapshot;
+  const focusCenter = focus
+    ? Math.floor((focus.start + focus.end) / 2)
+    : Math.floor(MAX_SEMANTIC_TEXT_CHARS / 2);
+  let start = Math.max(0, focusCenter - Math.floor(MAX_SEMANTIC_TEXT_CHARS / 2));
+  start = Math.min(start, snapshot.text.length - MAX_SEMANTIC_TEXT_CHARS);
+  if (start > 0) {
+    const nextNewline = snapshot.text.indexOf("\n", start);
+    if (nextNewline >= 0 && (!focus || nextNewline < focus.start)) {
+      // Move forward to a source-line boundary. Moving backward here can push
+      // the focused evidence just beyond the 6,000-character prompt window.
+      start = nextNewline + 1;
+    }
+  }
+  const sourceStartLine = (snapshot.textStartLine ?? 1) +
+    snapshot.text.slice(0, start).split("\n").length - 1;
   return {
     ...snapshot,
-    text: snapshot.text.slice(0, MAX_SEMANTIC_TEXT_CHARS),
+    text: snapshot.text.slice(start, start + MAX_SEMANTIC_TEXT_CHARS),
+    textStartLine: sourceStartLine,
   };
+}
+
+function semanticSearchSegments(snapshot: SemanticArtifactSnapshot): SemanticSegment[] {
+  const facts = configRetrievalFacts(snapshot);
+  return semanticSegments(`${facts ? `${facts}\n` : ""}${snapshot.text}`);
+}
+
+function strongestSegmentMatch(
+  changedSegments: SemanticSegment[],
+  candidateSegments: SemanticSegment[],
+): { score: number; candidateSegment: SemanticSegment | undefined } {
+  let score = 0;
+  let candidateSegment: SemanticSegment | undefined;
+  for (const changed of changedSegments) {
+    for (const candidate of candidateSegments) {
+      const similarity = tokenSetSimilarity(changed.tokens, candidate.tokens);
+      if (similarity > score) {
+        score = similarity;
+        candidateSegment = candidate;
+      }
+    }
+  }
+  return { score, candidateSegment };
+}
+
+function compareSemanticCandidates(
+  left: SemanticCandidate,
+  right: SemanticCandidate,
+): number {
+  return right.relationshipContext.length - left.relationshipContext.length ||
+    right.lexicalScore - left.lexicalScore ||
+    left.id.localeCompare(right.id);
+}
+
+function isDocumentationKind(kind: AnalysisArtifactKind): boolean {
+  return kind === "markdown" || kind === "openapi" || kind === "confluence";
+}
+
+function selectSemanticSlate(
+  changed: SemanticArtifactSnapshot,
+  ranked: SemanticCandidate[],
+): SemanticCandidate[] {
+  if (!isDocumentationKind(changed.kind)) {
+    return ranked.slice(0, MAX_SEMANTIC_CANDIDATES);
+  }
+
+  // A documentation change needs a balanced review slate: executable
+  // configuration and production code must not be crowded out by several
+  // similarly worded documents. Empty buckets are backfilled by rank.
+  const selected: SemanticCandidate[] = [];
+  const add = (candidate: SemanticCandidate | undefined) => {
+    if (candidate && !selected.some((item) => item.id === candidate.id)) {
+      selected.push(candidate);
+    }
+  };
+  add(ranked.find((candidate) => candidate.artifact.kind === "config"));
+  add(ranked.find((candidate) => candidate.artifact.kind === "code"));
+  for (const candidate of ranked) {
+    add(candidate);
+    if (selected.length === MAX_SEMANTIC_CANDIDATES) break;
+  }
+  return selected.slice(0, MAX_SEMANTIC_CANDIDATES);
 }
 
 export function generateSemanticCandidates(
@@ -238,8 +400,8 @@ export function generateSemanticCandidates(
   candidates: SemanticArtifactSnapshot[],
   contexts: Map<string, { graphDistance: number | null; edges: CandidateEdge[] }> = new Map(),
 ): SemanticCandidate[] {
-  const changedSegments = semanticSegments(changed.text);
-  return candidates
+  const changedSegments = semanticSearchSegments(changed);
+  const ranked = candidates
     .filter(
       (candidate) =>
         candidate.artifactId !== changed.artifactId &&
@@ -254,13 +416,23 @@ export function generateSemanticCandidates(
     )
     .map((candidate) => {
       const context = contexts.get(candidate.nodeId);
+      const match = strongestSegmentMatch(
+        changedSegments,
+        semanticSearchSegments(candidate),
+      );
+      const focus = match.candidateSegment
+        ? {
+            // Config facts are retrieval-only and precede the raw source. The
+            // allowlisted config is currently shorter than the prompt bound;
+            // regular artifacts map directly to source-text coordinates.
+            start: match.candidateSegment.start,
+            end: match.candidateSegment.end,
+          }
+        : undefined;
       return {
         id: candidate.nodeId,
-        artifact: boundedSnapshot(candidate),
-        lexicalScore: sectionAwareTokenSimilarity(
-          changedSegments,
-          semanticSegments(candidate.text),
-        ),
+        artifact: boundedSnapshot(candidate, focus),
+        lexicalScore: match.score,
         graphDistance: context?.graphDistance ?? null,
         relationshipContext: (context?.edges || []).slice(0, 4).map((edge) => ({
           type: edge.type,
@@ -275,12 +447,8 @@ export function generateSemanticCandidates(
       (candidate) =>
         candidate.lexicalScore >= 0.12 || candidate.relationshipContext.length > 0,
     )
-    .sort((left, right) =>
-      right.relationshipContext.length - left.relationshipContext.length ||
-      right.lexicalScore - left.lexicalScore ||
-      left.id.localeCompare(right.id),
-    )
-    .slice(0, MAX_SEMANTIC_CANDIDATES);
+    .sort(compareSemanticCandidates);
+  return selectSemanticSlate(changed, ranked);
 }
 
 export function buildSemanticAnalysisInput(
@@ -532,8 +700,10 @@ export function verifySemanticOutput(
         : undefined,
       changedExcerpt: changedEvidence.excerpt,
       candidateExcerpt: candidateEvidence.excerpt,
-      changedStartLine: changedEvidence.startLine,
-      candidateStartLine: candidateEvidence.startLine,
+      changedStartLine:
+        (input.changed.textStartLine ?? 1) + changedEvidence.startLine - 1,
+      candidateStartLine:
+        (candidate.artifact.textStartLine ?? 1) + candidateEvidence.startLine - 1,
     });
   }
   return {

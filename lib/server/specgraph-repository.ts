@@ -52,11 +52,13 @@ function normalizeTimestamp(value: string | null): string | null {
 }
 
 function artifactKind(
-  value: "code" | "test" | "markdown" | "openapi" | "confluence" | null,
+  value: "code" | "config" | "test" | "markdown" | "openapi" | "confluence" | null,
 ): ArtifactKind {
   switch (value) {
     case "test":
       return "Test";
+    case "config":
+      return "Config";
     case "markdown":
       return "Markdown";
     case "openapi":
@@ -133,7 +135,7 @@ async function listChangedArtifactsForRuns(
 }
 
 function lineUrl(
-  kind: "code" | "test" | "markdown" | "openapi" | "confluence" | null,
+  kind: "code" | "config" | "test" | "markdown" | "openapi" | "confluence" | null,
   url: string | null,
   startLine: number,
 ): string | null {
@@ -734,7 +736,7 @@ export async function listSources(
         .select({
           sourceId: artifacts.sourceId,
           all: count(),
-          code: sql<number>`count(*) filter (where ${artifacts.kind} in ('code', 'test'))`.mapWith(Number),
+          code: sql<number>`count(*) filter (where ${artifacts.kind} in ('code', 'config', 'test'))`.mapWith(Number),
           documentation: sql<number>`count(*) filter (where ${artifacts.kind} in ('markdown', 'openapi', 'confluence'))`.mapWith(Number),
         })
         .from(artifacts)

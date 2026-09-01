@@ -1,5 +1,6 @@
 export type IndexedArtifactKind =
   | "code"
+  | "config"
   | "test"
   | "markdown"
   | "openapi";

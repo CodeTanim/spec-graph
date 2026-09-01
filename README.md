@@ -179,7 +179,7 @@ measure generalization to unfamiliar repositories or documentation styles.
 - candidate retrieval — whether the correct artifact reaches the bounded review set;
 - final decisions — precision, recall, F1, and false-positive rate for a future analyzer using the same labels.
 
-The section-aware retrieval baseline is recorded in
+The role-aware, whole-file retrieval baseline is recorded in
 [`evaluation/BASELINE.md`](./evaluation/BASELINE.md). The current adjudicated
 corpus contains 23 relationships worth showing to a user. All 23 reach the
 bounded review set and all 23 rank in its top three, with 2.32 candidates per

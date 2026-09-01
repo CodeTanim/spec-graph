@@ -16,6 +16,7 @@ import type { IndexedArtifactKind } from "../graph/types";
 
 const CODE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
 const DOC_EXTENSIONS = [".md", ".mdx"];
+const CONFIG_PATHS = new Set(["vercel.json"]);
 const OPENAPI_NAMES = [
   "openapi.json",
   "openapi.yaml",
@@ -34,12 +35,17 @@ const IGNORED_SEGMENTS = new Set([
   "node_modules",
   "vendor",
 ]);
+// Fixture content is test data, not product behavior. Keep this narrow so a
+// user's real repository may still have production code under `evaluation/`.
+const IGNORED_PREFIXES = ["evaluation/fixtures/"];
 
 export function classifyGitHubArtifact(path: string): IndexedArtifactKind | null {
   const lower = path.toLowerCase();
+  if (IGNORED_PREFIXES.some((prefix) => lower.startsWith(prefix))) return null;
   if (lower.split("/").some((segment) => IGNORED_SEGMENTS.has(segment))) return null;
   const filename = lower.split("/").at(-1) || lower;
   if (OPENAPI_NAMES.includes(filename)) return "openapi";
+  if (CONFIG_PATHS.has(lower)) return "config";
   if (DOC_EXTENSIONS.some((extension) => lower.endsWith(extension))) return "markdown";
   if (!CODE_EXTENSIONS.some((extension) => lower.endsWith(extension))) return null;
   if (
@@ -55,6 +61,8 @@ export function displayArtifactKind(kind: IndexedArtifactKind): ArtifactKind {
   switch (kind) {
     case "test":
       return "Test";
+    case "config":
+      return "Config";
     case "markdown":
       return "Markdown";
     case "openapi":

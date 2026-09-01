@@ -3,7 +3,7 @@
 ## Current in-sample retrieval calibration
 
 Recorded on 2026-08-30 with `semantic-contract-v1`,
-`section-aware-lexical-v1`, and the adjudicated 25-case local product evaluation
+`role-aware-full-file-v2`, and the adjudicated 25-case local product evaluation
 package.
 
 | Measurement | Result |
@@ -61,6 +61,12 @@ semantic analyzer must still be evaluated on final decisions before SpecGraph
 claims the M9 precision, recall, F1, false-positive-rate, evidence, cost, or
 latency targets.
 
+The v2 retriever also has a production-shaped cadence regression. It indexes
+only the allowlisted `vercel.json` runtime configuration, scans relevant
+passages across long implementation files, excludes evaluation fixtures from
+live ingestion, and keeps configuration, production code, and documentation
+inside the same three-candidate bound.
+
 ## Validation work still required
 
 - Freeze a versioned unseen holdout before using any of its results to change
@@ -76,9 +82,10 @@ latency targets.
   beyond the current 100-page ingestion limit before claiming complete provider
   change coverage.
 
-No full v5 result is recorded here yet. The v5 adapter and its prompt examples
-have been calibrated on the in-sample corpus. Its manual-only beta is not an
-unseen-holdout result and does not establish production-wide quality.
+No full v6 result is recorded here yet. The v6 adapter extends the calibrated
+v5 policy so executable configuration can own a matching runtime behavior.
+Its manual-only beta is not an unseen-holdout result and does not establish
+production-wide quality.
 
 On 2026-08-30, a one-case v5 Gateway preflight stopped after the first request
 returned `Gateway request failed` before any model tokens were reported. The

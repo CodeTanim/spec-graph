@@ -282,7 +282,7 @@ export const artifacts = pgTable(
       .references(() => sources.id, { onDelete: "cascade" }),
     externalId: text("external_id").notNull(),
     kind: text("kind", {
-      enum: ["code", "test", "markdown", "openapi", "confluence"],
+      enum: ["code", "config", "test", "markdown", "openapi", "confluence"],
     }).notNull(),
     path: text("path").notNull(),
     title: text("title").notNull(),

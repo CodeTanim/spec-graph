@@ -427,7 +427,14 @@ export function parseAnalysisScopes(value: string | null | undefined): AnalysisC
   try {
     const parsed = JSON.parse(value) as unknown;
     if (!Array.isArray(parsed)) return [];
-    const validKinds = new Set(["code", "test", "markdown", "openapi", "confluence"]);
+    const validKinds = new Set([
+      "code",
+      "config",
+      "test",
+      "markdown",
+      "openapi",
+      "confluence",
+    ]);
     const validReasons = new Set<AnalysisScopeReason>([
       "complexity_limit",
       "event_limit",

@@ -1,5 +1,6 @@
 export type AnalysisArtifactKind =
   | "code"
+  | "config"
   | "test"
   | "markdown"
   | "openapi"

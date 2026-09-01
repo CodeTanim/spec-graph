@@ -154,5 +154,6 @@ export function extractArtifactEntities(
 ): GraphEntity[] {
   if (kind === "openapi") return extractOpenApiDefinitions(content);
   if (kind === "code" || kind === "test") return extractCodeDefinitions(content);
+  if (kind === "config") return [];
   return extractDocumentMentions(content);
 }

@@ -8,7 +8,7 @@ import {
 } from "./semantic";
 
 export const AI_GATEWAY_ANALYZER_NAME = "vercel-ai-gateway";
-export const AI_GATEWAY_CALIBRATION_VERSION = "review-triage-v5";
+export const AI_GATEWAY_CALIBRATION_VERSION = "review-triage-v6";
 export const AI_GATEWAY_TEMPERATURE = 0;
 const MAX_EVIDENCE_PASSAGES = 32;
 const MAX_EVIDENCE_PASSAGE_CHARS = 800;
@@ -262,6 +262,7 @@ const SYSTEM_INSTRUCTIONS = [
   "Use INCIDENTAL_MENTION when a candidate mentions a value only as telemetry, observability, background, or an example.",
   "Use NO_CONCRETE_LINK when no supplied passages establish a specific review reason.",
   "Use ownerRole PRIMARY for the narrowest production implementation that owns the changed claim.",
+  "Executable configuration can be the PRIMARY owner when it directly defines a schedule, limit, route, or other runtime behavior. Interpret conventional configuration values such as cron expressions, but quote only the supplied raw source passage as evidence.",
   "Use ownerRole DISTINCT for a separately responsible production owner of a different atomic claim or for an independently affected document that makes its own falsifiable claim.",
   "Use ownerRole SUPPORTING for a test, caller, endpoint guard, container, wrapper, helper, or explicit reference that is useful context but does not deserve its own review row.",
   "Use ownerRole NONE when the relationship basis is negative or the candidate has no responsibility for the changed claim.",
@@ -292,6 +293,7 @@ const SYSTEM_INSTRUCTIONS = [
   "SpecGraph evidence rule: sourceText.includes(excerpt) combined with verified and displayConfidence true-or-false branches directly enforces the exact-excerpt and unsupported-evidence guarantee. Use SAME_BEHAVIOR_OR_GUARANTEE for documentation that states that guarantee.",
   "Positive example: documentation names an Add source provider dialog and a production function returns that same action and presentation. The function is SAME_BEHAVIOR_OR_GUARANTEE plus PRIMARY.",
   "Positive example: a startManualAnalysis function executes immediately while a product overview says a person can start an immediate manual check. These express the same manual trigger and execution behavior.",
+  "Positive example: a deployment configuration contains a daily cron expression while documentation changes the promised automatic cadence to every 12 hours. The configuration is SAME_BEHAVIOR_OR_GUARANTEE plus PRIMARY and its raw cron line is the evidence.",
   "Positive example: repository ingestion verifies a signature and detects repeated delivery IDs while security guidance promises signed events and duplicate-delivery safety.",
   "Negative example: a provider picker changes from an inline panel to a dialog while an overview says only that sources can be added later. The overview makes no presentation promise, so do not mark it.",
   "Negative example: one workflow starts using a dialog while a general design guide says dialogs support close and keyboard behavior. Unless those shared requirements changed, the guide remains true and is not affected.",

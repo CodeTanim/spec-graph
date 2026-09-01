@@ -23,6 +23,15 @@ describe("GitHub artifact indexing", () => {
     expect(classifyGitHubArtifact("tests/refunds.test.ts")).toBe("test");
     expect(classifyGitHubArtifact("docs/refunds.mdx")).toBe("markdown");
     expect(classifyGitHubArtifact("api/openapi.yaml")).toBe("openapi");
+    expect(classifyGitHubArtifact("vercel.json")).toBe("config");
+    expect(classifyGitHubArtifact("package.json")).toBeNull();
+    expect(
+      classifyGitHubArtifact("evaluation/fixtures/repository/analysis-cadence.ts"),
+    ).toBeNull();
+    expect(
+      classifyGitHubArtifact("evaluation/fixtures/confluence/how-specgraph-works.md"),
+    ).toBeNull();
+    expect(classifyGitHubArtifact("src/evaluation/scorer.ts")).toBe("code");
     expect(classifyGitHubArtifact(".agents/skills/supabase/SKILL.md")).toBeNull();
     expect(classifyGitHubArtifact("node_modules/pkg/index.ts")).toBeNull();
     expect(classifyGitHubArtifact("assets/logo.png")).toBeNull();

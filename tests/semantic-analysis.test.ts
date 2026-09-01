@@ -131,6 +131,83 @@ describe("bounded semantic candidate retrieval", () => {
         .map((candidate) => candidate.id),
     ).toEqual(["implementation"]);
   });
+
+  it("keeps cadence-owning config and late implementation code in a three-item slate", () => {
+    const cadenceChange: SemanticArtifactSnapshot = {
+      ...changed,
+      nodeId: "cadence-page",
+      artifactId: "cadence-page",
+      path: "SD/How SpecGraph checks connected sources",
+      text: [
+        "Before: Automatic analysis runs once per day for connected sources.",
+        "After: Automatic analysis runs every 12 hours for connected sources.",
+      ].join("\n"),
+    };
+    const snapshots: SemanticArtifactSnapshot[] = [
+      {
+        ...related,
+        nodeId: "vercel-config",
+        artifactId: "vercel-config",
+        kind: "config",
+        path: "vercel.json",
+        text: JSON.stringify({
+          crons: [{ path: "/api/cron/sources", schedule: "0 13 * * *" }],
+        }, null, 2),
+      },
+      {
+        ...related,
+        nodeId: "app-ui",
+        artifactId: "app-ui",
+        kind: "code",
+        path: "app/specgraph-app.tsx",
+        text: `${"const unrelatedLayoutValue = true;\n".repeat(240)}\n` +
+          "const DAILY_ANALYSIS_HOUR_UTC = 13;\n" +
+          'const cadenceCopy = "Automatic analysis runs daily.";',
+      },
+      {
+        ...related,
+        nodeId: "readme",
+        artifactId: "readme",
+        path: "README.md",
+        text: "SpecGraph checks connected sources once per day and supports an immediate manual check.",
+      },
+      {
+        ...related,
+        nodeId: "generic-code",
+        artifactId: "generic-code",
+        kind: "code",
+        path: "lib/providers/source-groups.ts",
+        text: "Connect sources into a source group and load the current analysis source IDs.",
+      },
+      {
+        ...related,
+        nodeId: "setup-doc",
+        artifactId: "setup-doc",
+        path: "docs/GITHUB_APP_SETUP.md",
+        text: "Connect GitHub sources and run analysis from the source screen.",
+      },
+    ];
+
+    const paths = generateSemanticCandidates(cadenceChange, snapshots)
+      .map((candidate) => candidate.artifact.path);
+    const reversedPaths = generateSemanticCandidates(
+      cadenceChange,
+      [...snapshots].reverse(),
+    ).map((candidate) => candidate.artifact.path);
+
+    expect(paths).toEqual([
+      "vercel.json",
+      "app/specgraph-app.tsx",
+      "README.md",
+    ]);
+    expect(reversedPaths).toEqual(paths);
+
+    const appCandidate = generateSemanticCandidates(cadenceChange, snapshots)
+      .find((candidate) => candidate.artifact.path === "app/specgraph-app.tsx");
+    expect(appCandidate?.artifact.text.length).toBeLessThanOrEqual(6_000);
+    expect(appCandidate?.artifact.text).toContain("Automatic analysis runs daily");
+    expect(appCandidate?.artifact.textStartLine).toBeGreaterThan(1);
+  });
 });
 
 describe("semantic evidence verification", () => {
@@ -199,6 +276,46 @@ describe("semantic evidence verification", () => {
       changedStartLine: 2,
       candidateStartLine: 3,
     })]);
+  });
+
+  it("maps evidence from a focused late-file passage back to source lines", () => {
+    const cadenceChange = {
+      ...changed,
+      text: "Automatic analysis now runs every 12 hours instead of once per day.",
+    };
+    const lateImplementation = {
+      ...related,
+      nodeId: "late-implementation",
+      artifactId: "late-implementation",
+      kind: "code" as const,
+      path: "app/specgraph-app.tsx",
+      text: `${"const unrelatedLayoutValue = true;\n".repeat(240)}` +
+        'const cadenceCopy = "Automatic analysis runs daily.";',
+    };
+    const input = buildSemanticAnalysisInput(
+      "run-late-evidence",
+      cadenceChange,
+      generateSemanticCandidates(cadenceChange, [lateImplementation]),
+    );
+    const verified = verifySemanticOutput(input, {
+      schemaVersion: "1",
+      decisions: [{
+        candidateId: "late-implementation",
+        impact: true,
+        confidence: 0.9,
+        summary: "The implementation still promises a daily cadence.",
+        changedExcerpt: "every 12 hours",
+        candidateExcerpt: "Automatic analysis runs daily",
+      }],
+    });
+
+    expect(verified.rejected).toEqual([]);
+    expect(verified.accepted).toEqual([
+      expect.objectContaining({
+        candidateId: "late-implementation",
+        candidateStartLine: 241,
+      }),
+    ]);
   });
 
   it("rejects hallucinated evidence and unknown output fields", () => {
