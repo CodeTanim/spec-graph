@@ -221,7 +221,10 @@ async function listAffectedArtifactsForRuns(
     if (unique.has(uniqueKey)) continue;
     unique.add(uniqueKey);
     const fallbackEvidenceStartLine = Math.max(1, row.relationshipEvidenceStartLine || 1);
-    const reason =
+    const semanticSummary = row.findingProvenance === "SEMANTIC"
+      ? row.findingSummary.trim()
+      : "";
+    const reason = semanticSummary || (
       row.relationshipType &&
       row.relationshipFromNodeId &&
       row.changedNodeId &&
@@ -235,7 +238,8 @@ async function listAffectedArtifactsForRuns(
             row.artifactKind,
             row.relationshipFromNodeId === row.changedNodeId,
           )
-        : row.findingSummary;
+        : row.findingSummary
+    );
     byRun.get(row.runId)?.push({
       id: row.findingId,
       name: row.artifactTitle || row.findingTitle,

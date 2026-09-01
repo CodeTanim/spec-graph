@@ -1591,10 +1591,10 @@ export function SpecGraphApp({
 
                         {expanded && (
                           <div className="artifact-preview" id={detailsId}>
-                            <p className="causal-summary">
-                              <strong>{artifact.name}</strong> may need updating because{" "}
-                              <strong>{changedItemLabel}</strong> changed.
-                            </p>
+                            <div className="finding-explanation">
+                              <strong>Potential mismatch</strong>
+                              <p>{artifact.reason}</p>
+                            </div>
                             {artifact.kind === "Code" && (
                               <p className="related-tests-note">
                                 Related tests may also need review.
@@ -1615,7 +1615,6 @@ export function SpecGraphApp({
                             <details className="artifact-evidence">
                               <summary>Why SpecGraph flagged this</summary>
                               <div className="artifact-evidence-body">
-                                <p>{artifact.reason}</p>
                                 <div
                                   className="relationship-evidence"
                                   aria-label="Connection evidence"

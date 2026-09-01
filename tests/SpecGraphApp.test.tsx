@@ -225,11 +225,12 @@ describe("SpecGraphApp", () => {
     );
     await user.click(screen.getByRole("button", { name: /Customer Refund Guide/ }));
 
-    const causalSummary = document.querySelector(".causal-summary");
-    expect(causalSummary).toHaveTextContent(
-      "Customer Refund Guide may need updating because policy.ts changed.",
+    const explanation = document.querySelector(".finding-explanation");
+    expect(explanation).toHaveTextContent("Potential mismatch");
+    expect(explanation).toHaveTextContent(
+      "The page still contains the previous refund window.",
     );
-    expect(causalSummary?.querySelectorAll("a")).toHaveLength(0);
+    expect(explanation?.querySelectorAll("a")).toHaveLength(0);
     await user.click(screen.getByText("Why SpecGraph flagged this"));
     expect(
       screen.getByText("Refunds are available within 30 days of the original charge."),

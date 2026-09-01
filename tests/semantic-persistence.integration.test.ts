@@ -8,6 +8,7 @@ import {
   analysisRuns,
   artifactVersions,
   artifacts,
+  changeEvents,
   findingEvidence,
   findings,
   graphNodes,
@@ -18,6 +19,7 @@ import {
 } from "../db/schema";
 import { executeAndPersistSemanticAnalysis } from "../lib/analysis/semantic-persistence";
 import { deriveAnalysisScopes } from "../lib/analysis/change-scope";
+import { listChanges } from "../lib/server/specgraph-repository";
 
 let client: PGlite;
 let db: SpecGraphDb;
@@ -117,10 +119,31 @@ describe("semantic finding persistence", () => {
         updatedAt: now,
       },
     ]);
+    await db.insert(changeEvents).values({
+      id: "change_semantic",
+      workspaceId: "ws_semantic",
+      sourceId: "src_semantic",
+      trigger: "manual",
+      title: "Retry behavior changed",
+      summary: "Payment authorization now retries three times.",
+      changedArtifactsJson: JSON.stringify([{
+        id: "artifact_changed",
+        name: "retry.ts",
+        kind: "Code",
+        location: "src/retry.ts",
+        externalUrl: "https://github.com/acme/payments/blob/abc/src/retry.ts",
+      }]),
+      evidenceSummary: "SpecGraph compared the changed retry behavior.",
+      sourceLabel: "acme/payments@abc",
+      sourceUrl: "https://github.com/acme/payments/commit/abc",
+      occurredAt: now,
+      createdAt: now,
+    });
     await db.insert(analysisRuns).values({
       id: "run_semantic",
       workspaceId: "ws_semantic",
       sourceId: "src_semantic",
+      changeEventId: "change_semantic",
       trigger: "manual",
       title: "Check retry behavior",
       target: "abc",
@@ -204,6 +227,10 @@ describe("semantic finding persistence", () => {
     // Retrieval similarity admits the bounded candidate; after exact evidence
     // verification it must not silently demote the analyzer's confidence.
     expect(persistedFindingRows[0]?.confidence).toBe(0.9);
+    const changes = await listChanges("ws_semantic", "all", db);
+    expect(changes.items[0]?.artifacts[0]?.reason).toBe(
+      "Both sources describe the same retry behavior.",
+    );
     expect(await db.select().from(findingEvidence)).toEqual([
       expect.objectContaining({
         artifactVersionId: "version_candidate",
