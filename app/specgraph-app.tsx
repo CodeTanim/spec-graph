@@ -49,8 +49,8 @@ function Arrow() {
 function statusText(change: ChangeItem) {
   if (change.status === "scheduled") return "Scheduled for daily check";
   if (change.status === "processing") return "Analyzing…";
-  if (change.status === "resolved") return "Resolved";
-  if (change.status === "dismissed") return "Dismissed";
+  if (change.status === "resolved") return "Reviewed";
+  if (change.status === "dismissed") return "Reported incorrect";
   if (change.status === "reviewed") return "Reviewed";
   const openSuggestions = change.artifacts.filter(
     (artifact) => artifact.reviewStatus === "open",
@@ -583,10 +583,14 @@ export function SpecGraphApp({
       await api.updateChange(selectedChange.id, action);
       closeChange();
       await refreshChanges();
-      const verb =
-        action === "dismiss" ? "dismissed" : action === "resolve" ? "resolved" : "reopened";
+      const outcome =
+        action === "dismiss"
+          ? "reported incorrect"
+          : action === "resolve"
+            ? "marked reviewed"
+            : "reopened";
       setToast(
-        `${suggestionCount} ${suggestionCount === 1 ? "suggestion" : "suggestions"} ${verb}`,
+        `${suggestionCount} ${suggestionCount === 1 ? "suggestion" : "suggestions"} ${outcome}`,
       );
     } catch (actionError) {
       setToast(
@@ -619,10 +623,10 @@ export function SpecGraphApp({
       await refreshChanges();
       setToast(
         action === "dismiss"
-          ? `${artifact.name} dismissed`
+          ? `${artifact.name} marked as an incorrect suggestion`
           : action === "resolve"
-            ? `${artifact.name} resolved`
-            : `${artifact.name} reopened`,
+            ? `${artifact.name} marked reviewed`
+            : `${artifact.name} review reopened`,
       );
     } catch (actionError) {
       setToast(
@@ -1579,8 +1583,8 @@ export function SpecGraphApp({
                             {artifact.reviewStatus !== "open" && (
                               <small className={`review-status ${artifact.reviewStatus}`}>
                                 {artifact.reviewStatus === "resolved"
-                                  ? "Resolved"
-                                  : "Dismissed"}
+                                  ? "Reviewed"
+                                  : "Reported incorrect"}
                               </small>
                             )}
                             <span className="artifact-expand-icon" aria-hidden="true">
@@ -1643,7 +1647,7 @@ export function SpecGraphApp({
                                     disabled={Boolean(savingFindingId)}
                                     onClick={() => void applyArtifactAction(artifact, "dismiss")}
                                   >
-                                    Dismiss suggestion
+                                    Report incorrect suggestion
                                   </button>
                                   <button
                                     type="button"
@@ -1651,7 +1655,7 @@ export function SpecGraphApp({
                                     disabled={Boolean(savingFindingId)}
                                     onClick={() => void applyArtifactAction(artifact, "resolve")}
                                   >
-                                    Mark suggestion resolved
+                                    Mark reviewed
                                   </button>
                                 </>
                               ) : (
@@ -1661,7 +1665,7 @@ export function SpecGraphApp({
                                   disabled={Boolean(savingFindingId)}
                                   onClick={() => void applyArtifactAction(artifact, "reopen")}
                                 >
-                                  Reopen suggestion
+                                  Reopen review
                                 </button>
                               )}
                             </div>
@@ -1786,8 +1790,9 @@ export function SpecGraphApp({
                       disabled={savingAction || Boolean(savingFindingId)}
                       onClick={() => void applyFindingAction("dismiss")}
                     >
-                      Dismiss all {selectedOpenSuggestions} open{" "}
-                      {selectedOpenSuggestions === 1 ? "suggestion" : "suggestions"}
+                      Report all {selectedOpenSuggestions} open{" "}
+                      {selectedOpenSuggestions === 1 ? "suggestion" : "suggestions"}{" "}
+                      as incorrect
                     </button>
                     <button
                       type="button"
@@ -1795,8 +1800,9 @@ export function SpecGraphApp({
                       disabled={savingAction || Boolean(savingFindingId)}
                       onClick={() => void applyFindingAction("resolve")}
                     >
-                      Resolve all {selectedOpenSuggestions} open{" "}
+                      Mark all {selectedOpenSuggestions} open{" "}
                       {selectedOpenSuggestions === 1 ? "suggestion" : "suggestions"}{" "}
+                      reviewed{" "}
                       <Arrow />
                     </button>
                   </>
@@ -1808,7 +1814,7 @@ export function SpecGraphApp({
                     onClick={() => void applyFindingAction("reopen")}
                   >
                     Reopen all {selectedChange.artifacts.length}{" "}
-                    {selectedChange.artifacts.length === 1 ? "suggestion" : "suggestions"}
+                    {selectedChange.artifacts.length === 1 ? "review" : "reviews"}
                   </button>
                 )}
               </footer>

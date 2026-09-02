@@ -520,14 +520,14 @@ describe("SpecGraphApp", () => {
     );
     await user.click(screen.getByRole("button", { name: /Customer Refund Guide/ }));
     await user.click(
-      screen.getByRole("button", { name: "Mark suggestion resolved" }),
+      screen.getByRole("button", { name: "Mark reviewed" }),
     );
 
-    expect(screen.getByText("Resolved")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reopen suggestion" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reopen all 1 suggestion" })).toBeInTheDocument();
+    expect(screen.getByText("Reviewed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reopen review" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reopen all 1 review" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Customer Refund Guide resolved",
+      "Customer Refund Guide marked reviewed",
     );
 
     await user.click(screen.getByRole("button", { name: "Close change details" }));
@@ -548,14 +548,14 @@ describe("SpecGraphApp", () => {
     );
     await user.click(screen.getByRole("button", { name: /Refund SDK/ }));
     await user.click(
-      screen.getByRole("button", { name: "Mark suggestion resolved" }),
+      screen.getByRole("button", { name: "Mark reviewed" }),
     );
 
     expect(
-      screen.getByRole("button", { name: "Resolve all 1 open suggestion" }),
+      screen.getByRole("button", { name: "Mark all 1 open suggestion reviewed" }),
     ).toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Dismiss all 1 open suggestion" }),
+      screen.getByRole("button", { name: "Report all 1 open suggestion as incorrect" }),
     );
 
     await user.click(screen.getByRole("button", { name: "All 6" }));
@@ -564,12 +564,12 @@ describe("SpecGraphApp", () => {
     });
     expect(reviewedChange).toBeInTheDocument();
     await user.click(reviewedChange);
-    expect(screen.getAllByText("Resolved").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Dismissed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Reviewed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Reported incorrect").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: /API request guide/ }));
-    await user.click(screen.getByRole("button", { name: "Reopen suggestion" }));
+    await user.click(screen.getByRole("button", { name: "Reopen review" }));
     expect(
-      screen.getByRole("button", { name: "Mark suggestion resolved" }),
+      screen.getByRole("button", { name: "Mark reviewed" }),
     ).toBeInTheDocument();
   });
 
