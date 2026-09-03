@@ -1595,15 +1595,39 @@ export function SpecGraphApp({
 
                         {expanded && (
                           <div className="artifact-preview" id={detailsId}>
-                            <div className="finding-explanation">
-                              <strong>Potential mismatch</strong>
-                              <p>{artifact.reason}</p>
-                            </div>
-                            {artifact.kind === "Code" && (
-                              <p className="related-tests-note">
-                                Related tests may also need review.
-                              </p>
-                            )}
+                            <details className="artifact-evidence">
+                              <summary>Why SpecGraph flagged this</summary>
+                              <div className="artifact-evidence-body">
+                                <p className="impact-summary">
+                                  It looks like <strong>{changedItemLabel}</strong> recently
+                                  changed, and <strong>{artifact.name}</strong> may need
+                                  updating.
+                                </p>
+                                <div
+                                  className="relationship-evidence"
+                                  aria-label="Connection evidence"
+                                >
+                                  <strong>{relationshipSignal(artifact)}</strong>
+                                  <span>
+                                    Exact reference: {artifact.evidenceLocation}
+                                  </span>
+                                  <blockquote>{artifact.excerpt}</blockquote>
+                                  <span className="confidence-line">
+                                    {Math.round(artifact.confidence * 100)}% confidence this
+                                    item is connected to the change.
+                                  </span>
+                                </div>
+                                <div className="finding-explanation">
+                                  <div className="finding-explanation-label">
+                                    <strong>Potential mismatch</strong>
+                                    {artifact.origin !== "deterministic" && (
+                                      <span>AI-assisted</span>
+                                    )}
+                                  </div>
+                                  <p>{artifact.reason}</p>
+                                </div>
+                              </div>
+                            </details>
                             <div className="artifact-preview-links">
                               {artifact.externalUrl && (
                                 <a href={artifact.externalUrl} target="_blank" rel="noreferrer">
@@ -1616,28 +1640,11 @@ export function SpecGraphApp({
                                 </a>
                               )}
                             </div>
-                            <details className="artifact-evidence">
-                              <summary>Why SpecGraph flagged this</summary>
-                              <div className="artifact-evidence-body">
-                                <div
-                                  className="relationship-evidence"
-                                  aria-label="Connection evidence"
-                                >
-                                  <strong>
-                                    {Math.round(artifact.confidence * 100)}% confidence this
-                                    item is connected to the change
-                                  </strong>
-                                  <span>
-                                    Connection found through: {relationshipSignal(artifact)}
-                                  </span>
-                                  <span>
-                                    Supporting reference: {" "}
-                                    {artifact.evidenceLocation}
-                                  </span>
-                                  <blockquote>{artifact.excerpt}</blockquote>
-                                </div>
-                              </div>
-                            </details>
+                            {artifact.kind === "Code" && (
+                              <p className="related-tests-note">
+                                Related tests may also need review.
+                              </p>
+                            )}
                             <div className="artifact-review-actions">
                               {artifact.reviewStatus === "open" ? (
                                 <>

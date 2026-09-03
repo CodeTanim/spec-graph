@@ -225,26 +225,35 @@ describe("SpecGraphApp", () => {
     );
     await user.click(screen.getByRole("button", { name: /Customer Refund Guide/ }));
 
+    expect(document.querySelector(".finding-explanation")).not.toBeVisible();
+    expect(
+      screen.getByText("The page still contains the previous refund window."),
+    ).not.toBeVisible();
+    await user.click(screen.getByText("Why SpecGraph flagged this"));
+    expect(document.querySelector(".impact-summary")).toHaveTextContent(
+      "It looks like policy.ts recently changed, and Customer Refund Guide may need updating.",
+    );
+    expect(
+      screen.getByText("Refunds are available within 30 days of the original charge."),
+    ).toBeInTheDocument();
+    const relationshipEvidence = screen.getByLabelText("Connection evidence");
+    expect(relationshipEvidence).toHaveTextContent("Exact identifier");
+    expect(relationshipEvidence).toHaveTextContent(
+      "95% confidence this item is connected to the change.",
+    );
+    expect(relationshipEvidence).toHaveTextContent(
+      "Exact reference: src/refunds/policy.ts:18",
+    );
     const explanation = document.querySelector(".finding-explanation");
     expect(explanation).toHaveTextContent("Potential mismatch");
     expect(explanation).toHaveTextContent(
       "The page still contains the previous refund window.",
     );
     expect(explanation?.querySelectorAll("a")).toHaveLength(0);
-    await user.click(screen.getByText("Why SpecGraph flagged this"));
     expect(
-      screen.getByText("Refunds are available within 30 days of the original charge."),
-    ).toBeInTheDocument();
-    const relationshipEvidence = screen.getByLabelText("Connection evidence");
-    expect(relationshipEvidence).toHaveTextContent(
-      "95% confidence this item is connected to the change",
-    );
-    expect(relationshipEvidence).toHaveTextContent(
-      "Connection found through: Exact identifier",
-    );
-    expect(relationshipEvidence).toHaveTextContent(
-      "Supporting reference: src/refunds/policy.ts:18",
-    );
+      relationshipEvidence.compareDocumentPosition(explanation as Node) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Open policy.ts" })).toHaveAttribute(
       "href",
       "https://github.com/acme/platform-api/blob/abc123/src/refunds/policy.ts",

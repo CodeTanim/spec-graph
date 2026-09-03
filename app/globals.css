@@ -1100,6 +1100,12 @@ a.changed-artifact-row:hover {
   line-height: 1.45;
 }
 
+.relationship-evidence > .confidence-line {
+  color: var(--accent-ink);
+  font-family: inherit;
+  font-weight: 800;
+}
+
 .relationship-evidence > span {
   display: block;
   margin-top: 9px;
@@ -1127,6 +1133,7 @@ a.changed-artifact-row:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
+  margin-top: 18px;
 }
 
 .artifact-preview a,
@@ -1155,18 +1162,35 @@ a.changed-artifact-row:hover {
 }
 
 .finding-explanation {
-  margin-bottom: 18px;
+  margin: 0;
   border-left: 3px solid var(--accent);
   background: var(--paper);
   padding: 14px 16px;
 }
 
-.finding-explanation > strong {
-  display: block;
+.finding-explanation-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 6px;
+}
+
+.finding-explanation-label > strong {
   color: var(--accent-ink);
   font-size: 11px;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.finding-explanation-label > span {
+  border: 1px solid var(--line-muted);
+  border-radius: 999px;
+  color: var(--muted);
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -1179,14 +1203,14 @@ a.changed-artifact-row:hover {
 }
 
 .artifact-preview > .related-tests-note {
-  margin-top: -8px;
+  margin-top: 14px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
 }
 
 .artifact-evidence {
-  margin-top: 22px;
+  margin-top: 0;
   overflow: hidden;
   border: 1px solid var(--line-muted);
   border-radius: 8px;
@@ -1229,6 +1253,11 @@ a.changed-artifact-row:hover {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.artifact-evidence-body > .impact-summary {
+  color: var(--ink);
+  font-size: 14px;
 }
 
 .artifact-review-actions {
